@@ -14,7 +14,6 @@ st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 @st.cache_resource
 def get_google_sheet_data():
     try:
-        # Define the scope and credentials
         credentials = service_account.Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=[
@@ -22,37 +21,15 @@ def get_google_sheet_data():
                 "https://www.googleapis.com/auth/drive.readonly"
             ],
         )
-        st.write("Credentials created successfully")
         
         gc = gspread.authorize(credentials)
-        st.write("Authorization successful")
-        
-        # Open the spreadsheet by its key
-        sheet_key = st.secrets["sheets"]["sheet_key"]
-        st.write(f"Attempting to open sheet with key: {sheet_key}")
-        
-        spreadsheet = gc.open_by_key(sheet_key)
-        st.write("Spreadsheet opened successfully")
-        
-        # List all worksheets
-        worksheet_list = spreadsheet.worksheets()
-        st.write(f"Available worksheets: {[ws.title for ws in worksheet_list]}")
-        
-        # Get the first worksheet
+        spreadsheet = gc.open_by_key(st.secrets["sheets"]["sheet_key"])
         worksheet = spreadsheet.get_worksheet(0)
-        st.write(f"Accessed worksheet: {worksheet.title}")
-        
-        # Get all values
         data = worksheet.get_all_records()
-        st.write(f"Retrieved {len(data)} records")
-        
         return pd.DataFrame(data)
     
-    except gspread.exceptions.APIError as e:
-        st.error(f"API Error: {str(e)}")
-        raise e
     except Exception as e:
-        st.error(f"General Error: {str(e)}")
+        st.error(f"Error: {str(e)}")
         raise e
 
 # Load the data
@@ -62,12 +39,14 @@ except Exception as e:
     st.error(f"Error loading data: {e}")
     st.stop()
 
-# Title and description
-st.title("🏨 Hotel Reservations Dashboard")
-st.markdown("Real-time analysis of hotel reservations")
+# Create tabs for Dashboard and Marketing
+tab1, tab2 = st.tabs(["Dashboard", "Marketing"])
 
-# Only proceed if we have data
-if df is not None and not df.empty:
+with tab1:
+    # Title and description
+    st.title("🏨 Hotel Reservations Dashboard")
+    st.markdown("Real-time analysis of hotel reservations")
+
     # Create columns for filters
     col1, col2, col3 = st.columns(3)
 
@@ -129,11 +108,10 @@ if df is not None and not df.empty:
         unique_guests = filtered_df['Name'].nunique()
         st.metric("Unique Guests", unique_guests)
 
-    # Create two columns for charts
+    # Charts
     col1, col2 = st.columns(2)
 
     with col1:
-        # Reservations by Hotel
         fig_hotels = px.bar(
             filtered_df['Market'].value_counts().reset_index(),
             x='Market',
@@ -143,7 +121,6 @@ if df is not None and not df.empty:
         st.plotly_chart(fig_hotels, use_container_width=True)
 
     with col2:
-        # Length of Stay Distribution
         fig_los = px.histogram(
             filtered_df,
             x='# Nights',
@@ -151,11 +128,9 @@ if df is not None and not df.empty:
         )
         st.plotly_chart(fig_los, use_container_width=True)
 
-    # Additional charts
     col1, col2 = st.columns(2)
 
     with col1:
-        # Rate Code Distribution
         fig_rate = px.pie(
             filtered_df,
             names='Rate Code Name',
@@ -164,7 +139,6 @@ if df is not None and not df.empty:
         st.plotly_chart(fig_rate, use_container_width=True)
 
     with col2:
-        # Arrivals by Date
         daily_arrivals = filtered_df['Arrival Date Short'].value_counts().sort_index()
         fig_arrivals = px.line(
             x=daily_arrivals.index,
@@ -173,8 +147,51 @@ if df is not None and not df.empty:
         )
         st.plotly_chart(fig_arrivals, use_container_width=True)
 
-    # Show raw data
-    with st.expander("Show Raw Data"):
-        st.dataframe(filtered_df)
-else:
-    st.error("No data available to display")
+with tab2:
+    st.title("📊 Marketing Information by Resort")
+    
+    # Select resort
+    selected_resort = st.selectbox(
+        "Select Resort",
+        options=sorted(df['Market'].unique())
+    )
+    
+    # Filter data for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
+    
+    # Display guest information
+    st.subheader(f"Guest Information for {selected_resort}")
+    
+    # Create a clean display DataFrame
+    display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone']].copy()
+    display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
+    
+    # Sort by check-in date
+    display_df['Check In'] = pd.to_datetime(display_df['Check In'])
+    display_df = display_df.sort_values('Check In')
+    
+    # Display the table
+    st.dataframe(
+        display_df,
+        column_config={
+            "Guest Name": st.column_config.TextColumn("Guest Name"),
+            "Check In": st.column_config.DateColumn("Check In"),
+            "Check Out": st.column_config.DateColumn("Check Out"),
+            "Phone Number": st.column_config.TextColumn("Phone Number"),
+        },
+        hide_index=True,
+    )
+    
+    # Add export functionality
+    csv = display_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "Download Guest List",
+        csv,
+        f"{selected_resort}_guest_list.csv",
+        "text/csv",
+        key='download-csv'
+    )
+
+# Show raw data at the bottom of both tabs
+with st.expander("Show Raw Data"):
+    st.dataframe(filtered_df)
