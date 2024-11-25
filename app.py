@@ -228,11 +228,13 @@ with tab2:
         st.session_state.selected_guests = set()
 
     # Select/Deselect All button
-    if st.button('Select/Deselect All'):
-        if len(st.session_state.selected_guests) < len(display_df):
-            st.session_state.selected_guests = set(range(len(display_df)))
-        else:
-            st.session_state.selected_guests = set()
+    col1, col2 = st.columns([0.2, 0.8])
+    with col1:
+        if st.button('Select/Deselect All'):
+            if len(st.session_state.selected_guests) < len(display_df):
+                st.session_state.selected_guests = set(range(len(display_df)))
+            else:
+                st.session_state.selected_guests = set()
 
     # Add selection column
     display_df['Select'] = [i in st.session_state.selected_guests for i in range(len(display_df))]
@@ -255,6 +257,9 @@ with tab2:
         hide_index=True,
         use_container_width=True
     )
+
+    # Update selected guests
+    st.session_state.selected_guests = set([i for i, row in edited_df.iterrows() if row['Select']])
 
     # Message section
     st.markdown("---")
@@ -281,8 +286,22 @@ with tab2:
             disabled=True
         )
     
+    # Send button and selection info
+    col1, col2 = st.columns([0.3, 0.7])
+    with col1:
+        if st.button('Send Messages to Selected Guests'):
+            selected_guests = edited_df[edited_df['Select']]
+            if len(selected_guests) > 0:
+                st.success(f"Messages would be sent to {len(selected_guests)} guests")
+            else:
+                st.warning("Please select at least one guest")
+    
+    with col2:
+        selected_count = len(edited_df[edited_df['Select']])
+        st.info(f"Selected guests: {selected_count}")
+    
     # Export functionality
-    csv = edited_df.to_csv(index=False).encode('utf-8')
+    csv = edited_df[edited_df['Select']].to_csv(index=False).encode('utf-8')
     st.download_button(
         "Download Selected Guest List",
         csv,
