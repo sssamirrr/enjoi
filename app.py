@@ -526,7 +526,3 @@ with tab3:
 with st.expander("Show Raw Data"):
     st.dataframe(df)
 
-
-# Raw data viewer (removed duplicate expander)
-with st.expander("Show Raw Data"):
-    st.dataframe(df)
