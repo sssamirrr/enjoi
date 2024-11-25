@@ -163,6 +163,7 @@ with tab1:
             title='Arrivals by Date'
         )
         st.plotly_chart(fig_arrivals, use_container_width=True)
+
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
@@ -176,6 +177,10 @@ with tab2:
         st.session_state.check_out_start = datetime(2024, 11, 23).date()
     if 'check_out_end' not in st.session_state:
         st.session_state.check_out_end = datetime(2024, 11, 27).date()
+    
+    # Initialize session state for select all
+    if 'select_all_state' not in st.session_state:
+        st.session_state.select_all_state = False
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -188,7 +193,7 @@ with tab2:
     
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Container for date filters with reset button
+    # Date filters container
     date_filter_container = st.container()
     with date_filter_container:
         col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
@@ -218,27 +223,30 @@ with tab2:
             )
         
         with col3:
-            st.write("")  # Add some spacing
-            st.write("")  # Add some spacing
+            st.write("")  # Spacing
+            st.write("")  # Spacing
             if st.button('Reset Dates'):
+                # Reset date session states
                 st.session_state.check_in_start = datetime(2024, 11, 16).date()
                 st.session_state.check_in_end = datetime(2024, 11, 22).date()
                 st.session_state.check_out_start = datetime(2024, 11, 23).date()
                 st.session_state.check_out_end = datetime(2024, 11, 27).date()
-                st.experimental_rerun()  # Use `st._rerun()` if you have an older version
+                st.rerun()
 
     try:
+        # Prepare display dataframe
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
         
-        # Convert phone numbers to strings
+        # Data type conversions and error handling
         display_df['Phone Number'] = display_df['Phone Number'].astype(str)
+        display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')
+        display_df['Check Out'] = pd.to_datetime(display_df['Check Out'], errors='coerce')
         
-        # Convert dates with error handling
-        display_df['Check In'] = pd.to_datetime(display_df['Check In'])
-        display_df['Check Out'] = pd.to_datetime(display_df['Check Out'])
+        # Drop rows with invalid dates
+        display_df = display_df.dropna(subset=['Check In', 'Check Out'])
         
-        # Apply filters with error handling
+        # Apply date filters
         mask = (
             (display_df['Check In'].dt.date >= check_in_start) &
             (display_df['Check In'].dt.date <= check_in_end) &
@@ -251,15 +259,11 @@ with tab2:
         if len(display_df) == 0:
             st.warning("No guests found for the selected date range.")
             display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
-        else:
-            # Initialize session state for Select/Deselect All
-            if 'select_all_state' not in st.session_state:
-                st.session_state.select_all_state = False
+        
+        # Add Select column with current select all state
+        display_df.insert(0, 'Select', st.session_state.select_all_state)
 
-            # Add the Select column
-            display_df.insert(0, 'Select', st.session_state.select_all_state)
-
-        # Display table with error handling
+        # Display table
         if not display_df.empty:
             edited_df = st.data_editor(
                 display_df,
@@ -300,19 +304,24 @@ with tab2:
             selected_count = edited_df['Select'].sum()
             st.write(f"Selected Guests: {selected_count}")
 
-            # Add Select/Deselect All button here, after displaying selected count
-            if st.button("Select/Deselect All"):
-                st.session_state.select_all_state = not st.session_state.select_all_state
-                # Update the select column in display_df based on the new state
-                display_df['Select'] = st.session_state.select_all_state
-                st.experimental_rerun()  # Use `st._rerun()` if you have an older version
+            # Select/Deselect All button
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Select All", key="select_all"):
+                    st.session_state.select_all_state = True
+                    st.rerun()
+            
+            with col2:
+                if st.button("Deselect All", key="deselect_all"):
+                    st.session_state.select_all_state = False
+                    st.rerun()
 
         else:
             st.info("Please adjust the date filters to see guest data.")
             edited_df = display_df
 
     except Exception as e:
-        st.error(f"An error occurred while processing the data. Please try different filter settings.")
+        st.error("An error occurred while processing the data.")
         st.exception(e)
         edited_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
 
@@ -343,19 +352,21 @@ with tab2:
     
     # Export functionality
     if not edited_df.empty:
-        csv = edited_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "Download Selected Guest List",
-            csv,
-            f"{selected_resort}_guest_list.csv",
-            "text/csv",
-            key='download-csv'
-        )
+        # Filter only selected guests
+        selected_guests = edited_df[edited_df['Select']]
+        
+        if not selected_guests.empty:
+            csv = selected_guests.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "Download Selected Guest List",
+                csv,
+                f"{selected_resort}_guest_list.csv",
+                "text/csv",
+                key='download-csv'
+            )
+        else:
+            st.warning("No guests selected for download.")
 
-# Raw data viewer
-with st.expander("Show Raw Data"):
-    st.dataframe(df)
-
-# Raw data viewer
+# Raw data viewer (removed duplicate expander)
 with st.expander("Show Raw Data"):
     st.dataframe(df)
