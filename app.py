@@ -163,7 +163,6 @@ with tab1:
             title='Arrivals by Date'
         )
         st.plotly_chart(fig_arrivals, use_container_width=True)
-
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
@@ -188,6 +187,9 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     
     st.subheader(f"Guest Information for {selected_resort}")
+
+    # Add a select all checkbox
+    select_all = st.checkbox("Select/Deselect All")
 
     # Container for date filters with reset button
     date_filter_container = st.container()
@@ -222,10 +224,10 @@ with tab2:
             st.write("")  # Add some spacing
             st.write("")  # Add some spacing
             if st.button('Reset Dates'):
-                st.session_state.check_in_start_input = datetime(2024, 11, 16).date()
-                st.session_state.check_in_end_input = datetime(2024, 11, 22).date()
-                st.session_state.check_out_start_input = datetime(2024, 11, 23).date()
-                st.session_state.check_out_end_input = datetime(2024, 11, 27).date()
+                st.session_state.check_in_start = datetime(2024, 11, 16).date()
+                st.session_state.check_in_end = datetime(2024, 11, 22).date()
+                st.session_state.check_out_start = datetime(2024, 11, 23).date()
+                st.session_state.check_out_end = datetime(2024, 11, 27).date()
                 st.rerun()
 
     try:
@@ -254,7 +256,7 @@ with tab2:
             display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
         else:
             # Add selection column at the beginning
-            display_df.insert(0, 'Select', False)
+            display_df.insert(0, 'Select', select_all)
 
         # Display table with error handling
         if not display_df.empty:
@@ -292,6 +294,11 @@ with tab2:
                 use_container_width=True,
                 key="guest_editor"
             )
+
+            # Display counter for selected guests
+            selected_count = edited_df['Select'].sum()
+            st.write(f"Selected Guests: {selected_count}")
+
         else:
             st.info("Please adjust the date filters to see guest data.")
             edited_df = display_df
