@@ -38,7 +38,6 @@ st.markdown("""
 @st.cache_resource
 def get_google_sheet_data():
     try:
-        # Use your Google Sheets credentials
         credentials = service_account.Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=[
@@ -79,7 +78,7 @@ with tab1:
         selected_hotel = st.multiselect(
             "Select Hotel",
             options=sorted(df['Market'].unique()),
-            default=sorted(df['Market'].unique())[0]
+            default=[]  # Empty by default to show all markets
         )
 
     with col2:
@@ -102,7 +101,7 @@ with tab1:
     # Filter data
     filtered_df = df.copy()
     
-    if selected_hotel:
+    if selected_hotel:  # Only filter if hotels are selected
         filtered_df = filtered_df[filtered_df['Market'].isin(selected_hotel)]
     
     if len(date_range) == 2:
@@ -180,26 +179,33 @@ with tab2:
     
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Container for date filters to match table width
+    # Container for date filters
     date_filter_container = st.container()
     with date_filter_container:
         col1, col2 = st.columns(2)
         with col1:
-            check_in_filter = st.date_input(
-                "Filter by Check In Date",
-                value=(datetime(2024, 11, 16), datetime(2024, 11, 22)),
-                key="check_in_filter"
+            check_in_start = st.date_input(
+                "Check In Date (Start)",
+                value=datetime(2024, 11, 16),
+                key="check_in_start"
+            )
+            check_in_end = st.date_input(
+                "Check In Date (End)",
+                value=datetime(2024, 11, 22),
+                key="check_in_end"
             )
         with col2:
-            check_out_filter = st.date_input(
-                "Filter by Check Out Date",
-                value=(datetime(2024, 11, 23), datetime(2024, 11, 27)),
-                key="check_out_filter"
+            check_out_start = st.date_input(
+                "Check Out Date (Start)",
+                value=datetime(2024, 11, 23),
+                key="check_out_start"
+            )
+            check_out_end = st.date_input(
+                "Check Out Date (End)",
+                value=datetime(2024, 11, 27),
+                key="check_out_end"
             )
 
-    # Add some spacing
-    st.markdown("<br>", unsafe_allow_html=True)
-    
     # Create display DataFrame
     display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
     display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
@@ -210,28 +216,26 @@ with tab2:
     
     # Apply filters
     mask = (
-        (display_df['Check In'].dt.date >= check_in_filter[0]) &
-        (display_df['Check In'].dt.date <= check_in_filter[1]) &
-        (display_df['Check Out'].dt.date >= check_out_filter[0]) &
-        (display_df['Check Out'].dt.date <= check_out_filter[1])
+        (display_df['Check In'].dt.date >= check_in_start) &
+        (display_df['Check In'].dt.date <= check_in_end) &
+        (display_df['Check Out'].dt.date >= check_out_start) &
+        (display_df['Check Out'].dt.date <= check_out_end)
     )
     display_df = display_df[mask]
 
     # Initialize session state for selections
-    if 'selected_rows' not in st.session_state:
-        st.session_state.selected_rows = set()
+    if 'selected_guests' not in st.session_state:
+        st.session_state.selected_guests = set()
 
     # Select/Deselect All button
-    col1, col2 = st.columns([0.2, 0.8])
-    with col1:
-        if st.button('Select/Deselect All'):
-            if len(st.session_state.selected_rows) < len(display_df):
-                st.session_state.selected_rows = set(display_df.index)
-            else:
-                st.session_state.selected_rows = set()
+    if st.button('Select/Deselect All'):
+        if len(st.session_state.selected_guests) < len(display_df):
+            st.session_state.selected_guests = set(range(len(display_df)))
+        else:
+            st.session_state.selected_guests = set()
 
     # Add selection column
-    display_df['Select'] = False
+    display_df['Select'] = [i in st.session_state.selected_guests for i in range(len(display_df))]
 
     # Display table
     edited_df = st.data_editor(
@@ -241,18 +245,16 @@ with tab2:
                 "Select",
                 help="Select guest",
                 default=False,
+                width="small"
             ),
-            "Guest Name": st.column_config.TextColumn("Guest Name", width="medium"),
-            "Check In": st.column_config.DateColumn("Check In", width="medium"),
-            "Check Out": st.column_config.DateColumn("Check Out", width="medium"),
-            "Phone Number": st.column_config.TextColumn("Phone Number", width="medium"),
+            "Guest Name": st.column_config.TextColumn("Guest Name", width=200),
+            "Check In": st.column_config.DateColumn("Check In", width=150),
+            "Check Out": st.column_config.DateColumn("Check Out", width=150),
+            "Phone Number": st.column_config.TextColumn("Phone Number", width=150),
         },
         hide_index=True,
-        width=None
+        use_container_width=True
     )
-
-    # Update selections
-    st.session_state.selected_rows = set(edited_df[edited_df['Select']].index)
 
     # Message section
     st.markdown("---")
@@ -279,24 +281,10 @@ with tab2:
             disabled=True
         )
     
-    # Send button and selection info
-    col1, col2 = st.columns([0.3, 0.7])
-    with col1:
-        if st.button('Send Messages to Selected Guests'):
-            selected_guests = edited_df[edited_df['Select']]
-            if len(selected_guests) > 0:
-                st.success(f"Messages would be sent to {len(selected_guests)} guests")
-            else:
-                st.warning("Please select at least one guest")
-    
-    with col2:
-        selected_count = len(edited_df[edited_df['Select']])
-        st.info(f"Selected guests: {selected_count}")
-    
     # Export functionality
     csv = edited_df.to_csv(index=False).encode('utf-8')
     st.download_button(
-        "Download Guest List",
+        "Download Selected Guest List",
         csv,
         f"{selected_resort}_guest_list.csv",
         "text/csv",
