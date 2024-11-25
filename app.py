@@ -101,4 +101,4 @@ with tab2:
 
 # Show raw data at the bottom of both tabs
 with st.expander("Show Raw Data"):
-    st.dataframe(df
+    st.dataframe(df)
