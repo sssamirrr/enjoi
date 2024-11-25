@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2 import service_account
 
 # Set page config
@@ -371,133 +370,71 @@ with tab2:
 with tab3:
     st.title("🔮 Tour Prediction Dashboard")
     
-    # Resort selection
-    selected_resort = st.selectbox(
-        "Select Resort for Tour Prediction",
-        options=sorted(df['Market'].unique())
-    )
-    
-    resort_df = df[df['Market'] == selected_resort].copy()
-    resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'])
-    
-    # Date range selection
+    # Date range selection for tour prediction
     col1, col2 = st.columns(2)
     with col1:
         start_date = st.date_input(
             "Start Date for Tour Prediction", 
-            value=resort_df['Arrival Date Short'].min().date()
+            value=pd.to_datetime(df['Arrival Date Short']).min().date()
         )
     with col2:
         end_date = st.date_input(
             "End Date for Tour Prediction", 
-            value=resort_df['Arrival Date Short'].max().date()
+            value=pd.to_datetime(df['Arrival Date Short']).max().date()
         )
-    
-    # Filter data within the selected date range
-    filtered_resort_df = resort_df[
-        (resort_df['Arrival Date Short'].dt.date >= start_date) & 
-        (resort_df['Arrival Date Short'].dt.date <= end_date)
-    ]
-    
-    # Display daily arrivals
-    daily_arrivals = filtered_resort_df.groupby(filtered_resort_df['Arrival Date Short'].dt.date).size().reset_index()
-    daily_arrivals.columns = ['Date', 'Arrivals']
-    
-    # Conversion Rate Input
-    conversion_rate = st.number_input(
-        "Enter Conversion Rate (%)", 
-        min_value=0.0, 
-        max_value=100.0, 
-        value=10.0, 
-        step=0.5
-    ) / 100
-    
-    # Calculate Tours
-    daily_arrivals['Tours'] = (daily_arrivals['Arrivals'] * conversion_rate).apply(lambda x: round(x) if conversion_rate > 0 else 0)
-    
-    # Display Daily Arrivals and Tours
-    st.subheader(f"Arrivals and Tours for {selected_resort}")
-    
-    results_df = daily_arrivals.copy()
-    results_df['Date'] = results_df['Date'].astype(str)
-    
-    # Editable data editor for manual tour adjustments
-    edited_results = st.data_editor(
-        results_df, 
-        column_config={
-            "Date": st.column_config.TextColumn("Date"),
-            "Arrivals": st.column_config.NumberColumn("Arrivals", disabled=True),
-            "Tours": st.column_config.NumberColumn("Tours", help="Calculated or manually adjusted tours")
-        },
-        hide_index=True,
-        use_container_width=True
-    )
-    
-    # Metrics
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Arrivals", filtered_resort_df.shape[0])
-    with col2:
-        st.metric("Estimated Tours", edited_results['Tours'].sum())
-    with col3:
-        st.metric("Average Daily Tours", edited_results['Tours'].mean())
-    
-    # Visualization
-    col1, col2 = st.columns(2)
-    with col1:
-        # Arrivals Chart
-        fig_arrivals = px.bar(
-            edited_results, 
-            x='Date', 
-            y='Arrivals', 
-            title=f'Daily Arrivals - {selected_resort}'
-        )
-        st.plotly_chart(fig_arrivals, use_container_width=True)
-    
-    with col2:
-        # Tours Chart
-        fig_tours = px.bar(
-            edited_results, 
-            x='Date', 
-            y='Tours', 
-            title=f'Estimated Tours - {selected_resort}'
-        )
-        st.plotly_chart(fig_tours, use_container_width=True)
 
-    # Overall Summary for All Resorts
-    st.markdown("---")
-    st.subheader("Weekly Summary Across All Resorts")
-
-    all_resorts_summary = pd.DataFrame()
-
+    # Prepare a DataFrame to collect all resort data
+    all_resorts_tour_data = []
+    
     for resort in df['Market'].unique():
-        resort_data = df[df['Market'] == resort].copy()
-        resort_data['Arrival Date Short'] = pd.to_datetime(resort_data['Arrival Date Short'])
+        resort_df = df[df['Market'] == resort].copy()
+        resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'])
         
-        filtered_data = resort_data[
-            (resort_data['Arrival Date Short'].dt.date >= start_date) & 
-            (resort_data['Arrival Date Short'].dt.date <= end_date)
+        # Filter data within the selected date range
+        filtered_resort_df = resort_df[
+            (resort_df['Arrival Date Short'].dt.date >= start_date) & 
+            (resort_df['Arrival Date Short'].dt.date <= end_date)
         ]
         
-        daily_resort_arrivals = filtered_data.groupby(filtered_data['Arrival Date Short'].dt.date).size().reset_index(name='Arrivals')
+        # Daily Arrivals
+        daily_arrivals = filtered_resort_df.groupby(filtered_resort_df['Arrival Date Short'].dt.date).size().reset_index()
+        daily_arrivals.columns = ['Date', 'Arrivals']
         
-        # Assuming a default conversion rate if none is provided
-        conversion_rate_resort = 0.1  # Default 10%
-        daily_resort_arrivals['Tours'] = daily_resort_arrivals['Arrivals'] * conversion_rate_resort
+        st.subheader(f"{resort}")
         
-        resort_summary = daily_resort_arrivals.groupby('Arrival Date Short').sum().reset_index()
-        resort_summary['Resort'] = resort
-        all_resorts_summary = pd.concat([all_resorts_summary, resort_summary])
-    
-    all_resorts_summary = all_resorts_summary.groupby('Arrival Date Short').sum().reset_index()
+        # Conversion Rate Input
+        conversion_rate = st.number_input(
+            f"Conversion Rate for {resort} (%)", 
+            min_value=0.0, 
+            max_value=100.0, 
+            value=10.0, 
+            step=0.5,
+            key=f"conversion_{resort}"
+        ) / 100
+        
+        # Calculate Tours
+        daily_arrivals['Tours'] = (daily_arrivals['Arrivals'] * conversion_rate).apply(lambda x: round(x) if conversion_rate > 0 else 0)
+        
+        st.dataframe(daily_arrivals)
+        
+        # Aggregate summaries for visualization later
+        all_resorts_tour_data.append(daily_arrivals.assign(Market=resort))
 
-    st.dataframe(all_resorts_summary)
+    full_summary_df = pd.concat(all_resorts_tour_data)
+
+    # Overall Summary
+    st.markdown("---")
+    st.subheader("Overall Tour Summary Across All Resorts")
+
+    overall_summary = full_summary_df.groupby('Date').sum().reset_index()
+
+    st.dataframe(overall_summary)
 
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("Total Arrivals for All Resorts", all_resorts_summary['Arrivals'].sum())
+        st.metric("Total Arrivals for All Resorts", overall_summary['Arrivals'].sum())
     with col2:
-        st.metric("Total Estimated Tours for All Resorts", all_resorts_summary['Tours'].sum())
+        st.metric("Total Estimated Tours for All Resorts", overall_summary['Tours'].sum())
 
 # Raw data viewer
 with st.expander("Show Raw Data"):
