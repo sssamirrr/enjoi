@@ -225,7 +225,7 @@ with tab2:
                 st.session_state.check_in_end = datetime(2024, 11, 22).date()
                 st.session_state.check_out_start = datetime(2024, 11, 23).date()
                 st.session_state.check_out_end = datetime(2024, 11, 27).date()
-                st.rerun()
+                st.experimental_rerun()  # Use `st._rerun()` if you have an older version
 
     try:
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
@@ -305,7 +305,7 @@ with tab2:
                 st.session_state.select_all_state = not st.session_state.select_all_state
                 # Update the select column in display_df based on the new state
                 display_df['Select'] = st.session_state.select_all_state
-                st.experimental_rerun()
+                st.experimental_rerun()  # Use `st._rerun()` if you have an older version
 
         else:
             st.info("Please adjust the date filters to see guest data.")
@@ -351,6 +351,10 @@ with tab2:
             "text/csv",
             key='download-csv'
         )
+
+# Raw data viewer
+with st.expander("Show Raw Data"):
+    st.dataframe(df)
 
 # Raw data viewer
 with st.expander("Show Raw Data"):
