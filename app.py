@@ -39,9 +39,6 @@ except Exception as e:
     st.error(f"Error loading data: {e}")
     st.stop()
 
-# Let's check the column names
-st.write("Available columns:", df.columns.tolist())
-
 # Create tabs for Dashboard and Marketing
 tab1, tab2 = st.tabs(["Dashboard", "Marketing"])
 
@@ -164,34 +161,106 @@ with tab2:
     
     # Display guest information
     st.subheader(f"Guest Information for {selected_resort}")
+
+    # Date filters in columns
+    col1, col2 = st.columns(2)
+    with col1:
+        check_in_filter = st.date_input(
+            "Filter by Check In Date",
+            value=(pd.to_datetime(resort_df['Arrival Date Short']).min().date(),
+                  pd.to_datetime(resort_df['Arrival Date Short']).max().date()),
+            key="check_in_filter"
+        )
+    with col2:
+        check_out_filter = st.date_input(
+            "Filter by Check Out Date",
+            value=(pd.to_datetime(resort_df['Departure Date Short']).min().date(),
+                  pd.to_datetime(resort_df['Departure Date Short']).max().date()),
+            key="check_out_filter"
+        )
     
     # Create a clean display DataFrame with the correct column names
     display_df = resort_df[[
         'Name',
         'Arrival Date Short',
         'Departure Date Short',
-        'Phone Number'  # Updated to match your actual column name
+        'Phone Number'
     ]].copy()
     
     # Rename columns for display
     display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
     
-    # Sort by check-in date
+    # Convert dates to datetime
     display_df['Check In'] = pd.to_datetime(display_df['Check In'])
-    display_df = display_df.sort_values('Check In')
+    display_df['Check Out'] = pd.to_datetime(display_df['Check Out'])
     
-    # Display the table
-    st.dataframe(
-        display_df,
-        column_config={
-            "Guest Name": st.column_config.TextColumn("Guest Name"),
-            "Check In": st.column_config.DateColumn("Check In"),
-            "Check Out": st.column_config.DateColumn("Check Out"),
-            "Phone Number": st.column_config.TextColumn("Phone Number"),
-        },
-        hide_index=True,
+    # Apply date filters
+    mask = (
+        (display_df['Check In'].dt.date >= check_in_filter[0]) &
+        (display_df['Check In'].dt.date <= check_in_filter[1]) &
+        (display_df['Check Out'].dt.date >= check_out_filter[0]) &
+        (display_df['Check Out'].dt.date <= check_out_filter[1])
+    )
+    display_df = display_df[mask]
+
+    # Add a selection column
+    if 'selected_rows' not in st.session_state:
+        st.session_state.selected_rows = set()
+
+    # Select/Deselect All button
+    if st.button('Select/Deselect All'):
+        if len(st.session_state.selected_rows) < len(display_df):
+            st.session_state.selected_rows = set(display_df.index)
+        else:
+            st.session_state.selected_rows = set()
+
+    # Display the table with checkboxes
+    st.write("Select guests to send messages:")
+    
+    # Create a wider display using custom CSS
+    st.markdown("""
+        <style>
+        .stDataFrame {
+            width: 100%;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Display each row with a checkbox
+    for idx, row in display_df.iterrows():
+        col1, col2 = st.columns([0.1, 0.9])
+        with col1:
+            if st.checkbox('', key=f'check_{idx}', 
+                          value=idx in st.session_state.selected_rows):
+                st.session_state.selected_rows.add(idx)
+            else:
+                st.session_state.selected_rows.discard(idx)
+        with col2:
+            st.write(f"{row['Guest Name']} | Check In: {row['Check In'].date()} | "
+                    f"Check Out: {row['Check Out'].date()} | {row['Phone Number']}")
+
+    # Message selection and send button
+    st.markdown("---")
+    st.subheader("Send Message to Selected Guests")
+    
+    message_options = {
+        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
+        "Check-in Follow-up": "We noticed you checked in last night. Please visit our concierge desk for your welcome gift! 🎁",
+        "Checkout Message": "We hope you enjoyed your stay! Please visit our concierge desk before departure for a special gift! 🎁"
+    }
+    
+    selected_message = st.selectbox(
+        "Choose Message Template",
+        options=list(message_options.keys())
     )
     
+    if st.button('Send Messages to Selected Guests'):
+        selected_guests = display_df.loc[list(st.session_state.selected_rows)]
+        st.write(f"Message that would be sent to {len(selected_guests)} guests:")
+        st.info(message_options[selected_message])
+        # Here you would implement actual SMS sending logic
+        st.success(f"Messages would be sent to {len(selected_guests)} guests")
+        
     # Add export functionality
     csv = display_df.to_csv(index=False).encode('utf-8')
     st.download_button(
