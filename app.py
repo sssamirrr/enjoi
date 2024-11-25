@@ -4,6 +4,7 @@ import plotly.express as px
 from datetime import datetime
 import gspread
 from google.oauth2 import service_account
+import math
 
 # Set page config
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
@@ -13,6 +14,9 @@ st.markdown("""
     <style>
     .stDateInput {
         width: 100%;
+    }
+    .stTextInput, .stNumberInput {
+        max-width: 200px;
     }
     div[data-baseweb="input"] {
         width: 100%;
@@ -412,8 +416,10 @@ with tab3:
             key=f"conversion_{resort}"
         ) / 100
         
-        # Calculate Tours
-        daily_arrivals['Tours'] = (daily_arrivals['Arrivals'] * conversion_rate).apply(lambda x: round(x) if conversion_rate > 0 else 0)
+        # Calculate Tours, rounded up using math.ceil
+        daily_arrivals['Tours'] = daily_arrivals['Arrivals'].apply(
+            lambda arrivals: math.ceil(arrivals * conversion_rate)
+        )
         
         st.dataframe(daily_arrivals)
         
