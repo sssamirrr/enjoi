@@ -5,6 +5,9 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2 import service_account
+import base64
+from io import StringIO
+import numpy as np
 
 # Set page config
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
@@ -55,6 +58,22 @@ def get_google_sheet_data():
     except Exception as e:
         st.error(f"Error: {str(e)}")
         return None
+
+# Function to convert dataframe to CSV download link
+def get_table_download_link(df, filename="data.csv", text="Download CSV"):
+    csv = df.to_csv(index=False)
+    b64 = base64.b64encode(csv.encode()).decode()
+    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'
+    return href
+
+# Function to format phone numbers
+def format_phone(phone):
+    if pd.isna(phone):
+        return ""
+    phone_str = str(phone).replace("+1", "").replace("-", "").replace("(", "").replace(")", "").replace(" ", "")
+    if len(phone_str) == 10:
+        return f"+1{phone_str}"
+    return phone_str
 
 # Load the data
 df = get_google_sheet_data()
@@ -163,72 +182,52 @@ with tab1:
             title='Arrivals by Date'
         )
         st.plotly_chart(fig_arrivals, use_container_width=True)
+
 # Marketing Tab
 with tab2:
-    st.title("📊 Marketing Information by Resort")
-    
-    # Initialize session state for dates
-    if 'check_in_start' not in st.session_state:
-        st.session_state.check_in_start = datetime(2024, 11, 16).date()
-    if 'check_in_end' not in st.session_state:
-        st.session_state.check_in_end = datetime(2024, 11, 22).date()
-    if 'check_out_start' not in st.session_state:
-        st.session_state.check_out_start = datetime(2024, 11, 23).date()
-    if 'check_out_end' not in st.session_state:
-        st.session_state.check_out_end = datetime(2024, 11, 27).date()
+    st.title("📊 Marketing Operations")
+    st.markdown("Select guests for marketing campaigns")
 
-    # Resort selection
-    selected_resort = st.selectbox(
-        "Select Resort",
-        options=sorted(df['Market'].unique())
+    # Date range filters for check-in and check-out
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        check_in_range = st.date_input(
+            "Check-in Date Range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+            key="check_in_range"
+        )
+    
+    with col2:
+        check_out_range = st.date_input(
+            "Check-out Date Range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+            key="check_out_range"
+        )
+
+    # Unpack date ranges
+    check_in_start, check_in_end = check_in_range
+    check_out_start, check_out_end = check_out_range
+
+    # Resort filter
+    selected_resorts = st.multiselect(
+        "Select Hotels",
+        options=sorted(df['Market'].unique()),
+        default=sorted(df['Market'].unique())
     )
-    
-    # Filter for selected resort
-    resort_df = df[df['Market'] == selected_resort].copy()
-    
-    st.subheader(f"Guest Information for {selected_resort}")
 
-    # Add a select all checkbox
-    select_all = st.checkbox("Select/Deselect All")
+    # Filter by selected resorts
+    resort_df = df[df['Market'].isin(selected_resorts)] if selected_resorts else df
 
-    # Container for date filters with reset button
-    date_filter_container = st.container()
-    with date_filter_container:
-        col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-        
-        with col1:
-            check_in_start = st.date_input(
-                "Check In Date (Start)",
-                value=st.session_state.check_in_start,
-                key="check_in_start_input"
-            )
-            check_in_end = st.date_input(
-                "Check In Date (End)",
-                value=st.session_state.check_in_end,
-                key="check_in_end_input"
-            )
-        
-        with col2:
-            check_out_start = st.date_input(
-                "Check Out Date (Start)",
-                value=st.session_state.check_out_start,
-                key="check_out_start_input"
-            )
-            check_out_end = st.date_input(
-                "Check Out Date (End)",
-                value=st.session_state.check_out_end,
-                key="check_out_end_input"
-            )
-        
-        with col3:
-            st.write("")  # Add some spacing
-            st.write("")  # Add some spacing
-            if st.button('Reset Dates'):
-                st.session_state.check_in_start = datetime(2024, 11, 16).date()
-                st.session_state.check_in_end = datetime(2024, 11, 22).date()
-                st.session_state.check_out_start = datetime(2024, 11, 23).date()
-                st.session_state.check_out_end = datetime(2024, 11, 27).date()
-                st.rerun()
+    # Initialize select all in session state if not exists
+    if 'select_all' not in st.session_state:
+        st.session_state.select_all = False
+
+    select_all = st.session_state.select_all
 
     try:
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
@@ -298,52 +297,28 @@ with tab2:
             # Display counter for selected guests
             selected_count = edited_df['Select'].sum()
             st.write(f"Selected Guests: {selected_count}")
+            
+            # Add Select/Deselect All button
+            if st.button("Select/Deselect All"):
+                # Toggle all selections
+                current_state = edited_df['Select'].all()  # Check if all are currently selected
+                edited_df['Select'] = not current_state  # Toggle to opposite state
+                st.session_state.guest_editor = edited_df  # Update the session state
+                st.rerun()  # Rerun the app to update the display
+
+            # Export selected guests
+            if st.button("Export Selected Guests"):
+                selected_guests = edited_df[edited_df['Select']].copy()
+                if len(selected_guests) > 0:
+                    selected_guests['Phone Number'] = selected_guests['Phone Number'].apply(format_phone)
+                    st.markdown(get_table_download_link(selected_guests.drop('Select', axis=1)), unsafe_allow_html=True)
+                else:
+                    st.warning("Please select at least one guest to export.")
 
         else:
             st.info("Please adjust the date filters to see guest data.")
             edited_df = display_df
 
     except Exception as e:
-        st.error(f"An error occurred while processing the data. Please try different filter settings.")
-        st.exception(e)
-        edited_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
-
-    # Message section
-    st.markdown("---")
-    st.subheader("Message Templates")
-    
-    message_options = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": "We noticed you checked in last night. Please visit our concierge desk for your welcome gift! 🎁",
-        "Checkout Message": "We hope you enjoyed your stay! Please visit our concierge desk before departure for a special gift! 🎁"
-    }
-    
-    col1, col2 = st.columns([0.4, 0.6])
-    with col1:
-        selected_message = st.selectbox(
-            "Choose Message Template",
-            options=list(message_options.keys())
-        )
-    
-    with col2:
-        st.text_area(
-            "Message Preview", 
-            value=message_options[selected_message],
-            height=100,
-            disabled=True
-        )
-    
-    # Export functionality
-    if not edited_df.empty:
-        csv = edited_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "Download Selected Guest List",
-            csv,
-            f"{selected_resort}_guest_list.csv",
-            "text/csv",
-            key='download-csv'
-        )
-
-# Raw data viewer
-with st.expander("Show Raw Data"):
-    st.dataframe(df)
+        st.error(f"An error occurred: {str(e)}")
+        st.stop()
