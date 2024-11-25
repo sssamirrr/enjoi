@@ -45,7 +45,7 @@ def get_google_sheet_data():
                 "https://www.googleapis.com/auth/drive.readonly"
             ],
         )
-        
+
         gc = gspread.authorize(credentials)
         spreadsheet = gc.open_by_key(st.secrets["sheets"]["sheet_key"])
         worksheet = spreadsheet.get_worksheet(0)
@@ -188,9 +188,6 @@ with tab2:
     
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Add a select all checkbox
-    select_all = st.checkbox("Select/Deselect All")
-
     # Container for date filters with reset button
     date_filter_container = st.container()
     with date_filter_container:
@@ -255,8 +252,12 @@ with tab2:
             st.warning("No guests found for the selected date range.")
             display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
         else:
-            # Add selection column at the beginning
-            display_df.insert(0, 'Select', select_all)
+            # Initialize session state for Select/Deselect All
+            if 'select_all_state' not in st.session_state:
+                st.session_state.select_all_state = False
+
+            # Add the Select column
+            display_df.insert(0, 'Select', st.session_state.select_all_state)
 
         # Display table with error handling
         if not display_df.empty:
@@ -298,6 +299,13 @@ with tab2:
             # Display counter for selected guests
             selected_count = edited_df['Select'].sum()
             st.write(f"Selected Guests: {selected_count}")
+
+            # Add Select/Deselect All button here, after displaying selected count
+            if st.button("Select/Deselect All"):
+                st.session_state.select_all_state = not st.session_state.select_all_state
+                # Update the select column in display_df based on the new state
+                display_df['Select'] = st.session_state.select_all_state
+                st.experimental_rerun()
 
         else:
             st.info("Please adjust the date filters to see guest data.")
