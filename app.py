@@ -78,7 +78,7 @@ with tab1:
         selected_hotel = st.multiselect(
             "Select Hotel",
             options=sorted(df['Market'].unique()),
-            default=[]  # Empty by default to show all markets
+            default=[]
         )
 
     with col2:
@@ -101,7 +101,7 @@ with tab1:
     # Filter data
     filtered_df = df.copy()
     
-    if selected_hotel:  # Only filter if hotels are selected
+    if selected_hotel:
         filtered_df = filtered_df[filtered_df['Market'].isin(selected_hotel)]
     
     if len(date_range) == 2:
@@ -179,87 +179,114 @@ with tab2:
     
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Container for date filters
+    # Container for date filters with reset button
     date_filter_container = st.container()
     with date_filter_container:
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+        
         with col1:
             check_in_start = st.date_input(
                 "Check In Date (Start)",
-                value=datetime(2024, 11, 16),
+                value=datetime(2024, 11, 16).date(),
                 key="check_in_start"
             )
             check_in_end = st.date_input(
                 "Check In Date (End)",
-                value=datetime(2024, 11, 22),
+                value=datetime(2024, 11, 22).date(),
                 key="check_in_end"
             )
+        
         with col2:
             check_out_start = st.date_input(
                 "Check Out Date (Start)",
-                value=datetime(2024, 11, 23),
+                value=datetime(2024, 11, 23).date(),
                 key="check_out_start"
             )
             check_out_end = st.date_input(
                 "Check Out Date (End)",
-                value=datetime(2024, 11, 27),
+                value=datetime(2024, 11, 27).date(),
                 key="check_out_end"
             )
+        
+        with col3:
+            st.write("")  # Add some spacing
+            st.write("")  # Add some spacing
+            if st.button('Reset Dates'):
+                st.session_state.check_in_start = datetime(2024, 11, 16).date()
+                st.session_state.check_in_end = datetime(2024, 11, 22).date()
+                st.session_state.check_out_start = datetime(2024, 11, 23).date()
+                st.session_state.check_out_end = datetime(2024, 11, 27).date()
+                st.rerun()
 
-    # Create display DataFrame
-    display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
-    display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
-    
-    # Convert dates
-    display_df['Check In'] = pd.to_datetime(display_df['Check In'])
-    display_df['Check Out'] = pd.to_datetime(display_df['Check Out'])
-    
-    # Apply filters
-    mask = (
-        (display_df['Check In'].dt.date >= check_in_start) &
-        (display_df['Check In'].dt.date <= check_in_end) &
-        (display_df['Check Out'].dt.date >= check_out_start) &
-        (display_df['Check Out'].dt.date <= check_out_end)
-    )
-    display_df = display_df[mask]
+    try:
+        display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
+        display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
+        
+        # Convert dates with error handling
+        display_df['Check In'] = pd.to_datetime(display_df['Check In'])
+        display_df['Check Out'] = pd.to_datetime(display_df['Check Out'])
+        
+        # Apply filters with error handling
+        mask = (
+            (display_df['Check In'].dt.date >= check_in_start) &
+            (display_df['Check In'].dt.date <= check_in_end) &
+            (display_df['Check Out'].dt.date >= check_out_start) &
+            (display_df['Check Out'].dt.date <= check_out_end)
+        )
+        display_df = display_df[mask]
 
-    # Initialize session state for selections
-    if 'selected_guests' not in st.session_state:
-        st.session_state.selected_guests = set()
+        # Handle empty DataFrame
+        if len(display_df) == 0:
+            st.warning("No guests found for the selected date range.")
+            display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
+        else:
+            # Add selection column at the beginning
+            display_df.insert(0, 'Select', False)
 
-    # Select/Deselect All button
-    col1, col2 = st.columns([0.2, 0.8])
-    with col1:
-        if st.button('Select/Deselect All'):
-            if len(st.session_state.selected_guests) < len(display_df):
-                st.session_state.selected_guests = set(range(len(display_df)))
-            else:
-                st.session_state.selected_guests = set()
+        # Display table with error handling
+        if not display_df.empty:
+            edited_df = st.data_editor(
+                display_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select guest",
+                        default=False,
+                        width="small",
+                    ),
+                    "Guest Name": st.column_config.TextColumn(
+                        "Guest Name",
+                        help="Guest's full name",
+                        width="medium",
+                    ),
+                    "Check In": st.column_config.DateColumn(
+                        "Check In",
+                        help="Check-in date",
+                        width="medium",
+                    ),
+                    "Check Out": st.column_config.DateColumn(
+                        "Check Out",
+                        help="Check-out date",
+                        width="medium",
+                    ),
+                    "Phone Number": st.column_config.TextColumn(
+                        "Phone Number",
+                        help="Guest's phone number",
+                        width="medium",
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="guest_editor"
+            )
+        else:
+            st.info("Please adjust the date filters to see guest data.")
+            edited_df = display_df
 
-    # Add selection column
-    display_df['Select'] = [i in st.session_state.selected_guests for i in range(len(display_df))]
-
-    # Display table
-    edited_df = st.data_editor(
-        display_df,
-        column_config={
-            "Select": st.column_config.CheckboxColumn(
-                "Select",
-                help="Select guest",
-                default=False,
-                width="small"
-            ),
-            "Guest Name": st.column_config.TextColumn("Guest Name", width=200),
-            "Check In": st.column_config.DateColumn("Check In", width=150),
-            "Check Out": st.column_config.DateColumn("Check Out", width=150),
-            "Phone Number": st.column_config.TextColumn("Phone Number", width=150),
-        },
-        hide_index=True,
-        use_container_width=True
-    )
-
-    # Update selected guests
-    st.session_state.selected_guests = set([i for i, row in edited_df.iterrows() if row['Select']])
+    except Exception as e:
+        st.error(f"An error occurred while processing the data. Please try different filter settings.")
+        st.exception(e)
+        edited_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
 
     # Message section
     st.markdown("---")
@@ -286,29 +313,16 @@ with tab2:
             disabled=True
         )
     
-    # Send button and selection info
-    col1, col2 = st.columns([0.3, 0.7])
-    with col1:
-        if st.button('Send Messages to Selected Guests'):
-            selected_guests = edited_df[edited_df['Select']]
-            if len(selected_guests) > 0:
-                st.success(f"Messages would be sent to {len(selected_guests)} guests")
-            else:
-                st.warning("Please select at least one guest")
-    
-    with col2:
-        selected_count = len(edited_df[edited_df['Select']])
-        st.info(f"Selected guests: {selected_count}")
-    
     # Export functionality
-    csv = edited_df[edited_df['Select']].to_csv(index=False).encode('utf-8')
-    st.download_button(
-        "Download Selected Guest List",
-        csv,
-        f"{selected_resort}_guest_list.csv",
-        "text/csv",
-        key='download-csv'
-    )
+    if not edited_df.empty:
+        csv = edited_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "Download Selected Guest List",
+            csv,
+            f"{selected_resort}_guest_list.csv",
+            "text/csv",
+            key='download-csv'
+        )
 
 # Raw data viewer
 with st.expander("Show Raw Data"):
