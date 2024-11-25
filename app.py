@@ -165,13 +165,12 @@ with tab2:
     # Display guest information
     st.subheader(f"Guest Information for {selected_resort}")
     
-    # Create a clean display DataFrame with the actual column names from your sheet
-    # Modify these column names to match your actual Google Sheet column names
+    # Create a clean display DataFrame with the correct column names
     display_df = resort_df[[
-        'Name',                  # Guest name column
-        'Arrival Date Short',    # Check-in date column
-        'Departure Date Short',  # Check-out date column
-        'Phone'                  # Phone number column
+        'Name',
+        'Arrival Date Short',
+        'Departure Date Short',
+        'Phone Number'  # Updated to match your actual column name
     ]].copy()
     
     # Rename columns for display
