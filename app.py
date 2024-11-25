@@ -418,7 +418,7 @@ with tab3:
         
         # Calculate Tours, rounded up using math.ceil
         daily_arrivals['Tours'] = daily_arrivals['Arrivals'].apply(
-            lambda arrivals: math.ceil(arrivals * conversion_rate)
+            lambda arrivals: math.floor(arrivals * conversion_rate)
         )
         
         st.dataframe(daily_arrivals)
