@@ -9,6 +9,31 @@ from google.oauth2 import service_account
 # Set page config
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
+# Add CSS for styling
+st.markdown("""
+    <style>
+    .stDateInput {
+        width: 100%;
+    }
+    div[data-baseweb="input"] {
+        width: 100%;
+    }
+    .stDateInput > div {
+        width: 100%;
+    }
+    div[data-baseweb="input"] > div {
+        width: 100%;
+    }
+    .stDataFrame {
+        width: 100%;
+    }
+    .dataframe-container {
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Create a connection to Google Sheets
 @st.cache_resource
 def get_google_sheet_data():
@@ -155,22 +180,25 @@ with tab2:
     
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Date filters
-    col1, col2 = st.columns(2)
-    with col1:
-        check_in_filter = st.date_input(
-            "Filter by Check In Date",
-            value=(pd.to_datetime(resort_df['Arrival Date Short']).min().date(),
-                  pd.to_datetime(resort_df['Arrival Date Short']).max().date()),
-            key="check_in_filter"
-        )
-    with col2:
-        check_out_filter = st.date_input(
-            "Filter by Check Out Date",
-            value=(pd.to_datetime(resort_df['Departure Date Short']).min().date(),
-                  pd.to_datetime(resort_df['Departure Date Short']).max().date()),
-            key="check_out_filter"
-        )
+    # Container for date filters to match table width
+    date_filter_container = st.container()
+    with date_filter_container:
+        col1, col2 = st.columns(2)
+        with col1:
+            check_in_filter = st.date_input(
+                "Filter by Check In Date",
+                value=(datetime(2024, 11, 16), datetime(2024, 11, 22)),
+                key="check_in_filter"
+            )
+        with col2:
+            check_out_filter = st.date_input(
+                "Filter by Check Out Date",
+                value=(datetime(2024, 11, 23), datetime(2024, 11, 27)),
+                key="check_out_filter"
+            )
+
+    # Add some spacing
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # Create display DataFrame
     display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
@@ -204,19 +232,6 @@ with tab2:
 
     # Add selection column
     display_df['Select'] = False
-
-    # Style the table
-    st.markdown("""
-        <style>
-        .stDataFrame {
-            width: 100%;
-        }
-        .dataframe-container {
-            margin-top: 1rem;
-            margin-bottom: 1rem;
-        }
-        </style>
-    """, unsafe_allow_html=True)
 
     # Display table
     edited_df = st.data_editor(
