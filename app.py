@@ -25,7 +25,7 @@ def get_google_sheet_data():
     gc = gspread.authorize(credentials)
     
     # Open the spreadsheet by its URL or key
-    sheet = gc.open_by_key(st.secrets["sheet_key"]).sheet1
+    sheet = gc.open_by_key(st.secrets["sheets"]["sheet_key"]).sheet1
     
     # Get all values
     data = sheet.get_all_records()
