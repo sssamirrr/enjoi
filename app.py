@@ -239,6 +239,76 @@ with tab2:
     resort_df['Check Out'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
     mask = (
         (resort_df['Check In'].dt.date >= check_in_start) &
+        (resort_df['Check In'].dt.date <= check_in_en# Marketing Tab
+with tab2:
+    st.title("📊 Marketing Information by Resort")
+    
+    # Resort selection
+    selected_resort = st.selectbox(
+        "Select Resort",
+        options=sorted(df['Market'].unique()),
+        key="selected_resort"
+    )
+    
+    # Filter for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
+    
+    st.subheader(f"Guest Information for {selected_resort}")
+
+    # Date filters container
+    date_filter_container = st.container()
+    with date_filter_container:
+        col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+        
+        with col1:
+            check_in_start = st.date_input(
+                "Check In Date (Start)",
+                value=st.session_state.get('check_in_start', datetime(2024, 11, 16).date()),
+                key="check_in_start_marketing"
+            )
+            check_in_end = st.date_input(
+                "Check In Date (End)",
+                value=st.session_state.get('check_in_end', datetime(2024, 11, 22).date()),
+                key="check_in_end_marketing"
+            )
+        
+        with col2:
+            check_out_start = st.date_input(
+                "Check Out Date (Start)",
+                value=st.session_state.get('check_out_start', datetime(2024, 11, 23).date()),
+                key="check_out_start_marketing"
+            )
+            check_out_end = st.date_input(
+                "Check Out Date (End)",
+                value=st.session_state.get('check_out_end', datetime(2024, 11, 27).date()),
+                key="check_out_end_marketing"
+            )
+        
+        with col3:
+            st.write("")  # Spacing
+            st.write("")  # Spacing
+            if st.button('Reset Dates', key="reset_dates_marketing"):
+                # Reset date session states
+                st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
+                st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
+                st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
+                st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
+                st.experimental_rerun()
+
+    # Date Validation
+    if check_in_start > check_in_end:
+        st.warning("Check In Start Date cannot be after Check In End Date. Resetting to default values.")
+        check_in_start, check_in_end = datetime(2024, 11, 16).date(), datetime(2024, 11, 22).date()
+    
+    if check_out_start > check_out_end:
+        st.warning("Check Out Start Date cannot be after Check Out End Date. Resetting to default values.")
+        check_out_start, check_out_end = datetime(2024, 11, 23).date(), datetime(2024, 11, 27).date()
+    
+    # Apply date filters
+    resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+    resort_df['Check Out'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+    mask = (
+        (resort_df['Check In'].dt.date >= check_in_start) &
         (resort_df['Check In'].dt.date <= check_in_end) &
         (resort_df['Check Out'].dt.date >= check_out_start) &
         (resort_df['Check Out'].dt.date <= check_out_end)
@@ -261,11 +331,7 @@ with tab2:
         
         # Drop invalid rows if necessary
         display_df = display_df.dropna(subset=['Check In', 'Check Out'])
-        
-        # Debugging information
-        st.write(display_df.dtypes)  # Show column types for debugging
-        st.dataframe(display_df)  # Show cleaned DataFrame
-        
+
         # Interactive data editor
         edited_df = st.data_editor(
             display_df,
