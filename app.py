@@ -171,16 +171,11 @@ with tab2:
     st.title("📊 Marketing Information by Resort")
     
     try:
-        # Extract and validate dataset date range
+        # Extract dataset date range
         dataset_min_date = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
         dataset_max_date = pd.to_datetime(df['Departure Date Short'], errors='coerce').max().date()
 
-        # Handle case where dataset contains no valid dates
-        if pd.isnull(dataset_min_date) or pd.isnull(dataset_max_date):
-            st.error("Invalid date range in dataset. Please check the data.")
-            st.stop()
-
-        # Initialize session state for date filters
+        # Initialize session state for dates
         if 'check_in_start' not in st.session_state:
             st.session_state['check_in_start'] = dataset_min_date
         if 'check_in_end' not in st.session_state:
@@ -193,7 +188,7 @@ with tab2:
         # Resort selection
         resorts = sorted(df['Market'].unique())
         if not resorts:
-            st.warning("No resorts found in the dataset. Please check the data.")
+            st.warning("No resorts found in the dataset.")
             st.stop()
 
         selected_resort = st.selectbox("Select Resort", options=resorts)
@@ -278,8 +273,49 @@ with tab2:
         if filtered_df.empty:
             st.warning("No guests found for the selected date range.")
         else:
-            # Display filtered data
-            st.dataframe(filtered_df)
+            # Add "Select" column with default False
+            if 'Select' not in filtered_df.columns:
+                filtered_df.insert(0, 'Select', False)
+
+            # Display the table with checkboxes
+            edited_df = st.data_editor(
+                filtered_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select guest",
+                        default=False,
+                        width="small",
+                    ),
+                    "Guest Name": st.column_config.TextColumn(
+                        "Guest Name",
+                        help="Guest's full name",
+                        width="medium",
+                    ),
+                    "Check In": st.column_config.DateColumn(
+                        "Check In",
+                        help="Check-in date",
+                        width="medium",
+                    ),
+                    "Check Out": st.column_config.DateColumn(
+                        "Check Out",
+                        help="Check-out date",
+                        width="medium",
+                    ),
+                    "Phone Number": st.column_config.TextColumn(
+                        "Phone Number",
+                        help="Guest's phone number",
+                        width="medium",
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="guest_editor"
+            )
+
+            # Count selected guests
+            selected_count = edited_df['Select'].sum()
+            st.write(f"Selected Guests: {selected_count}")
 
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
