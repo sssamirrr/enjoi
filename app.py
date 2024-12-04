@@ -241,12 +241,13 @@ with tab2:
             st.write("")  # Spacing
             st.write("")  # Spacing
             if st.button('Reset Dates'):
-                # Reset date session states dynamically
+                # Reset date session states dynamically based on dataset
                 st.session_state.check_in_start = dataset_min_date
                 st.session_state.check_in_end = dataset_max_date
                 st.session_state.check_out_start = dataset_min_date
                 st.session_state.check_out_end = dataset_max_date
-                st.experimental_rerun()
+                # Stop execution after resetting
+                st.stop()
 
     # Validation for invalid date ranges
     invalid_date_range = False
@@ -265,7 +266,6 @@ with tab2:
 
     if invalid_date_range:
         st.stop()
-
     try:
         # Prepare display dataframe
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
