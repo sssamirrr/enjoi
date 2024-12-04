@@ -180,23 +180,19 @@ if 'check_out_end' not in st.session_state:
 if 'refresh' not in st.session_state:
     st.session_state['refresh'] = False
 
+# Initialize session state for dates
+if 'check_in_start' not in st.session_state or st.session_state['check_in_start'] is None:
+    st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
+if 'check_in_end' not in st.session_state or st.session_state['check_in_end'] is None:
+    st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
+if 'check_out_start' not in st.session_state or st.session_state['check_out_start'] is None:
+    st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
+if 'check_out_end' not in st.session_state or st.session_state['check_out_end'] is None:
+    st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
+
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
-
-    # Initialize session state for dates
-    if 'check_in_start' not in st.session_state:
-        st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
-    if 'check_in_end' not in st.session_state:
-        st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
-    if 'check_out_start' not in st.session_state:
-        st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
-    if 'check_out_end' not in st.session_state:
-        st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
-    
-    # Initialize session state for Select All
-    if 'select_all_state' not in st.session_state:
-        st.session_state['select_all_state'] = False
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -242,40 +238,19 @@ with tab2:
             st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
             st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
             st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
-            st.experimental_rerun()
+            st.rerun()
 
-        # Date validation with auto-correction (INSERT THIS SECTION)
+    # Handle invalid date ranges
     try:
-        # Check-in date validation
         if check_in_start > check_in_end:
-            st.warning("⚠️ Automatically adjusting Check-In End Date.")
-            st.session_state['check_in_end'] = check_in_start
-            st.experimental_rerun()
+            st.error("⚠️ Check-In Start Date cannot be after Check-In End Date.")
+            st.stop()
 
-        # Check-out date validation
         if check_out_start > check_out_end:
-            st.warning("⚠️ Automatically adjusting Check-Out End Date.")
-            st.session_state['check_out_end'] = check_out_start
-            st.experimental_rerun()
-
-        # Check-in vs Check-out validation
-        if check_out_start < check_in_start:
-            st.warning("⚠️ Automatically adjusting Check-Out Start Date.")
-            st.session_state['check_out_start'] = check_in_start
-            st.experimental_rerun()
-
-        if check_out_end < check_in_end:
-            st.warning("⚠️ Automatically adjusting Check-Out End Date.")
-            st.session_state['check_out_end'] = check_in_end
-            st.experimental_rerun()
-
+            st.error("⚠️ Check-Out Start Date cannot be after Check-Out End Date.")
+            st.stop()
     except Exception as e:
-        st.error(f"An error occurred while validating dates: {e}")
-        st.stop()
-
-
-    if check_out_start > check_out_end:
-        st.error("⚠️ Check-Out Start Date cannot be after Check-Out End Date.")
+        st.error(f"An error occurred: {e}")
         st.stop()
 
     # Apply filters to the dataset
@@ -300,7 +275,7 @@ with tab2:
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
         # Add Select column
-        display_df.insert(0, 'Select', st.session_state['select_all_state'])
+        display_df.insert(0, 'Select', False)
 
         # Interactive data editor
         edited_df = st.data_editor(
@@ -309,7 +284,7 @@ with tab2:
                 "Select": st.column_config.CheckboxColumn(
                     "Select",
                     help="Select or deselect this guest",
-                    default=st.session_state['select_all_state']
+                    default=False
                 ),
                 "Guest Name": st.column_config.TextColumn(
                     "Guest Name",
@@ -356,7 +331,7 @@ with tab2:
     st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
     # Export selected guests with message
-    if not edited_df.empty:
+    if not filtered_df.empty:
         selected_guests = edited_df[edited_df['Select']]
         if not selected_guests.empty:
             # Add message to selected guests
@@ -372,7 +347,6 @@ with tab2:
             )
         else:
             st.warning("No guests selected for export.")
-
 
 
 # Tour Prediction Tab
