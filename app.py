@@ -202,32 +202,6 @@ if 'check_out_end' not in st.session_state or st.session_state['check_out_end'] 
 if 'select_all_state' not in st.session_state:
     st.session_state['select_all_state'] = False
 
-# Marketing Tab
-with tab2:
-    st.title("📊 Marketing Information by Resort")
-
-    # Resort selection
-    selected_resort = st.selectbox(
-        "Select Resort",
-        options=sorted(df['Market'].unique())
-    )
-
-    # Filter for selected resort
-    resort_df = df[df['Market'] == selected_resort].copy()
-    st.subheader(f"Guest Information for {selected_resort}")
-
-    # Date filters
-    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-
-    with col1:
-        check_in_start = st.date_input(
-            "Check In Date (Start)",
-            value=st.session_state['check_in_start'],
-            key="check_in_start_input"
-        )
-        check_in_end = st.date_input(
-            "Check In Date (End)",
-            value=st.session_state['chefrom datetime import datetime, timedelta
 
 # Initialize session state for dates and select all state
 if 'check_in_start' not in st.session_state or st.session_state['check_in_start'] is None:
