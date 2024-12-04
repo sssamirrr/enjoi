@@ -180,72 +180,75 @@ if 'check_out_end' not in st.session_state:
 if 'refresh' not in st.session_state:
     st.session_state['refresh'] = False
 
+# Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
-    # Dynamically determine dataset date ranges
-    dataset_min_date = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
-    dataset_max_date = pd.to_datetime(df['Departure Date Short'], errors='coerce').max().date()
+    # Initialize session state for dates
+    if 'check_in_start' not in st.session_state:
+        st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
+    if 'check_in_end' not in st.session_state:
+        st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
+    if 'check_out_start' not in st.session_state:
+        st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
+    if 'check_out_end' not in st.session_state:
+        st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
+    
+    # Initialize session state for Select All
+    if 'select_all_state' not in st.session_state:
+        st.session_state['select_all_state'] = False
 
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
-        options=sorted(df['Market'].unique()),
-        key="selected_resort"
+        options=sorted(df['Market'].unique())
     )
 
-    # Filter dataset for the selected resort
+    # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
-
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Date filters with Reset button
+    # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
 
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state.get('check_in_start', dataset_min_date),
-            min_value=dataset_min_date,
-            max_value=dataset_max_date,
-            key="check_in_start"
+            value=st.session_state['check_in_start'],
+            key="check_in_start_input"
         )
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state.get('check_in_end', dataset_max_date),
-            min_value=dataset_min_date,
-            max_value=dataset_max_date,
-            key="check_in_end"
+            value=st.session_state['check_in_end'],
+            key="check_in_end_input"
         )
+
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state.get('check_out_start', dataset_min_date),
-            min_value=dataset_min_date,
-            max_value=dataset_max_date,
-            key="check_out_start"
+            value=st.session_state['check_out_start'],
+            key="check_out_start_input"
         )
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state.get('check_out_end', dataset_max_date),
-            min_value=dataset_min_date,
-            max_value=dataset_max_date,
-            key="check_out_end"
+            value=st.session_state['check_out_end'],
+            key="check_out_end_input"
         )
+
     with col3:
         if st.button("Reset Dates"):
-            # Reset dates in session state
-            st.session_state['check_in_start'] = dataset_min_date
-            st.session_state['check_in_end'] = dataset_max_date
-            st.session_state['check_out_start'] = dataset_min_date
-            st.session_state['check_out_end'] = dataset_max_date
-            st.session_state['refresh'] = True
+            # Reset date session states
+            st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
+            st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
+            st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
+            st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
             st.experimental_rerun()
 
     # Handle invalid date ranges
     if check_in_start > check_in_end:
         st.error("⚠️ Check-In Start Date cannot be after Check-In End Date.")
         st.stop()
+
     if check_out_start > check_out_end:
         st.error("⚠️ Check-Out Start Date cannot be after Check-Out End Date.")
         st.stop()
@@ -254,94 +257,97 @@ with tab2:
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
     resort_df['Check Out'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-    if 'refresh' in st.session_state and st.session_state['refresh']:
-        st.session_state['refresh'] = False
-        filtered_df = resort_df[
-            (resort_df['Check In'].dt.date >= dataset_min_date) &
-            (resort_df['Check In'].dt.date <= dataset_max_date) &
-            (resort_df['Check Out'].dt.date >= dataset_min_date) &
-            (resort_df['Check Out'].dt.date <= dataset_max_date)
-        ]
-    else:
-        filtered_df = resort_df[
-            (resort_df['Check In'].dt.date >= check_in_start) &
-            (resort_df['Check In'].dt.date <= check_in_end) &
-            (resort_df['Check Out'].dt.date >= check_out_start) &
-            (resort_df['Check Out'].dt.date <= check_out_end)
-        ]
+    mask = (
+        (resort_df['Check In'].dt.date >= check_in_start) &
+        (resort_df['Check In'].dt.date <= check_in_end) &
+        (resort_df['Check Out'].dt.date >= check_out_start) &
+        (resort_df['Check Out'].dt.date <= check_out_end)
+    )
+    filtered_df = resort_df[mask]
 
+    # Handle empty DataFrame
     if filtered_df.empty:
         st.warning("No guests found for the selected filters.")
+        filtered_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
     else:
-        # Add the Select/Deselect All functionality
-        col1, col2 = st.columns([0.2, 0.8])
-        with col1:
-            select_all = st.checkbox(
-                "Select/Deselect All",
-                value=False,
-                key="select_all"
-            )
-
-        # Prepare the display dataframe
+        # Prepare display DataFrame
         display_df = filtered_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
-        display_df.rename(
-            columns={
-                'Name': 'Guest Name',
-                'Arrival Date Short': 'Check In',
-                'Departure Date Short': 'Check Out',
-                'Phone Number': 'Phone Number'
-            },
-            inplace=True
-        )
+        display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
-        # Add a Select column
-        display_df.insert(0, 'Select', select_all)
+        # Add Select column
+        display_df.insert(0, 'Select', st.session_state['select_all_state'])
 
-        # Add a text message option column
-        display_df['Send Text Message'] = False  # Default to False
-
-        # Interactive data editor with the Select/Deselect and Text Message columns
+        # Interactive data editor
         edited_df = st.data_editor(
             display_df,
             column_config={
                 "Select": st.column_config.CheckboxColumn(
                     "Select",
                     help="Select or deselect this guest",
-                    default=select_all,
+                    default=st.session_state['select_all_state']
                 ),
                 "Guest Name": st.column_config.TextColumn(
                     "Guest Name",
-                    help="Guest's full name",
+                    help="Guest's full name"
                 ),
                 "Check In": st.column_config.DateColumn(
                     "Check In",
-                    help="Check-in date",
+                    help="Check-in date"
                 ),
                 "Check Out": st.column_config.DateColumn(
                     "Check Out",
-                    help="Check-out date",
+                    help="Check-out date"
                 ),
                 "Phone Number": st.column_config.TextColumn(
                     "Phone Number",
-                    help="Guest's phone number",
-                ),
-                "Send Text Message": st.column_config.CheckboxColumn(
-                    "Send Text Message",
-                    help="Send a text message to this guest",
+                    help="Guest's phone number"
                 ),
             },
             hide_index=True,
             use_container_width=True,
-            key="data_editor"
+            key="guest_editor"
         )
 
-        # Display count of selected guests
+        # Display counter for selected guests
         selected_count = edited_df['Select'].sum()
         st.write(f"Selected Guests: {selected_count}")
 
-        # Display count of guests opted-in for text messages
-        text_message_count = edited_df['Send Text Message'].sum()
-        st.write(f"Guests Opted-In for Text Messages: {text_message_count}")
+    # Text Templates Section
+    st.markdown("---")
+    st.subheader("Message Templates")
+
+    message_templates = {
+        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
+        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
+        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
+    }
+
+    selected_template = st.selectbox(
+        "Choose a Message Template",
+        options=list(message_templates.keys())
+    )
+
+    message_preview = message_templates[selected_template]
+    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
+
+    # Export selected guests with message
+    if not edited_df.empty:
+        selected_guests = edited_df[edited_df['Select']]
+        if not selected_guests.empty:
+            # Add message to selected guests
+            selected_guests['Message'] = message_preview
+
+            # Export to CSV
+            csv_data = selected_guests.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Selected Guests with Messages",
+                data=csv_data,
+                file_name=f"{selected_resort}_guests_messages.csv",
+                mime="text/csv"
+            )
+        else:
+            st.warning("No guests selected for export.")
+
 
 
 # Tour Prediction Tab
