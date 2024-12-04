@@ -237,18 +237,19 @@ with tab2:
                 max_value=dataset_max_date
             )
         
-      with col3:
+ with col3:
     st.write("")  # Spacing
     st.write("")  # Spacing
     if st.button('Reset Dates'):
-        # Reset date session states dynamically
+        # Reset date session states dynamically based on dataset
         st.session_state['check_in_start'] = dataset_min_date
         st.session_state['check_in_end'] = dataset_max_date
         st.session_state['check_out_start'] = dataset_min_date
         st.session_state['check_out_end'] = dataset_max_date
         
-        # Trigger a rerun to ensure the UI updates immediately
+        # Trigger a rerun to update the UI with the new dates
         st.experimental_rerun()
+
 
     # Validation for invalid date ranges
     invalid_date_range = False
