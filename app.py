@@ -258,17 +258,30 @@ with tab2:
             key="check_out_end_input"
         )
 
-    with col3:
-        if st.button("Reset Dates"):
-            # Reset date session states dynamically
-            st.session_state.update({
-                'check_in_start': pd.to_datetime(df['Arrival Date Short']).min().date(),
-                'check_in_end': pd.to_datetime(df['Arrival Date Short']).max().date(),
-                'check_out_start': pd.to_datetime(df['Departure Date Short']).min().date(),
-                'check_out_end': pd.to_datetime(df['Departure Date Short']).max().date(),
-                'select_all_state': False
-            })
-            st.rerun()
+with col3:
+    if st.button("Reset Dates"):
+        # Clear all date-related session states and widget keys
+        keys_to_clear = [
+            'check_in_start', 'check_in_end', 
+            'check_out_start', 'check_out_end',
+            'check_in_start_input', 'check_in_end_input',
+            'check_out_start_input', 'check_out_end_input'
+        ]
+        
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+        
+        # Set new values
+        st.session_state['check_in_start'] = pd.to_datetime(df['Arrival Date Short']).min().date()
+        st.session_state['check_in_end'] = pd.to_datetime(df['Arrival Date Short']).max().date()
+        st.session_state['check_out_start'] = pd.to_datetime(df['Departure Date Short']).min().date()
+        st.session_state['check_out_end'] = pd.to_datetime(df['Departure Date Short']).max().date()
+        st.session_state['select_all_state'] = False
+        
+        # Force refresh
+        st.rerun()
+
 
     # Handle invalid date ranges
     try:
