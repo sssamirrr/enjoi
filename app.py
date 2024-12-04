@@ -227,9 +227,16 @@ with tab2:
             st.session_state['check_in_end'] = dataset_max_date
             st.session_state['check_out_start'] = dataset_min_date
             st.session_state['check_out_end'] = dataset_max_date
-            # Refresh the filtered dataset after reset
             st.session_state['refresh'] = True
             st.experimental_rerun()
+
+    # Handle invalid date ranges
+    if check_in_start > check_in_end:
+        st.error("⚠️ Check-In Start Date cannot be after Check-In End Date.")
+        st.stop()
+    if check_out_start > check_out_end:
+        st.error("⚠️ Check-Out Start Date cannot be after Check-Out End Date.")
+        st.stop()
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
@@ -312,6 +319,7 @@ with tab2:
         # Display count of selected guests
         selected_count = edited_df['Select'].sum()
         st.write(f"Selected Guests: {selected_count}")
+
 
 
 # Tour Prediction Tab
