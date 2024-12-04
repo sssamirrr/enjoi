@@ -236,15 +236,17 @@ with tab2:
                 key="check_out_end_input"
             )
 
-    with col3:
-    st.write("")  # Spacing
-    st.write("")  # Spacing
-    if st.button('Reset Dates', key='reset_dates_btn'):
-        # Reset the session state dynamically based on dataset min/max dates
-        st.session_state['check_in_start'] = dataset_min_date
-        st.session_state['check_in_end'] = dataset_max_date
-        st.session_state['check_out_start'] = dataset_min_date
-        st.session_state['check_out_end'] = dataset_max_date
+        with col3:
+        st.write("")  # Spacing
+        st.write("")  # Spacing
+        if st.button('Reset Dates', key='reset_dates_btn'):
+            # Reset the session state dynamically based on dataset min/max dates
+            st.session_state['check_in_start'] = dataset_min_date
+            st.session_state['check_in_end'] = dataset_max_date
+            st.session_state['check_out_start'] = dataset_min_date
+            st.session_state['check_out_end'] = dataset_max_date
+            st.rerun()  # Modern way to rerun the app
+
 
         # Force a reload of the UI
         raise st.script_runner.RerunException(st.script_request_queue.RerunData(None))
