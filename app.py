@@ -386,10 +386,27 @@ with tab2:
             disabled=True
         )
     
-    # Export functionality
-    if not edited_df.empty:
-        # Filter only selected guests
-        selected_guests = edited_df[
+  # Export functionality
+if not edited_df.empty:
+    # Filter only selected guests
+    selected_guests = edited_df[edited_df['Select']]
+    
+    if not selected_guests.empty:
+        # Convert selected data to CSV
+        csv = selected_guests.to_csv(index=False).encode('utf-8')
+        
+        # Provide download button for the CSV
+        st.download_button(
+            "Download Selected Guest List",
+            csv,
+            f"{selected_resort}_guest_list.csv",
+            "text/csv",
+            key='download-csv'
+        )
+    else:
+        st.warning("No guests selected for download.")
+else:
+    st.info("No data available to export. Please adjust your filters.")
 
 
 # Tour Prediction Tab
