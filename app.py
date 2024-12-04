@@ -401,8 +401,8 @@ with tab2:
             )
         else:
             st.warning("No guests selected for download.")
-    else:
-        st.info("No data available to export. Please adjust your filters.")
+        else:
+            st.info("No data available to export. Please adjust your filters.")
               default=False,
                         width="small",
                     ),
