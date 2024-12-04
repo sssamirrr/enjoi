@@ -252,8 +252,19 @@ with tab2:
         display_df = filtered_resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']]
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
         
-        # Add a Select column for guest selection
-        display_df.insert(0, 'Select', False)
+        # Ensure columns have the correct data types
+        display_df['Select'] = False  # Initialize a Select column with default False
+        display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')  # Ensure Check In is datetime
+        display_df['Check Out'] = pd.to_datetime(display_df['Check Out'], errors='coerce')  # Ensure Check Out is datetime
+        display_df['Guest Name'] = display_df['Guest Name'].astype(str)  # Ensure Guest Name is string
+        display_df['Phone Number'] = display_df['Phone Number'].astype(str)  # Ensure Phone Number is string
+        
+        # Drop invalid rows if necessary
+        display_df = display_df.dropna(subset=['Check In', 'Check Out'])
+        
+        # Debugging information
+        st.write(display_df.dtypes)  # Show column types for debugging
+        st.dataframe(display_df)  # Show cleaned DataFrame
         
         # Interactive data editor
         edited_df = st.data_editor(
@@ -299,14 +310,12 @@ with tab2:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Select All", key="select_all_marketing"):
-                st.session_state.select_all_state = True
-                edited_df['Select'] = True
+                display_df['Select'] = True
                 st.experimental_rerun()
         
         with col2:
             if st.button("Deselect All", key="deselect_all_marketing"):
-                st.session_state.select_all_state = False
-                edited_df['Select'] = False
+                display_df['Select'] = False
                 st.experimental_rerun()
     
     # Message Section
@@ -352,6 +361,7 @@ with tab2:
             )
         else:
             st.warning("No guests selected for download.")
+
 
 
 # Tour Prediction Tab
