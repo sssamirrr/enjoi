@@ -297,7 +297,10 @@ with tab2:
         # Add a Select column
         display_df.insert(0, 'Select', select_all)
 
-        # Interactive data editor with the Select/Deselect functionality
+        # Add a text message option column
+        display_df['Send Text Message'] = False  # Default to False
+
+        # Interactive data editor with the Select/Deselect and Text Message columns
         edited_df = st.data_editor(
             display_df,
             column_config={
@@ -322,6 +325,10 @@ with tab2:
                     "Phone Number",
                     help="Guest's phone number",
                 ),
+                "Send Text Message": st.column_config.CheckboxColumn(
+                    "Send Text Message",
+                    help="Send a text message to this guest",
+                ),
             },
             hide_index=True,
             use_container_width=True,
@@ -331,6 +338,10 @@ with tab2:
         # Display count of selected guests
         selected_count = edited_df['Select'].sum()
         st.write(f"Selected Guests: {selected_count}")
+
+        # Display count of guests opted-in for text messages
+        text_message_count = edited_df['Send Text Message'].sum()
+        st.write(f"Guests Opted-In for Text Messages: {text_message_count}")
 
 
 # Tour Prediction Tab
