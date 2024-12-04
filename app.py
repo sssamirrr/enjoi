@@ -197,44 +197,44 @@ with tab2:
     st.subheader(f"Guest Information for {selected_resort}")
 
     # Date filters container
-    date_filter_container = st.container()
-    with date_filter_container:
-        col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-        
-        with col1:
-            check_in_start = st.date_input(
-                "Check In Date (Start)",
-                value=st.session_state.check_in_start,
-                key="check_in_start_input"
-            )
-            check_in_end = st.date_input(
-                "Check In Date (End)",
-                value=st.session_state.check_in_end,
-                key="check_in_end_input"
-            )
-        
-        with col2:
-            check_out_start = st.date_input(
-                "Check Out Date (Start)",
-                value=st.session_state.check_out_start,
-                key="check_out_start_input"
-            )
-            check_out_end = st.date_input(
-                "Check Out Date (End)",
-                value=st.session_state.check_out_end,
-                key="check_out_end_input"
-            )
-        
-        with col3:
-            st.write("")  # Spacing
-            st.write("")  # Spacing
-            if st.button('Reset Dates'):
-                # Reset date session states
-                st.session_state.check_in_start = datetime(2024, 11, 16).date()
-                st.session_state.check_in_end = datetime(2024, 11, 22).date()
-                st.session_state.check_out_start = datetime(2024, 11, 23).date()
-                st.session_state.check_out_end = datetime(2024, 11, 27).date()
-                st.rerun()
+date_filter_container = st.container()
+with date_filter_container:
+    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+    
+    with col1:
+        check_in_start = st.date_input(
+            "Check In Date (Start)",
+            value=st.session_state.get('check_in_start', datetime(2024, 11, 16).date()),
+            key="check_in_start_input"
+        )
+        check_in_end = st.date_input(
+            "Check In Date (End)",
+            value=st.session_state.get('check_in_end', datetime(2024, 11, 22).date()),
+            key="check_in_end_input"
+        )
+    
+    with col2:
+        check_out_start = st.date_input(
+            "Check Out Date (Start)",
+            value=st.session_state.get('check_out_start', datetime(2024, 11, 23).date()),
+            key="check_out_start_input"
+        )
+        check_out_end = st.date_input(
+            "Check Out Date (End)",
+            value=st.session_state.get('check_out_end', datetime(2024, 11, 27).date()),
+            key="check_out_end_input"
+        )
+    
+    with col3:
+        st.write("")  # Spacing
+        st.write("")  # Spacing
+        if st.button('Reset Dates'):
+            # Reset date session states
+            st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
+            st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
+            st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
+            st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
+            st.experimental_rerun()
 
     try:
         # Prepare display dataframe
