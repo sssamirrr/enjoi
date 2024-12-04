@@ -340,12 +340,12 @@ with tab2:
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("Select All", key="select_all"):
-                    st.session_state.select_all_state = True
+                    st.session_state['select_all_state'] = True
                     st.experimental_rerun()
             
             with col2:
                 if st.button("Deselect All", key="deselect_all"):
-                    st.session_state.select_all_state = False
+                    st.session_state['select_all_state'] = False
                     st.experimental_rerun()
 
         else:
@@ -401,108 +401,8 @@ with tab2:
             )
         else:
             st.warning("No guests selected for download.")
-        else:
-            st.info("No data available to export. Please adjust your filters.")
-              default=False,
-                        width="small",
-                    ),
-                    "Guest Name": st.column_config.TextColumn(
-                        "Guest Name",
-                        help="Guest's full name",
-                        width="medium",
-                    ),
-                    "Check In": st.column_config.DateColumn(
-                        "Check In",
-                        help="Check-in date",
-                        width="medium",
-                    ),
-                    "Check Out": st.column_config.DateColumn(
-                        "Check Out",
-                        help="Check-out date",
-                        width="medium",
-                    ),
-                    "Phone Number": st.column_config.TextColumn(
-                        "Phone Number",
-                        help="Guest's phone number",
-                        width="medium",
-                    ),
-                },
-                hide_index=True,
-                use_container_width=True,
-                key="guest_editor"
-            )
-
-            # Display counter for selected guests
-            selected_count = edited_df['Select'].sum()
-            st.write(f"Selected Guests: {selected_count}")
-
-            # Select/Deselect All button
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Select All", key="select_all"):
-                    st.session_state.select_all_state = True
-                    st.experimental_rerun()
-            
-            with col2:
-                if st.button("Deselect All", key="deselect_all"):
-                    st.session_state.select_all_state = False
-                    st.experimental_rerun()
-
-        else:
-            st.info("Please adjust the date filters to see guest data.")
-            edited_df = display_df
-
-    except Exception as e:
-        st.error("An error occurred while processing the data.")
-        st.exception(e)
-        edited_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
-
-    # Message section
-    st.markdown("---")
-    st.subheader("Message Templates")
-    
-    message_options = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": "We noticed you checked in last night. Please visit our concierge desk for your welcome gift! 🎁",
-        "Checkout Message": "We hope you enjoyed your stay! Please visit our concierge desk before departure for a special gift! 🎁"
-    }
-    
-    col1, col2 = st.columns([0.4, 0.6])
-    with col1:
-        selected_message = st.selectbox(
-            "Choose Message Template",
-            options=list(message_options.keys())
-        )
-    
-    with col2:
-        st.text_area(
-            "Message Preview", 
-            value=message_options[selected_message],
-            height=100,
-            disabled=True
-        )
-    
-  # Export functionality
-if not edited_df.empty:
-    # Filter only selected guests
-    selected_guests = edited_df[edited_df['Select']]
-    
-    if not selected_guests.empty:
-        # Convert selected data to CSV
-        csv = selected_guests.to_csv(index=False).encode('utf-8')
-        
-        # Provide download button for the CSV
-        st.download_button(
-            "Download Selected Guest List",
-            csv,
-            f"{selected_resort}_guest_list.csv",
-            "text/csv",
-            key='download-csv'
-        )
     else:
-        st.warning("No guests selected for download.")
-else:
-    st.info("No data available to export. Please adjust your filters.")
+        st.info("No data available to export. Please adjust your filters.")
 
 
 # Tour Prediction Tab
