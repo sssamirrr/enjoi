@@ -234,7 +234,7 @@ with tab2:
                 st.session_state.check_in_end = datetime(2024, 11, 22).date()
                 st.session_state.check_out_start = datetime(2024, 11, 23).date()
                 st.session_state.check_out_end = datetime(2024, 11, 27).date()
-                st.rerun()
+                st.experimental_rerun()
 
     try:
         # Prepare display dataframe
@@ -312,12 +312,12 @@ with tab2:
             with col1:
                 if st.button("Select All", key="select_all"):
                     st.session_state.select_all_state = True
-                    st.rerun()
+                    st.experimental_rerun()
             
             with col2:
                 if st.button("Deselect All", key="deselect_all"):
                     st.session_state.select_all_state = False
-                    st.rerun()
+                    st.experimental_rerun()
 
         else:
             st.info("Please adjust the date filters to see guest data.")
@@ -369,6 +369,7 @@ with tab2:
             )
         else:
             st.warning("No guests selected for download.")
+
 
 # Tour Prediction Tab
 with tab3:
