@@ -171,15 +171,19 @@ with tab1:
 with tab2:
     st.title("📊 Marketing Information by Resort")
     
-    # Initialize session state for dates
+    # Determine dynamic min and max dates from the dataset
+    dataset_min_date = pd.to_datetime(df['Arrival Date Short']).min().date()
+    dataset_max_date = pd.to_datetime(df['Departure Date Short']).max().date()
+
+    # Initialize session state for dates dynamically
     if 'check_in_start' not in st.session_state:
-        st.session_state.check_in_start = datetime(2024, 11, 16).date()
+        st.session_state.check_in_start = dataset_min_date
     if 'check_in_end' not in st.session_state:
-        st.session_state.check_in_end = datetime(2024, 11, 22).date()
+        st.session_state.check_in_end = dataset_max_date
     if 'check_out_start' not in st.session_state:
-        st.session_state.check_out_start = datetime(2024, 11, 23).date()
+        st.session_state.check_out_start = dataset_min_date
     if 'check_out_end' not in st.session_state:
-        st.session_state.check_out_end = datetime(2024, 11, 27).date()
+        st.session_state.check_out_end = dataset_max_date
     
     # Initialize session state for select all
     if 'select_all_state' not in st.session_state:
@@ -205,49 +209,62 @@ with tab2:
             check_in_start = st.date_input(
                 "Check In Date (Start)",
                 value=st.session_state.check_in_start,
-                key="check_in_start_input"
+                key="check_in_start_input",
+                min_value=dataset_min_date,
+                max_value=dataset_max_date
             )
             check_in_end = st.date_input(
                 "Check In Date (End)",
                 value=st.session_state.check_in_end,
-                key="check_in_end_input"
+                key="check_in_end_input",
+                min_value=dataset_min_date,
+                max_value=dataset_max_date
             )
         
         with col2:
             check_out_start = st.date_input(
                 "Check Out Date (Start)",
                 value=st.session_state.check_out_start,
-                key="check_out_start_input"
+                key="check_out_start_input",
+                min_value=dataset_min_date,
+                max_value=dataset_max_date
             )
             check_out_end = st.date_input(
                 "Check Out Date (End)",
                 value=st.session_state.check_out_end,
-                key="check_out_end_input"
+                key="check_out_end_input",
+                min_value=dataset_min_date,
+                max_value=dataset_max_date
             )
         
         with col3:
             st.write("")  # Spacing
             st.write("")  # Spacing
             if st.button('Reset Dates'):
-                # Reset date session states
-                st.session_state.check_in_start = datetime(2024, 11, 16).date()
-                st.session_state.check_in_end = datetime(2024, 11, 22).date()
-                st.session_state.check_out_start = datetime(2024, 11, 23).date()
-                st.session_state.check_out_end = datetime(2024, 11, 27).date()
+                # Reset date session states dynamically
+                st.session_state.check_in_start = dataset_min_date
+                st.session_state.check_in_end = dataset_max_date
+                st.session_state.check_out_start = dataset_min_date
+                st.session_state.check_out_end = dataset_max_date
                 st.experimental_rerun()
-    
-    # Validate date ranges
+
+    # Validation for invalid date ranges
+    invalid_date_range = False
+
     if check_in_start > check_in_end:
         st.warning("Check-In Start Date cannot be after Check-In End Date. Resetting to default values.")
-        st.session_state.check_in_start = datetime(2024, 11, 16).date()
-        st.session_state.check_in_end = datetime(2024, 11, 22).date()
-        st.experimental_rerun()
+        st.session_state.check_in_start = dataset_min_date
+        st.session_state.check_in_end = dataset_max_date
+        invalid_date_range = True
 
     if check_out_start > check_out_end:
         st.warning("Check-Out Start Date cannot be after Check-Out End Date. Resetting to default values.")
-        st.session_state.check_out_start = datetime(2024, 11, 23).date()
-        st.session_state.check_out_end = datetime(2024, 11, 27).date()
-        st.experimental_rerun()
+        st.session_state.check_out_start = dataset_min_date
+        st.session_state.check_out_end = dataset_max_date
+        invalid_date_range = True
+
+    if invalid_date_range:
+        st.stop()
 
     try:
         # Prepare display dataframe
@@ -275,8 +292,8 @@ with tab2:
         if len(display_df) == 0:
             st.warning("No guests found for the selected date range.")
             display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
-
-        # Add Select column only if it doesn't exist
+        
+        # Add Select column with current select all state
         if 'Select' not in display_df.columns:
             display_df.insert(0, 'Select', st.session_state.select_all_state)
 
