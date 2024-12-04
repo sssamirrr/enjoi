@@ -236,32 +236,22 @@ with tab2:
             )
         with col3:
             if st.button('Reset Dates', help="Reset all date filters to dataset defaults"):
-                st.session_state.update({
-                    'check_in_start': dataset_min_date,
-                    'check_in_end': dataset_max_date,
-                    'check_out_start': dataset_min_date,
-                    'check_out_end': dataset_max_date,
-                })
-                st.experimental_rerun()
-
-        # Validate and update session state with current values
-        st.session_state.update({
-            'check_in_start': check_in_start,
-            'check_in_end': check_in_end,
-            'check_out_start': check_out_start,
-            'check_out_end': check_out_end,
-        })
+                # Reset session state dates
+                st.session_state['check_in_start'] = dataset_min_date
+                st.session_state['check_in_end'] = dataset_max_date
+                st.session_state['check_out_start'] = dataset_min_date
+                st.session_state['check_out_end'] = dataset_max_date
 
         # Validate date ranges
         if check_in_start > check_in_end:
             st.warning("⚠️ Check-In Start Date cannot be after Check-In End Date. Resetting to defaults.")
-            st.session_state.update({'check_in_start': dataset_min_date, 'check_in_end': dataset_max_date})
-            st.experimental_rerun()
+            st.session_state['check_in_start'] = dataset_min_date
+            st.session_state['check_in_end'] = dataset_max_date
 
         if check_out_start > check_out_end:
             st.warning("⚠️ Check-Out Start Date cannot be after Check-Out End Date. Resetting to defaults.")
-            st.session_state.update({'check_out_start': dataset_min_date, 'check_out_end': dataset_max_date})
-            st.experimental_rerun()
+            st.session_state['check_out_start'] = dataset_min_date
+            st.session_state['check_out_end'] = dataset_max_date
 
         # Filter data based on the date range
         resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
@@ -277,11 +267,14 @@ with tab2:
         # Handle no data case
         if filtered_df.empty:
             st.warning("No guests found for the selected date range.")
-            filtered_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
+            filtered_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code'])
 
         # Add a Select column for interactivity
         if 'Select' not in filtered_df.columns:
             filtered_df.insert(0, 'Select', False)
+
+        # Include Rate Code in the table
+        filtered_df['Rate Code'] = resort_df['Rate Code Name']
 
         # Display guest table
         edited_df = st.data_editor(
@@ -299,11 +292,11 @@ with tab2:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Select All", help="Select all guests in the current view"):
-                edited_df['Select'] = True
+                filtered_df['Select'] = True
                 st.experimental_rerun()
         with col2:
             if st.button("Deselect All", help="Deselect all guests in the current view"):
-                edited_df['Select'] = False
+                filtered_df['Select'] = False
                 st.experimental_rerun()
 
         # Message templates
@@ -327,6 +320,7 @@ with tab2:
 
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
+
 
 
 
