@@ -168,6 +168,18 @@ with tab1:
         )
         st.plotly_chart(fig_arrivals, use_container_width=True)
 
+# Initialize session state for date filters
+if 'check_in_start' not in st.session_state:
+    st.session_state['check_in_start'] = None
+if 'check_in_end' not in st.session_state:
+    st.session_state['check_in_end'] = None
+if 'check_out_start' not in st.session_state:
+    st.session_state['check_out_start'] = None
+if 'check_out_end' not in st.session_state:
+    st.session_state['check_out_end'] = None
+if 'refresh' not in st.session_state:
+    st.session_state['refresh'] = False
+
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -319,7 +331,6 @@ with tab2:
         # Display count of selected guests
         selected_count = edited_df['Select'].sum()
         st.write(f"Selected Guests: {selected_count}")
-
 
 
 # Tour Prediction Tab
