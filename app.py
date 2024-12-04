@@ -169,7 +169,7 @@ with tab1:
 
 with tab2:
     st.title("📊 Marketing Information by Resort")
-
+    
     try:
         # Extract and validate dataset date range
         dataset_min_date = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
@@ -181,15 +181,14 @@ with tab2:
             st.stop()
 
         # Initialize session state for date filters
-        date_keys = [
-            ('check_in_start', dataset_min_date),
-            ('check_in_end', dataset_max_date),
-            ('check_out_start', dataset_min_date),
-            ('check_out_end', dataset_max_date),
-        ]
-        for key, default_value in date_keys:
-            if key not in st.session_state:
-                st.session_state[key] = default_value
+        if 'check_in_start' not in st.session_state:
+            st.session_state['check_in_start'] = dataset_min_date
+        if 'check_in_end' not in st.session_state:
+            st.session_state['check_in_end'] = dataset_max_date
+        if 'check_out_start' not in st.session_state:
+            st.session_state['check_out_start'] = dataset_min_date
+        if 'check_out_end' not in st.session_state:
+            st.session_state['check_out_end'] = dataset_max_date
 
         # Resort selection
         resorts = sorted(df['Market'].unique())
@@ -202,7 +201,7 @@ with tab2:
 
         st.subheader(f"Guest Information for {selected_resort}")
 
-        # Date filters with enhanced validation
+        # Date filters
         col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
         with col1:
             check_in_start = st.date_input(
@@ -284,6 +283,7 @@ with tab2:
 
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
+
 
 
 # Tour Prediction Tab
