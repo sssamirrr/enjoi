@@ -175,9 +175,10 @@ with tab2:
         dataset_min_date = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
         dataset_max_date = pd.to_datetime(df['Departure Date Short'], errors='coerce').max().date()
 
+        # Handle case where dataset contains no valid dates
         if pd.isnull(dataset_min_date) or pd.isnull(dataset_max_date):
-            st.error("Invalid date range in dataset.")
-            return
+            st.error("Invalid date range in dataset. Please check the data.")
+            st.stop()
 
         # Initialize session state for date filters
         date_keys = [
@@ -193,8 +194,8 @@ with tab2:
         # Resort selection
         resorts = sorted(df['Market'].unique())
         if not resorts:
-            st.warning("No resorts found in dataset.")
-            return
+            st.warning("No resorts found in the dataset. Please check the data.")
+            st.stop()
 
         selected_resort = st.selectbox("Select Resort", options=resorts)
         resort_df = df[df['Market'] == selected_resort].copy()
@@ -209,12 +210,14 @@ with tab2:
                 value=st.session_state['check_in_start'],
                 min_value=dataset_min_date,
                 max_value=dataset_max_date,
+                key="check_in_start_input"
             )
             check_in_end = st.date_input(
                 "Check In Date (End)",
                 value=st.session_state['check_in_end'],
                 min_value=dataset_min_date,
                 max_value=dataset_max_date,
+                key="check_in_end_input"
             )
         with col2:
             check_out_start = st.date_input(
@@ -222,15 +225,18 @@ with tab2:
                 value=st.session_state['check_out_start'],
                 min_value=dataset_min_date,
                 max_value=dataset_max_date,
+                key="check_out_start_input"
             )
             check_out_end = st.date_input(
                 "Check Out Date (End)",
                 value=st.session_state['check_out_end'],
                 min_value=dataset_min_date,
                 max_value=dataset_max_date,
+                key="check_out_end_input"
             )
         with col3:
-            if st.button("Reset Dates"):
+            if st.button("Reset Dates", key='reset_dates_btn'):
+                # Reset all date filters dynamically to dataset range
                 st.session_state.update({
                     "check_in_start": dataset_min_date,
                     "check_in_end": dataset_max_date,
@@ -239,15 +245,15 @@ with tab2:
                 })
                 st.experimental_rerun()
 
-        # Validate date ranges
+        # Validate date ranges and rerun if invalid
         invalid_range = False
         if check_in_start > check_in_end:
-            st.warning("Check-In Start Date cannot be after Check-In End Date.")
+            st.warning("Check-In Start Date cannot be after Check-In End Date. Resetting to default values.")
             st.session_state['check_in_start'] = dataset_min_date
             st.session_state['check_in_end'] = dataset_max_date
             invalid_range = True
         if check_out_start > check_out_end:
-            st.warning("Check-Out Start Date cannot be after Check-Out End Date.")
+            st.warning("Check-Out Start Date cannot be after Check-Out End Date. Resetting to default values.")
             st.session_state['check_out_start'] = dataset_min_date
             st.session_state['check_out_end'] = dataset_max_date
             invalid_range = True
@@ -255,7 +261,7 @@ with tab2:
         if invalid_range:
             st.experimental_rerun()
 
-        # Prepare and filter data
+        # Prepare display dataframe
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
         display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')
@@ -273,10 +279,11 @@ with tab2:
         if filtered_df.empty:
             st.warning("No guests found for the selected date range.")
         else:
+            # Display filtered data
             st.dataframe(filtered_df)
 
     except Exception as e:
-        st.error(f"An error occurred: {e}")
+        st.error(f"An unexpected error occurred: {e}")
 
 
 # Tour Prediction Tab
