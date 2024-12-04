@@ -227,6 +227,45 @@ with tab2:
         )
         check_in_end = st.date_input(
             "Check In Date (End)",
+            value=st.session_state['chefrom datetime import datetime, timedelta
+
+# Initialize session state for dates and select all state
+if 'check_in_start' not in st.session_state or st.session_state['check_in_start'] is None:
+    st.session_state['check_in_start'] = pd.to_datetime(df['Arrival Date Short']).min().date()
+if 'check_in_end' not in st.session_state or st.session_state['check_in_end'] is None:
+    st.session_state['check_in_end'] = pd.to_datetime(df['Arrival Date Short']).max().date()
+if 'check_out_start' not in st.session_state or st.session_state['check_out_start'] is None:
+    st.session_state['check_out_start'] = pd.to_datetime(df['Departure Date Short']).min().date()
+if 'check_out_end' not in st.session_state or st.session_state['check_out_end'] is None:
+    st.session_state['check_out_end'] = pd.to_datetime(df['Departure Date Short']).max().date()
+if 'select_all_state' not in st.session_state:
+    st.session_state['select_all_state'] = False
+
+# Marketing Tab
+with tab2:
+    st.title("📊 Marketing Information by Resort")
+
+    # Resort selection
+    selected_resort = st.selectbox(
+        "Select Resort",
+        options=sorted(df['Market'].unique())
+    )
+
+    # Filter for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
+    st.subheader(f"Guest Information for {selected_resort}")
+
+    # Date filters
+    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+
+    with col1:
+        check_in_start = st.date_input(
+            "Check In Date (Start)",
+            value=st.session_state['check_in_start'],
+            key="check_in_start_input"
+        )
+        check_in_end = st.date_input(
+            "Check In Date (End)",
             value=st.session_state['check_in_end'],
             key="check_in_end_input"
         )
@@ -245,11 +284,11 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            # Reset date session states
-            st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
-            st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
-            st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
-            st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
+            # Reset date session states dynamically
+            st.session_state['check_in_start'] = pd.to_datetime(df['Arrival Date Short']).min().date()
+            st.session_state['check_in_end'] = pd.to_datetime(df['Arrival Date Short']).max().date()
+            st.session_state['check_out_start'] = pd.to_datetime(df['Departure Date Short']).min().date()
+            st.session_state['check_out_end'] = pd.to_datetime(df['Departure Date Short']).max().date()
             st.session_state['select_all_state'] = False
             st.rerun()
 
@@ -325,16 +364,11 @@ with tab2:
         selected_count = edited_df['Select'].sum()
         st.write(f"Selected Guests: {selected_count}")
 
-        # Select/Deselect All Button
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Select All"):
-                st.session_state['select_all_state'] = True
-                st.rerun()
-        with col2:
-            if st.button("Deselect All"):
-                st.session_state['select_all_state'] = False
-                st.rerun()
+        # Select/Deselect All Toggle Button
+        toggle_button_label = "Deselect All" if st.session_state['select_all_state'] else "Select All"
+        if st.button(toggle_button_label):
+            st.session_state['select_all_state'] = not st.session_state['select_all_state']
+            st.rerun()
 
     # Text Templates Section
     st.markdown("---")
@@ -371,6 +405,7 @@ with tab2:
             )
         else:
             st.warning("No guests selected for export.")
+
 
 
 # Tour Prediction Tab
