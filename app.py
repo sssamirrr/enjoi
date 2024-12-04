@@ -190,6 +190,18 @@ if 'check_out_start' not in st.session_state or st.session_state['check_out_star
 if 'check_out_end' not in st.session_state or st.session_state['check_out_end'] is None:
     st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
 
+# Initialize session state for dates and select all state
+if 'check_in_start' not in st.session_state or st.session_state['check_in_start'] is None:
+    st.session_state['check_in_start'] = datetime(2024, 11, 16).date()
+if 'check_in_end' not in st.session_state or st.session_state['check_in_end'] is None:
+    st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
+if 'check_out_start' not in st.session_state or st.session_state['check_out_start'] is None:
+    st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
+if 'check_out_end' not in st.session_state or st.session_state['check_out_end'] is None:
+    st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
+if 'select_all_state' not in st.session_state:
+    st.session_state['select_all_state'] = False
+
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
@@ -238,6 +250,7 @@ with tab2:
             st.session_state['check_in_end'] = datetime(2024, 11, 22).date()
             st.session_state['check_out_start'] = datetime(2024, 11, 23).date()
             st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
+            st.session_state['select_all_state'] = False
             st.rerun()
 
     # Handle invalid date ranges
@@ -275,7 +288,7 @@ with tab2:
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
         # Add Select column
-        display_df.insert(0, 'Select', False)
+        display_df.insert(0, 'Select', st.session_state['select_all_state'])
 
         # Interactive data editor
         edited_df = st.data_editor(
@@ -284,7 +297,7 @@ with tab2:
                 "Select": st.column_config.CheckboxColumn(
                     "Select",
                     help="Select or deselect this guest",
-                    default=False
+                    default=st.session_state['select_all_state']
                 ),
                 "Guest Name": st.column_config.TextColumn(
                     "Guest Name",
@@ -311,6 +324,17 @@ with tab2:
         # Display counter for selected guests
         selected_count = edited_df['Select'].sum()
         st.write(f"Selected Guests: {selected_count}")
+
+        # Select/Deselect All Button
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Select All"):
+                st.session_state['select_all_state'] = True
+                st.rerun()
+        with col2:
+            if st.button("Deselect All"):
+                st.session_state['select_all_state'] = False
+                st.rerun()
 
     # Text Templates Section
     st.markdown("---")
