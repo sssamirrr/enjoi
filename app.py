@@ -172,7 +172,7 @@ with tab1:
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
-    # Initialize dataset min and max dates dynamically
+    # Dynamically determine dataset date ranges
     dataset_min_date = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
     dataset_max_date = pd.to_datetime(df['Departure Date Short'], errors='coerce').max().date()
 
@@ -246,6 +246,8 @@ with tab2:
                 st.session_state['check_in_end'] = dataset_max_date
                 st.session_state['check_out_start'] = dataset_min_date
                 st.session_state['check_out_end'] = dataset_max_date
+                # Rerun the app to update UI
+                st.experimental_rerun()
 
         # Handle invalid date ranges with immediate updates
         invalid_range = False
@@ -263,10 +265,7 @@ with tab2:
 
         if invalid_range:
             # Update UI with corrected values
-            check_in_start = st.session_state['check_in_start']
-            check_in_end = st.session_state['check_in_end']
-            check_out_start = st.session_state['check_out_start']
-            check_out_end = st.session_state['check_out_end']
+            st.experimental_rerun()
 
         # Display filtered data
         try:
@@ -346,9 +345,11 @@ with tab2:
                 with col1:
                     if st.button("Select All", key="select_all"):
                         st.session_state['select_all_state'] = True
+                        st.experimental_rerun()
                 with col2:
                     if st.button("Deselect All", key="deselect_all"):
                         st.session_state['select_all_state'] = False
+                        st.experimental_rerun()
             else:
                 st.info("Please adjust the date filters to see guest data.")
                 edited_df = display_df
