@@ -237,7 +237,7 @@ with tab2:
                 max_value=dataset_max_date
             )
         
- with col3:
+    with col3:
     st.write("")  # Spacing
     st.write("")  # Spacing
     if st.button('Reset Dates'):
@@ -249,6 +249,7 @@ with tab2:
         
         # Trigger a rerun to update the UI with the new dates
         st.experimental_rerun()
+
 
 
     # Validation for invalid date ranges
