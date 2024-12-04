@@ -196,48 +196,56 @@ with tab2:
 
         st.subheader(f"Guest Information for {selected_resort}")
 
-        # Date filters
-        col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-        with col1:
-            check_in_start = st.date_input(
-                "Check In Date (Start)",
-                value=st.session_state['check_in_start'],
-                min_value=dataset_min_date,
-                max_value=dataset_max_date,
-                key="check_in_start_input"
-            )
-            check_in_end = st.date_input(
-                "Check In Date (End)",
-                value=st.session_state['check_in_end'],
-                min_value=dataset_min_date,
-                max_value=dataset_max_date,
-                key="check_in_end_input"
-            )
-        with col2:
-            check_out_start = st.date_input(
-                "Check Out Date (Start)",
-                value=st.session_state['check_out_start'],
-                min_value=dataset_min_date,
-                max_value=dataset_max_date,
-                key="check_out_start_input"
-            )
-            check_out_end = st.date_input(
-                "Check Out Date (End)",
-                value=st.session_state['check_out_end'],
-                min_value=dataset_min_date,
-                max_value=dataset_max_date,
-                key="check_out_end_input"
-            )
-        with col3:
-            if st.button("Reset Dates", key='reset_dates_btn'):
-                # Reset all date filters dynamically to dataset range
-                st.session_state.update({
-                    "check_in_start": dataset_min_date,
-                    "check_in_end": dataset_max_date,
-                    "check_out_start": dataset_min_date,
-                    "check_out_end": dataset_max_date,
-                })
-                st.experimental_rerun()
+        # Date filters with reset button
+col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+
+with col1:
+    check_in_start = st.date_input(
+        "Check In Date (Start)",
+        value=st.session_state.get('check_in_start', dataset_min_date),
+        min_value=dataset_min_date,
+        max_value=dataset_max_date,
+        key="check_in_start_input"
+    )
+    check_in_end = st.date_input(
+        "Check In Date (End)",
+        value=st.session_state.get('check_in_end', dataset_max_date),
+        min_value=dataset_min_date,
+        max_value=dataset_max_date,
+        key="check_in_end_input"
+    )
+
+with col2:
+    check_out_start = st.date_input(
+        "Check Out Date (Start)",
+        value=st.session_state.get('check_out_start', dataset_min_date),
+        min_value=dataset_min_date,
+        max_value=dataset_max_date,
+        key="check_out_start_input"
+    )
+    check_out_end = st.date_input(
+        "Check Out Date (End)",
+        value=st.session_state.get('check_out_end', dataset_max_date),
+        min_value=dataset_min_date,
+        max_value=dataset_max_date,
+        key="check_out_end_input"
+    )
+
+with col3:
+    st.write("")  # Spacing for alignment
+    st.write("")  # Additional spacing for UI balance
+    if st.button('Reset Dates', key='reset_dates_btn'):
+        # Reset dates in session state
+        st.session_state['check_in_start'] = dataset_min_date
+        st.session_state['check_in_end'] = dataset_max_date
+        st.session_state['check_out_start'] = dataset_min_date
+        st.session_state['check_out_end'] = dataset_max_date
+        
+        # Update UI by refreshing the date inputs
+        check_in_start = st.session_state['check_in_start']
+        check_in_end = st.session_state['check_in_end']
+        check_out_start = st.session_state['check_out_start']
+        check_out_end = st.session_state['check_out_end']
 
         # Validate date ranges and rerun if invalid
         invalid_range = False
