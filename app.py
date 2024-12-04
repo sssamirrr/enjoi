@@ -187,19 +187,20 @@ with tab2:
 
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Date filters
-    col1, col2 = st.columns(2)
+    # Date filters with Reset button
+    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=dataset_min_date,
+            value=st.session_state.get('check_in_start', dataset_min_date),
             min_value=dataset_min_date,
             max_value=dataset_max_date,
             key="check_in_start"
         )
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=dataset_max_date,
+            value=st.session_state.get('check_in_end', dataset_max_date),
             min_value=dataset_min_date,
             max_value=dataset_max_date,
             key="check_in_end"
@@ -207,29 +208,48 @@ with tab2:
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=dataset_min_date,
+            value=st.session_state.get('check_out_start', dataset_min_date),
             min_value=dataset_min_date,
             max_value=dataset_max_date,
             key="check_out_start"
         )
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=dataset_max_date,
+            value=st.session_state.get('check_out_end', dataset_max_date),
             min_value=dataset_min_date,
             max_value=dataset_max_date,
             key="check_out_end"
         )
+    with col3:
+        if st.button("Reset Dates"):
+            # Reset dates in session state
+            st.session_state['check_in_start'] = dataset_min_date
+            st.session_state['check_in_end'] = dataset_max_date
+            st.session_state['check_out_start'] = dataset_min_date
+            st.session_state['check_out_end'] = dataset_max_date
+            # Refresh the filtered dataset after reset
+            st.session_state['refresh'] = True
+            st.experimental_rerun()
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
     resort_df['Check Out'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-    filtered_df = resort_df[
-        (resort_df['Check In'].dt.date >= check_in_start) &
-        (resort_df['Check In'].dt.date <= check_in_end) &
-        (resort_df['Check Out'].dt.date >= check_out_start) &
-        (resort_df['Check Out'].dt.date <= check_out_end)
-    ]
+    if 'refresh' in st.session_state and st.session_state['refresh']:
+        st.session_state['refresh'] = False
+        filtered_df = resort_df[
+            (resort_df['Check In'].dt.date >= dataset_min_date) &
+            (resort_df['Check In'].dt.date <= dataset_max_date) &
+            (resort_df['Check Out'].dt.date >= dataset_min_date) &
+            (resort_df['Check Out'].dt.date <= dataset_max_date)
+        ]
+    else:
+        filtered_df = resort_df[
+            (resort_df['Check In'].dt.date >= check_in_start) &
+            (resort_df['Check In'].dt.date <= check_in_end) &
+            (resort_df['Check Out'].dt.date >= check_out_start) &
+            (resort_df['Check Out'].dt.date <= check_out_end)
+        ]
 
     if filtered_df.empty:
         st.warning("No guests found for the selected filters.")
@@ -292,8 +312,6 @@ with tab2:
         # Display count of selected guests
         selected_count = edited_df['Select'].sum()
         st.write(f"Selected Guests: {selected_count}")
-
-
 
 
 # Tour Prediction Tab
