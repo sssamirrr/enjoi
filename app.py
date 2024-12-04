@@ -203,14 +203,16 @@ if 'select_all_state' not in st.session_state:
     st.session_state['select_all_state'] = False
 
 
+from datetime import datetime, timedelta
+
 # Initialize session state for dates and select all state
-if 'check_in_start' not in st.session_state or st.session_state['check_in_start'] is None:
+if 'check_in_start' not in st.session_state:
     st.session_state['check_in_start'] = pd.to_datetime(df['Arrival Date Short']).min().date()
-if 'check_in_end' not in st.session_state or st.session_state['check_in_end'] is None:
+if 'check_in_end' not in st.session_state:
     st.session_state['check_in_end'] = pd.to_datetime(df['Arrival Date Short']).max().date()
-if 'check_out_start' not in st.session_state or st.session_state['check_out_start'] is None:
+if 'check_out_start' not in st.session_state:
     st.session_state['check_out_start'] = pd.to_datetime(df['Departure Date Short']).min().date()
-if 'check_out_end' not in st.session_state or st.session_state['check_out_end'] is None:
+if 'check_out_end' not in st.session_state:
     st.session_state['check_out_end'] = pd.to_datetime(df['Departure Date Short']).max().date()
 if 'select_all_state' not in st.session_state:
     st.session_state['select_all_state'] = False
@@ -259,11 +261,13 @@ with tab2:
     with col3:
         if st.button("Reset Dates"):
             # Reset date session states dynamically
-            st.session_state['check_in_start'] = pd.to_datetime(df['Arrival Date Short']).min().date()
-            st.session_state['check_in_end'] = pd.to_datetime(df['Arrival Date Short']).max().date()
-            st.session_state['check_out_start'] = pd.to_datetime(df['Departure Date Short']).min().date()
-            st.session_state['check_out_end'] = pd.to_datetime(df['Departure Date Short']).max().date()
-            st.session_state['select_all_state'] = False
+            st.session_state.update({
+                'check_in_start': pd.to_datetime(df['Arrival Date Short']).min().date(),
+                'check_in_end': pd.to_datetime(df['Arrival Date Short']).max().date(),
+                'check_out_start': pd.to_datetime(df['Departure Date Short']).min().date(),
+                'check_out_end': pd.to_datetime(df['Departure Date Short']).max().date(),
+                'select_all_state': False
+            })
             st.rerun()
 
     # Handle invalid date ranges
@@ -379,6 +383,7 @@ with tab2:
             )
         else:
             st.warning("No guests selected for export.")
+
 
 
 
