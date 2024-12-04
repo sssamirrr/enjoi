@@ -245,7 +245,6 @@ with tab2:
                 st.session_state['check_in_end'] = dataset_max_date
                 st.session_state['check_out_start'] = dataset_min_date
                 st.session_state['check_out_end'] = dataset_max_date
-                # No need for rerun; state updates directly
                 st.experimental_rerun()
 
         # Handle invalid date ranges directly
@@ -289,50 +288,60 @@ with tab2:
                 st.warning("No guests found for the selected date range.")
                 display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
 
-            # Add Select column for guest selection
-            if 'Select' not in display_df.columns:
-                display_df.insert(0, 'Select', st.session_state.get('select_all_state', False))
+            # Add Select/Deselect All functionality
+            select_all = st.checkbox(
+                "Select/Deselect All",
+                value=st.session_state.get('select_all_state', False),
+                key="select_all_checkbox"
+            )
+
+            # Update the 'Select' column based on the Select All checkbox
+            display_df['Select'] = select_all
 
             # Interactive data editor
-            if not display_df.empty:
-                edited_df = st.data_editor(
-                    display_df,
-                    column_config={
-                        "Select": st.column_config.CheckboxColumn(
-                            "Select",
-                            help="Select guest",
-                            default=False,
-                            width="small",
-                        ),
-                        "Guest Name": st.column_config.TextColumn(
-                            "Guest Name",
-                            help="Guest's full name",
-                            width="medium",
-                        ),
-                        "Check In": st.column_config.DateColumn(
-                            "Check In",
-                            help="Check-in date",
-                            width="medium",
-                        ),
-                        "Check Out": st.column_config.DateColumn(
-                            "Check Out",
-                            help="Check-out date",
-                            width="medium",
-                        ),
-                        "Phone Number": st.column_config.TextColumn(
-                            "Phone Number",
-                            help="Guest's phone number",
-                            width="medium",
-                        ),
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key="guest_editor"
-                )
+            edited_df = st.data_editor(
+                display_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select guest",
+                        default=select_all,
+                        width="small",
+                    ),
+                    "Guest Name": st.column_config.TextColumn(
+                        "Guest Name",
+                        help="Guest's full name",
+                        width="medium",
+                    ),
+                    "Check In": st.column_config.DateColumn(
+                        "Check In",
+                        help="Check-in date",
+                        width="medium",
+                    ),
+                    "Check Out": st.column_config.DateColumn(
+                        "Check Out",
+                        help="Check-out date",
+                        width="medium",
+                    ),
+                    "Phone Number": st.column_config.TextColumn(
+                        "Phone Number",
+                        help="Guest's phone number",
+                        width="medium",
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="guest_editor"
+            )
 
-                # Display count of selected guests
-                selected_count = edited_df['Select'].sum()
-                st.write(f"Selected Guests: {selected_count}")
+            # Update session state when Select All is toggled
+            if st.session_state.get("select_all_checkbox") != st.session_state.get("select_all_state", False):
+                st.session_state['select_all_state'] = st.session_state["select_all_checkbox"]
+                st.experimental_rerun()
+
+            # Display count of selected guests
+            selected_count = edited_df['Select'].sum()
+            st.write(f"Selected Guests: {selected_count}")
 
         except Exception as e:
             st.error("An error occurred while processing the data.")
