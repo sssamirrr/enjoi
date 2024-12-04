@@ -177,13 +177,13 @@ with tab2:
 
     # Initialize session state for dates dynamically
     if 'check_in_start' not in st.session_state:
-        st.session_state.check_in_start = dataset_min_date
+        st.session_state['check_in_start'] = dataset_min_date
     if 'check_in_end' not in st.session_state:
-        st.session_state.check_in_end = dataset_max_date
+        st.session_state['check_in_end'] = dataset_max_date
     if 'check_out_start' not in st.session_state:
-        st.session_state.check_out_start = dataset_min_date
+        st.session_state['check_out_start'] = dataset_min_date
     if 'check_out_end' not in st.session_state:
-        st.session_state.check_out_end = dataset_max_date
+        st.session_state['check_out_end'] = dataset_max_date
     
     # Initialize session state for select all
     if 'select_all_state' not in st.session_state:
@@ -208,14 +208,14 @@ with tab2:
         with col1:
             check_in_start = st.date_input(
                 "Check In Date (Start)",
-                value=st.session_state.check_in_start,
+                value=st.session_state['check_in_start'],
                 key="check_in_start_input",
                 min_value=dataset_min_date,
                 max_value=dataset_max_date
             )
             check_in_end = st.date_input(
                 "Check In Date (End)",
-                value=st.session_state.check_in_end,
+                value=st.session_state['check_in_end'],
                 key="check_in_end_input",
                 min_value=dataset_min_date,
                 max_value=dataset_max_date
@@ -224,51 +224,50 @@ with tab2:
         with col2:
             check_out_start = st.date_input(
                 "Check Out Date (Start)",
-                value=st.session_state.check_out_start,
+                value=st.session_state['check_out_start'],
                 key="check_out_start_input",
                 min_value=dataset_min_date,
                 max_value=dataset_max_date
             )
             check_out_end = st.date_input(
                 "Check Out Date (End)",
-                value=st.session_state.check_out_end,
+                value=st.session_state['check_out_end'],
                 key="check_out_end_input",
                 min_value=dataset_min_date,
                 max_value=dataset_max_date
             )
         
-    with col3:
-    st.write("")  # Spacing
-    st.write("")  # Spacing
-    if st.button('Reset Dates'):
-        # Reset date session states dynamically based on dataset
-        st.session_state['check_in_start'] = dataset_min_date
-        st.session_state['check_in_end'] = dataset_max_date
-        st.session_state['check_out_start'] = dataset_min_date
-        st.session_state['check_out_end'] = dataset_max_date
-        
-        # Trigger a rerun to update the UI with the new dates
-        st.experimental_rerun()
-
-
+        with col3:
+            st.write("")  # Spacing
+            st.write("")  # Spacing
+            if st.button('Reset Dates'):
+                # Reset session state values dynamically
+                st.session_state['check_in_start'] = dataset_min_date
+                st.session_state['check_in_end'] = dataset_max_date
+                st.session_state['check_out_start'] = dataset_min_date
+                st.session_state['check_out_end'] = dataset_max_date
+                
+                # Use rerun only when session state is safely updated
+                st.experimental_rerun()
 
     # Validation for invalid date ranges
     invalid_date_range = False
 
     if check_in_start > check_in_end:
         st.warning("Check-In Start Date cannot be after Check-In End Date. Resetting to default values.")
-        st.session_state.check_in_start = dataset_min_date
-        st.session_state.check_in_end = dataset_max_date
+        st.session_state['check_in_start'] = dataset_min_date
+        st.session_state['check_in_end'] = dataset_max_date
         invalid_date_range = True
 
     if check_out_start > check_out_end:
         st.warning("Check-Out Start Date cannot be after Check-Out End Date. Resetting to default values.")
-        st.session_state.check_out_start = dataset_min_date
-        st.session_state.check_out_end = dataset_max_date
+        st.session_state['check_out_start'] = dataset_min_date
+        st.session_state['check_out_end'] = dataset_max_date
         invalid_date_range = True
 
     if invalid_date_range:
-        st.stop()
+        st.experimental_rerun()
+
     try:
         # Prepare display dataframe
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
@@ -390,19 +389,7 @@ with tab2:
     # Export functionality
     if not edited_df.empty:
         # Filter only selected guests
-        selected_guests = edited_df[edited_df['Select']]
-        
-        if not selected_guests.empty:
-            csv = selected_guests.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "Download Selected Guest List",
-                csv,
-                f"{selected_resort}_guest_list.csv",
-                "text/csv",
-                key='download-csv'
-            )
-        else:
-            st.warning("No guests selected for download.")
+        selected_guests = edited_df[
 
 
 # Tour Prediction Tab
