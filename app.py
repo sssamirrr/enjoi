@@ -168,7 +168,6 @@ with tab1:
         )
         st.plotly_chart(fig_arrivals, use_container_width=True)
 
-# Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -246,26 +245,21 @@ with tab2:
                 st.session_state['check_in_end'] = dataset_max_date
                 st.session_state['check_out_start'] = dataset_min_date
                 st.session_state['check_out_end'] = dataset_max_date
-                # Rerun the app to update UI
+                # No need for rerun; state updates directly
                 st.experimental_rerun()
 
-        # Handle invalid date ranges with immediate updates
-        invalid_range = False
+        # Handle invalid date ranges directly
         if check_in_start > check_in_end:
             st.warning("Check-In Start Date cannot be after Check-In End Date")
             st.session_state['check_in_start'] = dataset_min_date
             st.session_state['check_in_end'] = dataset_max_date
-            invalid_range = True
+            check_in_start, check_in_end = dataset_min_date, dataset_max_date
 
         if check_out_start > check_out_end:
             st.warning("Check-Out Start Date cannot be after Check-Out End Date")
             st.session_state['check_out_start'] = dataset_min_date
             st.session_state['check_out_end'] = dataset_max_date
-            invalid_range = True
-
-        if invalid_range:
-            # Update UI with corrected values
-            st.experimental_rerun()
+            check_out_start, check_out_end = dataset_min_date, dataset_max_date
 
         # Display filtered data
         try:
@@ -340,63 +334,9 @@ with tab2:
                 selected_count = edited_df['Select'].sum()
                 st.write(f"Selected Guests: {selected_count}")
 
-                # Select/Deselect All buttons
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Select All", key="select_all"):
-                        st.session_state['select_all_state'] = True
-                        st.experimental_rerun()
-                with col2:
-                    if st.button("Deselect All", key="deselect_all"):
-                        st.session_state['select_all_state'] = False
-                        st.experimental_rerun()
-            else:
-                st.info("Please adjust the date filters to see guest data.")
-                edited_df = display_df
-
         except Exception as e:
             st.error("An error occurred while processing the data.")
             st.exception(e)
-
-        # Message Templates
-        st.markdown("---")
-        st.subheader("Message Templates")
-
-        message_options = {
-            "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-            "Check-in Follow-up": "We noticed you checked in last night. Please visit our concierge desk for your welcome gift! 🎁",
-            "Checkout Message": "We hope you enjoyed your stay! Please visit our concierge desk before departure for a special gift! 🎁"
-        }
-
-        col1, col2 = st.columns([0.4, 0.6])
-        with col1:
-            selected_message = st.selectbox(
-                "Choose Message Template",
-                options=list(message_options.keys()),
-                key="selected_message"
-            )
-        with col2:
-            st.text_area(
-                "Message Preview",
-                value=message_options[selected_message],
-                height=100,
-                disabled=True
-            )
-
-        # Export functionality
-        if not display_df.empty:
-            selected_guests = display_df[display_df['Select']]
-            if not selected_guests.empty:
-                csv = selected_guests.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "Download Selected Guest List",
-                    csv,
-                    f"{selected_resort}_guest_list.csv",
-                    "text/csv",
-                    key='download_csv'
-                )
-            else:
-                st.warning("No guests selected for download.")
 
 
 # Tour Prediction Tab
