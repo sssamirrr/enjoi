@@ -244,10 +244,35 @@ with tab2:
             st.session_state['check_out_end'] = datetime(2024, 11, 27).date()
             st.experimental_rerun()
 
-    # Handle invalid date ranges
-    if check_in_start > check_in_end:
-        st.error("⚠️ Check-In Start Date cannot be after Check-In End Date.")
+        # Date validation with auto-correction (INSERT THIS SECTION)
+    try:
+        # Check-in date validation
+        if check_in_start > check_in_end:
+            st.warning("⚠️ Automatically adjusting Check-In End Date.")
+            st.session_state['check_in_end'] = check_in_start
+            st.experimental_rerun()
+
+        # Check-out date validation
+        if check_out_start > check_out_end:
+            st.warning("⚠️ Automatically adjusting Check-Out End Date.")
+            st.session_state['check_out_end'] = check_out_start
+            st.experimental_rerun()
+
+        # Check-in vs Check-out validation
+        if check_out_start < check_in_start:
+            st.warning("⚠️ Automatically adjusting Check-Out Start Date.")
+            st.session_state['check_out_start'] = check_in_start
+            st.experimental_rerun()
+
+        if check_out_end < check_in_end:
+            st.warning("⚠️ Automatically adjusting Check-Out End Date.")
+            st.session_state['check_out_end'] = check_in_end
+            st.experimental_rerun()
+
+    except Exception as e:
+        st.error(f"An error occurred while validating dates: {e}")
         st.stop()
+
 
     if check_out_start > check_out_end:
         st.error("⚠️ Check-Out Start Date cannot be after Check-Out End Date.")
