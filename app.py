@@ -384,7 +384,7 @@ with tab2:
                 }
 
                 # Your OpenPhone number
-                sender_phone_number = "+15555555555"  # Replace with your OpenPhone number
+                sender_phone_number = "+18438972426"  # Replace with your OpenPhone number
 
                 # Helper function to format phone numbers
                 def format_phone_number(phone):
