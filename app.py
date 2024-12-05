@@ -242,6 +242,14 @@ if 'select_all_state' not in st.session_state:
 
 import requests
 
+# Import necessary modules at the top of your script
+import streamlit as st
+import pandas as pd
+import requests
+from datetime import datetime
+
+# ... (other imports and code)
+
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
@@ -342,12 +350,13 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            # Set reset flag
+            # Option 1: Use st.rerun() to reload the app
             st.session_state['reset_dates'] = True
-            update_date_filters(resort_df)  # Update the dates immediately
-            st.rerun()  # Modern way to rerun the app
-        except Exception as e:
-            st.error(f"Error resetting dates: {str(e)}")
+            st.rerun()
+
+            # Option 2: Update dates without rerunning
+            # update_date_filters(resort_df)
+            # st.session_state['reset_dates'] = False
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -482,7 +491,6 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
-
 
 # Tour Prediction Tab
 with tab3:
