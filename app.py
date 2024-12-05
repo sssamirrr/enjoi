@@ -456,11 +456,13 @@ with tab2:
     message_preview = message_templates[selected_template]
     st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
-    # Add "Send SMS to Selected Guests" Button
+    # Add "Send SMS to Selected Guests" Button with Guest Count
     if 'edited_df' in locals() and not edited_df.empty:
         selected_guests = edited_df[edited_df['Select']]
+        num_selected = len(selected_guests)
         if not selected_guests.empty:
-            if st.button("Send SMS to Selected Guests"):
+            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
+            if st.button(button_label):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers = {
                     "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Your OpenPhone API key
@@ -491,6 +493,7 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
+
 
 # Tour Prediction Tab
 with tab3:
