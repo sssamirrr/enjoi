@@ -383,12 +383,9 @@ with tab2:
                     "Authorization": "Bearer j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # HARDCODED - EXTREMELY DANGEROUS FOR PRODUCTION!
                     "Content-Type": "application/json"
                 }
-               st.write(headers)
-
-
                 # Your OpenPhone number
                 sender_phone_number = "+18438972426"  # Replace with your OpenPhone number
-
+                   
                 # Helper function to format phone numbers
                 def format_phone_number(phone):
                     if not phone.startswith("+"):
@@ -412,7 +409,9 @@ with tab2:
                         st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
                         st.write("Response Status Code:", response.status_code)
                         st.write("Response Body:", response.json())
-
+                        st.write(headers)
+    
+                         
 
 
 # Tour Prediction Tab
