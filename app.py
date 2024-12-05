@@ -617,6 +617,7 @@ with tab3:
 
         # Daily Arrivals
         daily_arrivals = filtered_resort_df.groupby(filtered_resort_df['Arrival Date Short'].dt.date).size().reset_index(name='Arrivals')
+        daily_arrivals = daily_arrivals.rename(columns={'Arrival Date Short': 'Date'})  # Rename for consistency
 
         st.subheader(f"{resort}")
 
@@ -643,15 +644,15 @@ with tab3:
     # Concatenate all resort data
     if all_resorts_tour_data:
         full_summary_df = pd.concat(all_resorts_tour_data)
-    
+
         # Overall Summary
         st.markdown("---")
         st.subheader("Overall Tour Summary Across All Resorts")
-    
+
         overall_summary = full_summary_df.groupby('Date').sum().reset_index()
-    
+
         st.dataframe(overall_summary)
-    
+
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Total Arrivals for All Resorts", overall_summary['Arrivals'].sum())
