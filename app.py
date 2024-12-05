@@ -260,34 +260,49 @@ with tab2:
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
 
     with col1:
+        if 'check_in_start' not in st.session_state:
+            st.session_state['check_in_start'] = pd.to_datetime(df['Arrival Date Short']).min().date()
+        
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            key='check_in_start_input',
-            value=st.session_state.get('check_in_start', pd.to_datetime(df['Arrival Date Short']).min().date())
+            value=st.session_state['check_in_start']
         )
-        st.session_state['check_in_start'] = check_in_start
-
+    
+        if check_in_start != st.session_state['check_in_start']:
+            st.session_state['check_in_start'] = check_in_start
+            st.experimental_rerun()
+    
         check_in_end = st.date_input(
             "Check In Date (End)",
-            key='check_in_end_input',
             value=st.session_state.get('check_in_end', pd.to_datetime(df['Arrival Date Short']).max().date())
         )
-        st.session_state['check_in_end'] = check_in_end
-
+    
+        if check_in_end != st.session_state.get('check_in_end'):
+            st.session_state['check_in_end'] = check_in_end
+            st.experimental_rerun()
+    
     with col2:
+        if 'check_out_start' not in st.session_state:
+            st.session_state['check_out_start'] = pd.to_datetime(df['Departure Date Short']).min().date()
+        
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            key='check_out_start_input',
-            value=st.session_state.get('check_out_start', pd.to_datetime(df['Departure Date Short']).min().date())
+            value=st.session_state['check_out_start']
         )
-        st.session_state['check_out_start'] = check_out_start
-
+    
+        if check_out_start != st.session_state['check_out_start']:
+            st.session_state['check_out_start'] = check_out_start
+            st.experimental_rerun()
+    
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            key='check_out_end_input',
             value=st.session_state.get('check_out_end', pd.to_datetime(df['Departure Date Short']).max().date())
         )
-        st.session_state['check_out_end'] = check_out_end
+    
+        if check_out_end != st.session_state.get('check_out_end'):
+            st.session_state['check_out_end'] = check_out_end
+            st.experimental_rerun()
+
 
     with col3:
         if st.button("Reset Dates"):
