@@ -243,7 +243,19 @@ if 'select_all_state' not in st.session_state:
     st.session_state['select_all_state'] = False
 
 import requests
-
+# Function to get the phoneNumberId for your OpenPhone number
+def get_phone_number_id(headers, phone_number):
+    url = "https://api.openphone.com/v1/phone_numbers"
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        for number in data['data']:
+            if number['attributes']['phone_number'] == phone_number:
+                return number['id']
+    else:
+        st.write(f"Error retrieving phone numbers: {response.status_code}")
+        st.write("Response:", response.text)
+    return None
 # Function to get the last communication status (message or call) for a given phone number
 def get_last_communication_status(phone_number, headers):
     # Prepare the URLs
