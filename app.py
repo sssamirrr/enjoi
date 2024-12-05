@@ -458,24 +458,24 @@ mask = (
 filtered_df = resort_df[mask]
 
 
-    # Handle empty DataFrame
-    if filtered_df.empty:
-        st.warning("No guests found for the selected filters.")
-        display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date'])
-    else:
-        # Prepare display DataFrame
-        display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
-        display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
+# Handle empty DataFrame
+if filtered_df.empty:
+    st.warning("No guests found for the selected filters.")
+    display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date'])
+else:
+    # Prepare display DataFrame
+    display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
+    display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
-        # Function to format phone numbers
-        def format_phone_number(phone):
-            phone = ''.join(filter(str.isdigit, str(phone)))
-            if len(phone) == 10:
-                return f"+1{phone}"
-            elif len(phone) == 11 and phone.startswith('1'):
-                return f"+{phone}"
-            else:
-                return phone  # Return as is if it doesn't match expected patterns
+    # Function to format phone numbers
+    def format_phone_number(phone):
+        phone = ''.join(filter(str.isdigit, str(phone)))
+        if len(phone) == 10:
+            return f"+1{phone}"
+        elif len(phone) == 11 and phone.startswith('1'):
+            return f"+{phone}"
+        else:
+            return phone  # Return as is if it doesn't match expected patterns
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
