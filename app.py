@@ -383,7 +383,8 @@ with tab2:
                     "Authorization": "Bearer j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # HARDCODED - EXTREMELY DANGEROUS FOR PRODUCTION!
                     "Content-Type": "application/json"
                 }
-                print(headers)  # Debug: Print headers to verify API key inclusion
+               st.write(headers)
+
 
                 # Your OpenPhone number
                 sender_phone_number = "+18438972426"  # Replace with your OpenPhone number
