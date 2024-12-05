@@ -311,53 +311,60 @@ with tab2:
     filtered_df = resort_df[mask]
 
     # Handle empty DataFrame
-    if filtered_df.empty:
-        st.warning("No guests found for the selected filters.")
-        filtered_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
-    else:
-        # Prepare display DataFrame
-        display_df = filtered_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
-        display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
+if filtered_df.empty:
+    st.warning("No guests found for the selected filters.")
+    filtered_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
+else:
+    # Prepare display DataFrame
+    display_df = filtered_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
+    display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
-        # Ensure proper types
-        display_df['Select'] = False
-        display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')
-        display_df['Check Out'] = pd.to_datetime(display_df['Check Out'], errors='coerce')
-        display_df['Phone Number'] = display_df['Phone Number'].astype(str)
+    # Ensure proper types
+    display_df['Select'] = False
+    display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')
+    display_df['Check Out'] = pd.to_datetime(display_df['Check Out'], errors='coerce')
+    display_df['Phone Number'] = display_df['Phone Number'].astype(str)
 
-        # Reorder columns to have "Select" as the leftmost column
-        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number']]
+    # Add "Select All" checkbox
+    select_all = st.checkbox("Select All", key="select_all_checkbox")
 
-        # Interactive data editor
-        edited_df = st.data_editor(
-            display_df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Select or deselect this guest",
-                    default=False
-                ),
-                "Guest Name": st.column_config.TextColumn(
-                    "Guest Name",
-                    help="Guest's full name"
-                ),
-                "Check In": st.column_config.DateColumn(
-                    "Check In",
-                    help="Check-in date"
-                ),
-                "Check Out": st.column_config.DateColumn(
-                    "Check Out",
-                    help="Check-out date"
-                ),
-                "Phone Number": st.column_config.TextColumn(
-                    "Phone Number",
-                    help="Guest's phone number"
-                ),
-            },
-            hide_index=True,
-            use_container_width=True,
-            key="guest_editor"
-        )
+    # Apply "Select All" state to the Select column
+    display_df['Select'] = select_all
+
+    # Reorder columns to have "Select" as the leftmost column
+    display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number']]
+
+    # Interactive data editor
+    edited_df = st.data_editor(
+        display_df,
+        column_config={
+            "Select": st.column_config.CheckboxColumn(
+                "Select",
+                help="Select or deselect this guest",
+                default=select_all  # Link checkbox to "Select All"
+            ),
+            "Guest Name": st.column_config.TextColumn(
+                "Guest Name",
+                help="Guest's full name"
+            ),
+            "Check In": st.column_config.DateColumn(
+                "Check In",
+                help="Check-in date"
+            ),
+            "Check Out": st.column_config.DateColumn(
+                "Check Out",
+                help="Check-out date"
+            ),
+            "Phone Number": st.column_config.TextColumn(
+                "Phone Number",
+                help="Guest's phone number"
+            ),
+        },
+        hide_index=True,
+        use_container_width=True,
+        key="guest_editor"
+    )
+
 
     # Text Templates Section
     st.markdown("---")
