@@ -256,6 +256,12 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
+    # Refresh Data Button
+    if st.button("Refresh Data"):
+        st.cache_resource.clear()  # Clear cached data
+        df = get_google_sheet_data()  # Reload the latest data from Google Sheets
+        st.experimental_rerun()  # Rerun the app to reflect changes
+
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
 
@@ -371,14 +377,13 @@ with tab2:
         message_preview = message_templates[selected_template]
         st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
-        # Add "Send SMS to Selected Guests" Button
-        selected_guests = edited_df[edited_df['Select']]
-        if not selected_guests.empty:
-            if st.button("Send SMS to Selected Guests"):
-                api_key = st.secrets["openphone"]["api_key"]
-                openphone_url = "https://api.openphone.co/v1/messages"
+        # "Send SMS to Selected Guests" Button (Always Visible)
+        if st.button("Send SMS to Selected Guests"):
+            api_key = st.secrets["openphone"]["api_key"]
+            openphone_url = "https://api.openphone.co/v1/messages"
 
-                for _, row in selected_guests.iterrows():
+            for _, row in edited_df.iterrows():  # Iterate over all rows
+                if row['Select']:  # Only send SMS to selected guests
                     payload = {
                         "to": row['Phone Number'],
                         "message": message_preview
