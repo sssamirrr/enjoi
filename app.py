@@ -318,8 +318,11 @@ with tab2:
         display_df = filtered_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
-        # Add Select column
-        display_df.insert(0, 'Select', st.session_state['select_all_state'])
+        # Ensure proper types
+        display_df['Select'] = False
+        display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')
+        display_df['Check Out'] = pd.to_datetime(display_df['Check Out'], errors='coerce')
+        display_df['Phone Number'] = display_df['Phone Number'].astype(str)
 
         # Interactive data editor
         edited_df = st.data_editor(
@@ -328,7 +331,7 @@ with tab2:
                 "Select": st.column_config.CheckboxColumn(
                     "Select",
                     help="Select or deselect this guest",
-                    default=st.session_state['select_all_state']
+                    default=False
                 ),
                 "Guest Name": st.column_config.TextColumn(
                     "Guest Name",
