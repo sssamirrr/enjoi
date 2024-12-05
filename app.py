@@ -359,9 +359,9 @@ else:
         key="guest_editor"
     )
 
-        # Text Templates Section
-        st.markdown("---")
-        st.subheader("Message Templates")
+    # Text Templates Section
+    st.markdown("---")
+    st.subheader("Message Templates")
 
         message_templates = {
             "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
