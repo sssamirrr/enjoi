@@ -267,7 +267,7 @@ from datetime import datetime
 
 # Function to get the phoneNumberId for your OpenPhone number
 def get_phone_number_id(headers, phone_number):
-    url = "https://api.openphone.com/v1/phone-numbers"
+    url = "https://api.openphone.com/v1/phonenumbers"
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         data = response.json()
