@@ -344,7 +344,10 @@ with tab2:
         if st.button("Reset Dates"):
             # Set reset flag
             st.session_state['reset_dates'] = True
-            st.experimental_rerun()
+            update_date_filters(resort_df)  # Update the dates immediately
+            st.rerun()  # Modern way to rerun the app
+    except Exception as e:
+        st.error(f"Error resetting dates: {str(e)}")
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
