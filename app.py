@@ -406,31 +406,33 @@ with tab2:
         )
 
     with col3:
-        if st.button("Reset Dates", key='reset_dates_button'):
-            if not resort_df.empty:
-                arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-                departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+    def reset_dates():
+        if not resort_df.empty:
+            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-                arrival_dates = arrival_dates[arrival_dates.notna()]
-                departure_dates = departure_dates[departure_dates.notna()]
+            arrival_dates = arrival_dates[arrival_dates.notna()]
+            departure_dates = departure_dates[departure_dates.notna()]
 
-                if not arrival_dates.empty and not departure_dates.empty:
-                    st.session_state['check_in_start'] = arrival_dates.min().date()
-                    st.session_state['check_in_end'] = arrival_dates.max().date()
-                    st.session_state['check_out_start'] = departure_dates.min().date()
-                    st.session_state['check_out_end'] = departure_dates.max().date()
-                else:
-                    today = datetime.today().date()
-                    st.session_state['check_in_start'] = today
-                    st.session_state['check_in_end'] = today
-                    st.session_state['check_out_start'] = today
-                    st.session_state['check_out_end'] = today
+            if not arrival_dates.empty and not departure_dates.empty:
+                st.session_state['check_in_start'] = arrival_dates.min().date()
+                st.session_state['check_in_end'] = arrival_dates.max().date()
+                st.session_state['check_out_start'] = departure_dates.min().date()
+                st.session_state['check_out_end'] = departure_dates.max().date()
             else:
                 today = datetime.today().date()
                 st.session_state['check_in_start'] = today
                 st.session_state['check_in_end'] = today
                 st.session_state['check_out_start'] = today
                 st.session_state['check_out_end'] = today
+        else:
+            today = datetime.today().date()
+            st.session_state['check_in_start'] = today
+            st.session_state['check_in_end'] = today
+            st.session_state['check_out_start'] = today
+            st.session_state['check_out_end'] = today
+
+    st.button("Reset Dates", key='reset_dates_button', on_click=reset_dates)
 
             # No need to call st.experimental_rerun() as updating session_state triggers a rerun
 
