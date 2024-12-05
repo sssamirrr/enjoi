@@ -394,7 +394,7 @@ with tab2:
 
                 # Sending SMS to each selected guest
                 for _, row in selected_guests.iterrows():
-                    recipient_phone = format_phone_number(row['Phone Number'])
+                    recipient_phone = "+14075206507"  # Hard-coded test number
                     payload = {
                         "content": message_preview,
                         "from": sender_phone_number,
