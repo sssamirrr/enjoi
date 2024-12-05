@@ -98,23 +98,25 @@ def get_phone_number_id(headers, phone_number):
                 # Compare top-level 'number' field to the desired phone_number
                 if pn.get('number') == phone_number:
                     return pn['id']
-            st.error(f"Phone number {phone_number} not found in OpenPhone account.")
+            return "Phone number not found"
         else:
-            st.error(f"Error retrieving phone numbers: {response.status_code}")
-            st.error(f"Response: {response.text}")
+            return f"Error {response.status_code}"
     except Exception as e:
-        st.error(f"Exception during phone number retrieval: {str(e)}")
-    return None
+        return f"Exception: {str(e)}"
 
 def get_last_communication_info(phone_number, headers, openphone_number):
     """
     For a given guest's phone number, retrieve the last communication status (message or call)
     and the date of that communication.
     """
+    # Validate phone number
+    if not phone_number or not isinstance(phone_number, str) or len(phone_number) < 10:
+        return ("Invalid Phone Number", "")
+
     # Get phoneNumberId for your OpenPhone number
     phone_number_id = get_phone_number_id(headers, openphone_number)
-    if not phone_number_id:
-        return ("Error", None)
+    if not phone_number_id or "Error" in phone_number_id:
+        return (phone_number_id, "")
 
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
@@ -136,12 +138,12 @@ def get_last_communication_info(phone_number, headers, openphone_number):
             message_data = message_response.json()
             if message_data.get('data'):
                 last_message = message_data['data'][0]
+            else:
+                last_message = None
         else:
-            st.warning(f"Message API Error for {phone_number}: {message_response.status_code}")
-            return ("Error", None)
+            return (f"Error {message_response.status_code}", "")
     except Exception as e:
-        st.warning(f"Exception during message retrieval for {phone_number}: {str(e)}")
-        return ("Error", None)
+        return (f"Exception: {str(e)}", "")
 
     # Fetch the last call
     try:
@@ -150,12 +152,12 @@ def get_last_communication_info(phone_number, headers, openphone_number):
             call_data = call_response.json()
             if call_data.get('data'):
                 last_call = call_data['data'][0]
+            else:
+                last_call = None
         else:
-            st.warning(f"Call API Error for {phone_number}: {call_response.status_code}")
-            return ("Error", None)
+            return (f"Error {call_response.status_code}", "")
     except Exception as e:
-        st.warning(f"Exception during call retrieval for {phone_number}: {str(e)}")
-        return ("Error", None)
+        return (f"Exception: {str(e)}", "")
 
     # Helper functions to parse datetime and direction
     def parse_datetime(item):
@@ -199,7 +201,7 @@ def get_last_communication_info(phone_number, headers, openphone_number):
         status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
         return (status, call_time.strftime("%Y-%m-%d %H:%M:%S"))
 
-    return ("No Communications", None)
+    return ("No Communications", "")
 
 @st.cache_data
 def fetch_communication_info(guest_df, headers, openphone_number):
@@ -435,7 +437,6 @@ with tab2:
         if st.button("Reset Dates"):
             # Reset the date filters to their initial state
             update_date_filters(resort_df)
-            st.session_state['reset_dates'] = False  # Ensure it doesn't trigger again
             # No need to call st.experimental_rerun()
 
     # Apply filters to the dataset
@@ -473,7 +474,7 @@ with tab2:
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
         display_df['Communication Status'] = 'Checking...'
-        display_df['Last Communication Date'] = None  # Initialize the new column
+        display_df['Last Communication Date'] = ''  # Initialize the new column
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All", key="select_all_checkbox")
