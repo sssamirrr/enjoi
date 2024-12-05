@@ -426,7 +426,59 @@ with tab2:
             key="guest_editor"
         )
 
-    # Rest of your code (Message Templates, SMS functionality, etc.)
+    # Text Templates Section
+    st.markdown("---")
+    st.subheader("Message Templates")
+
+    message_templates = {
+        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
+        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
+        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
+    }
+
+    selected_template = st.selectbox(
+        "Choose a Message Template",
+        options=list(message_templates.keys())
+    )
+
+    message_preview = message_templates[selected_template]
+    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
+
+    # Add "Send SMS to Selected Guests" Button
+    if 'edited_df' in locals() and not edited_df.empty:
+        selected_guests = edited_df[edited_df['Select']]
+        if not selected_guests.empty:
+            if st.button("Send SMS to Selected Guests"):
+                openphone_url = "https://api.openphone.com/v1/messages"
+                headers = {
+                    "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Your OpenPhone API key
+                    "Content-Type": "application/json"
+                }
+                # Your OpenPhone number
+                sender_phone_number = "+18438972426"  # Replace with your OpenPhone number
+
+                # Sending SMS to each selected guest
+                for _, row in selected_guests.iterrows():
+                    recipient_phone = "+14075206507"  # Hard-coded test number
+                    payload = {
+                        "content": message_preview,
+                        "from": sender_phone_number,
+                        "to": [recipient_phone]
+                    }
+
+                    response = requests.post(openphone_url, json=payload, headers=headers)
+
+                    if response.status_code == 202:
+                        st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
+                    else:
+                        st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
+                        st.write("Response Status Code:", response.status_code)
+                        st.write("Response Body:", response.json())
+                        st.write(headers)
+        else:
+            st.info("No guests selected to send SMS.")
+    else:
+        st.info("No guest data available to send SMS.")
 
 
 # Tour Prediction Tab
