@@ -255,12 +255,6 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Refresh Data Button
-    if st.button("Refresh Data"):
-        st.cache_resource.clear()  # Clear cached data
-        df = get_google_sheet_data()  # Reload the latest data from Google Sheets
-        st.experimental_rerun()  # Rerun the app to reflect changes
-
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
 
@@ -308,9 +302,9 @@ with tab2:
     resort_df['Check Out'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
     mask = (
-        (resort_df['Check In'].dt.date >= check_in_start) &
-        (resort_df['Check In'].dt.date <= check_in_end) &
-        (resort_df['Check Out'].dt.date >= check_out_start) &
+        (resort_df['Check In'].dt.date >= check_in_start) & 
+        (resort_df['Check In'].dt.date <= check_in_end) & 
+        (resort_df['Check Out'].dt.date >= check_out_start) & 
         (resort_df['Check Out'].dt.date <= check_out_end)
     )
     filtered_df = resort_df[mask]
@@ -318,110 +312,101 @@ with tab2:
     # Handle empty DataFrame
     if filtered_df.empty:
         st.warning("No guests found for the selected filters.")
-        display_df = pd.DataFrame({
-            "Select": [False],
-            "Guest Name": [""],
-            "Check In": [pd.NaT],
-            "Check Out": [pd.NaT],
-            "Phone Number": [""],
-        })
+        filtered_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
     else:
         # Prepare display DataFrame
         display_df = filtered_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
         # Add Select column
-        display_df.insert(0, 'Select', False)  # Default to unselected
+        display_df.insert(0, 'Select', st.session_state['select_all_state'])
 
-    # Ensure correct data types for display_df
-    display_df['Select'] = display_df['Select'].astype(bool)
-    display_df['Guest Name'] = display_df['Guest Name'].astype(str)
-    display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')
-    display_df['Check Out'] = pd.to_datetime(display_df['Check Out'], errors='coerce')
-    display_df['Phone Number'] = display_df['Phone Number'].astype(str)
+        # Interactive data editor
+        edited_df = st.data_editor(
+            display_df,
+            column_config={
+                "Select": st.column_config.CheckboxColumn(
+                    "Select",
+                    help="Select or deselect this guest",
+                    default=st.session_state['select_all_state']
+                ),
+                "Guest Name": st.column_config.TextColumn(
+                    "Guest Name",
+                    help="Guest's full name"
+                ),
+                "Check In": st.column_config.DateColumn(
+                    "Check In",
+                    help="Check-in date"
+                ),
+                "Check Out": st.column_config.DateColumn(
+                    "Check Out",
+                    help="Check-out date"
+                ),
+                "Phone Number": st.column_config.TextColumn(
+                    "Phone Number",
+                    help="Guest's phone number"
+                ),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="guest_editor"
+        )
 
-    # Interactive data editor
-    edited_df = st.data_editor(
-        display_df,
-        column_config={
-            "Select": st.column_config.CheckboxColumn(
-                "Select",
-                help="Select or deselect this guest",
-            ),
-            "Guest Name": st.column_config.TextColumn(
-                "Guest Name",
-                help="Guest's full name"
-            ),
-            "Check In": st.column_config.DateColumn(
-                "Check In",
-                help="Check-in date"
-            ),
-            "Check Out": st.column_config.DateColumn(
-                "Check Out",
-                help="Check-out date"
-            ),
-            "Phone Number": st.column_config.TextColumn(
-                "Phone Number",
-                help="Guest's phone number"
-            ),
-        },
-        hide_index=True,
-        use_container_width=True,
-        key="guest_editor"
-    )
+        # Text Templates Section
+        st.markdown("---")
+        st.subheader("Message Templates")
 
-    # Text Templates Section
-    st.markdown("---")
-    st.subheader("Message Templates")
-
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
-    }
-
-    selected_template = st.selectbox(
-        "Choose a Message Template",
-        options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-   if st.button("Send SMS to Selected Guests"):
-    openphone_url = "https://api.openphone.com/v1/messages"
-    headers = {
-        "Authorization": f"Bearer {st.secrets['openphone']['api_key']}",
-        "Content-Type": "application/json"
-    }
-
-    # Example sender phone number (replace with your OpenPhone number)
-    sender_phone_number = "+15555555555"  # Replace with your OpenPhone number in E.164 format
-
-    # Helper function to format phone numbers
-    def format_phone_number(phone):
-        if not phone.startswith("+"):
-            return f"+1{phone}"  # Assuming US numbers
-        return phone
-
-    # Sending SMS to each selected guest
-    for _, row in selected_guests.iterrows():
-        recipient_phone = format_phone_number(row['Phone Number'])
-        payload = {
-            "content": message_preview,  # The message content
-            "from": sender_phone_number,  # Your OpenPhone number
-            "to": [recipient_phone]  # Array with one recipient
+        message_templates = {
+            "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
+            "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
+            "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
         }
 
-        response = requests.post(openphone_url, json=payload, headers=headers)
+        selected_template = st.selectbox(
+            "Choose a Message Template",
+            options=list(message_templates.keys())
+        )
 
-        # Handle API response
-        if response.status_code == 202:  # Success
-            st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
-        else:
-            st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-            st.write("Response Status Code:", response.status_code)
-            st.write("Response Body:", response.json())  # Debugging response
+        message_preview = message_templates[selected_template]
+        st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
+
+        # Add "Send SMS to Selected Guests" Button
+        selected_guests = edited_df[edited_df['Select']]
+        if not selected_guests.empty:
+            if st.button("Send SMS to Selected Guests"):
+                openphone_url = "https://api.openphone.com/v1/messages"
+                headers = {
+                    "Authorization": f"Bearer {st.secrets['openphone']['api_key']}",
+                    "Content-Type": "application/json"
+                }
+
+                # Your OpenPhone number
+                sender_phone_number = "+15555555555"  # Replace with your OpenPhone number
+
+                # Helper function to format phone numbers
+                def format_phone_number(phone):
+                    if not phone.startswith("+"):
+                        return f"+1{phone}"  # Assuming US numbers
+                    return phone
+
+                # Sending SMS to each selected guest
+                for _, row in selected_guests.iterrows():
+                    recipient_phone = format_phone_number(row['Phone Number'])
+                    payload = {
+                        "content": message_preview,
+                        "from": sender_phone_number,
+                        "to": [recipient_phone]
+                    }
+
+                    response = requests.post(openphone_url, json=payload, headers=headers)
+
+                    if response.status_code == 202:
+                        st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
+                    else:
+                        st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
+                        st.write("Response Status Code:", response.status_code)
+                        st.write("Response Body:", response.json())
+
 
 
 # Tour Prediction Tab
