@@ -209,14 +209,17 @@ def get_phone_number_id(headers, phone_number):
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         data = response.json()
-        st.write("Phone Numbers Response:", data)  # Debug line
-        for number in data.get('data', []):
-            # Print attributes to find correct key
-            st.write("Number attributes:", number.get('attributes', {}))
-            # Check for 'e164' or another key that matches your phone_number
-            # Assuming 'e164' is the correct key (adjust based on printed output)
-            if number['attributes'].get('e164') == phone_number:
-                return number['id']
+        st.write("Phone Numbers Response:", data)  # Debug line to inspect structure
+        for pn in data.get('data', []):
+            st.write("Number object:", pn)  # Debug line to see all top-level keys
+            # Compare top-level 'number' field to your phone_number
+            if pn.get('number') == phone_number:
+                return pn['id']
+    else:
+        st.write(f"Error retrieving phone numbers: {response.status_code}")
+        st.write("Response:", response.text)
+    return None
+
     else:
         st.write(f"Error retrieving phone numbers: {response.status_code}")
         st.write("Response:", response.text)
