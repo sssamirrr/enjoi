@@ -363,6 +363,15 @@ with tab2:
         st.session_state['prev_selected_resort'] = None
     if 'reset_dates' not in st.session_state:
         st.session_state['reset_dates'] = False
+    # Initialize date filters if not present
+    if 'check_in_start' not in st.session_state:
+        st.session_state['check_in_start'] = datetime.today().date()
+    if 'check_in_end' not in st.session_state:
+        st.session_state['check_in_end'] = datetime.today().date()
+    if 'check_out_start' not in st.session_state:
+        st.session_state['check_out_start'] = datetime.today().date()
+    if 'check_out_end' not in st.session_state:
+        st.session_state['check_out_end'] = datetime.today().date()
 
     # Function to initialize or update date filters
     def update_date_filters(resort_df):
@@ -424,8 +433,10 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            st.session_state['reset_dates'] = True
-            st.experimental_rerun()
+            # Reset the date filters to their initial state
+            update_date_filters(resort_df)
+            st.session_state['reset_dates'] = False  # Ensure it doesn't trigger again
+            # No need to call st.experimental_rerun()
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
