@@ -415,27 +415,28 @@ with tab2:
             st.session_state['check_out_end'] = check_out_end
 
     with col3:
-        if st.button("Reset Dates"):
-            if not resort_df.empty:
-                arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-                departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+    if st.button("Reset Dates"):
+        if not resort_df.empty:
+            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-                arrival_dates = arrival_dates[arrival_dates.notna()]
-                departure_dates = departure_dates[departure_dates.notna()]
+            arrival_dates = arrival_dates[arrival_dates.notna()]
+            departure_dates = departure_dates[departure_dates.notna()]
 
-                if not arrival_dates.empty and not departure_dates.empty:
-                    st.session_state['check_in_start'] = arrival_dates.min().date()
-                    st.session_state['check_in_end'] = arrival_dates.max().date()
-                    st.session_state['check_out_start'] = departure_dates.min().date()
-                    st.session_state['check_out_end'] = departure_dates.max().date()
-                    st.rerun()  # Using st.rerun() instead of experimental_rerun
-                else:
-                    today = datetime.today().date()
-                    st.session_state['check_in_start'] = today
-                    st.session_state['check_in_end'] = today
-                    st.session_state['check_out_start'] = today
-                    st.session_state['check_out_end'] = today
-                    st.rerun()
+            if not arrival_dates.empty and not departure_dates.empty:
+                st.session_state['check_in_start'] = arrival_dates.min().date()
+                st.session_state['check_in_end'] = arrival_dates.max().date()
+                st.session_state['check_out_start'] = departure_dates.min().date()
+                st.session_state['check_out_end'] = departure_dates.max().date()
+            else:
+                today = datetime.today().date()
+                st.session_state['check_in_start'] = today
+                st.session_state['check_in_end'] = today
+                st.session_state['check_out_start'] = today
+                st.session_state['check_out_end'] = today
+            
+            st.rerun()  # Changed from st.experimental_rerun() to st.rerun()
+
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'])
