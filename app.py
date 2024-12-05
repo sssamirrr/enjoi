@@ -240,6 +240,8 @@ if 'check_out_end' not in st.session_state:
 if 'select_all_state' not in st.session_state:
     st.session_state['select_all_state'] = False
 
+import requests
+
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
@@ -289,40 +291,12 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            # Clear all date-related session states and widget keys
-            keys_to_clear = [
-                'check_in_start', 'check_in_end', 
-                'check_out_start', 'check_out_end',
-                'check_in_start_input', 'check_in_end_input',
-                'check_out_start_input', 'check_out_end_input'
-            ]
-            
-            for key in keys_to_clear:
-                if key in st.session_state:
-                    del st.session_state[key]
-            
-            # Set new values
+            # Reset date filters
             st.session_state['check_in_start'] = pd.to_datetime(df['Arrival Date Short']).min().date()
             st.session_state['check_in_end'] = pd.to_datetime(df['Arrival Date Short']).max().date()
             st.session_state['check_out_start'] = pd.to_datetime(df['Departure Date Short']).min().date()
             st.session_state['check_out_end'] = pd.to_datetime(df['Departure Date Short']).max().date()
-            st.session_state['select_all_state'] = False
-            
-            # Force refresh
             st.rerun()
-
-    # Handle invalid date ranges
-    try:
-        if check_in_start > check_in_end:
-            st.error("⚠️ Check-In Start Date cannot be after Check-In End Date.")
-            st.stop()
-
-        if check_out_start > check_out_end:
-            st.error("⚠️ Check-Out Start Date cannot be after Check-Out End Date.")
-            st.stop()
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
-        st.stop()
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
@@ -379,53 +353,46 @@ with tab2:
             key="guest_editor"
         )
 
-        # Display counter for selected guests
-        selected_count = edited_df['Select'].sum()
-        st.write(f"Selected Guests: {selected_count}")
+        # Text Templates Section
+        st.markdown("---")
+        st.subheader("Message Templates")
 
-        # Select/Deselect All Toggle Button
-        toggle_button_label = "Deselect All" if st.session_state['select_all_state'] else "Select All"
-        if st.button(toggle_button_label):
-            st.session_state['select_all_state'] = not st.session_state['select_all_state']
-            st.rerun()
+        message_templates = {
+            "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
+            "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
+            "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
+        }
 
-    # Text Templates Section
-    st.markdown("---")
-    st.subheader("Message Templates")
+        selected_template = st.selectbox(
+            "Choose a Message Template",
+            options=list(message_templates.keys())
+        )
 
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
-    }
+        message_preview = message_templates[selected_template]
+        st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
-    selected_template = st.selectbox(
-        "Choose a Message Template",
-        options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-    # Export selected guests with message
-    if not filtered_df.empty:
+        # Add "Send SMS to Selected Guests" Button
         selected_guests = edited_df[edited_df['Select']]
         if not selected_guests.empty:
-            # Add message to selected guests
-            selected_guests['Message'] = message_preview
+            if st.button("Send SMS to Selected Guests"):
+                api_key = st.secrets["openphone"]["api_key"]
+                openphone_url = "https://api.openphone.co/v1/messages"
 
-            # Export to CSV
-            csv_data = selected_guests.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="Download Selected Guests with Messages",
-                data=csv_data,
-                file_name=f"{selected_resort}_guests_messages.csv",
-                mime="text/csv"
-            )
-        else:
-            st.warning("No guests selected for export.")
+                for _, row in selected_guests.iterrows():
+                    payload = {
+                        "to": row['Phone Number'],
+                        "message": message_preview
+                    }
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    }
 
-
+                    response = requests.post(openphone_url, json=payload, headers=headers)
+                    if response.status_code == 200:
+                        st.success(f"Message sent to {row['Guest Name']} ({row['Phone Number']})")
+                    else:
+                        st.error(f"Failed to send message to {row['Guest Name']} ({row['Phone Number']})")
 
 
 # Tour Prediction Tab
