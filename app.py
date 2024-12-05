@@ -256,6 +256,13 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
+    # Initialize or check session state variables
+    if 'prev_selected_resort' not in st.session_state:
+        st.session_state['prev_selected_resort'] = None
+
+    if 'reset_dates' not in st.session_state:
+        st.session_state['reset_dates'] = False
+
     # Function to initialize or update date filters
     def update_date_filters(resort_df):
         if not resort_df.empty:
@@ -274,7 +281,6 @@ with tab2:
             if pd.notnull(min_arrival_date):
                 st.session_state['check_in_start'] = min_arrival_date.date()
             else:
-                # Set default dates if no valid arrival dates
                 st.session_state['check_in_start'] = datetime.today().date()
 
             if pd.notnull(max_arrival_date):
@@ -298,11 +304,12 @@ with tab2:
             st.session_state['check_out_start'] = datetime.today().date()
             st.session_state['check_out_end'] = datetime.today().date()
 
-    # Check if 'selected_resort' has changed
-    if 'prev_selected_resort' not in st.session_state or st.session_state['prev_selected_resort'] != selected_resort:
+    # Check if 'selected_resort' has changed or if 'reset_dates' is True
+    if st.session_state['prev_selected_resort'] != selected_resort or st.session_state['reset_dates']:
         # Update date filters for the new resort
         update_date_filters(resort_df)
         st.session_state['prev_selected_resort'] = selected_resort
+        st.session_state['reset_dates'] = False
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
@@ -335,8 +342,8 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            # Reset date filters
-            update_date_filters(resort_df)
+            # Set reset flag
+            st.session_state['reset_dates'] = True
             st.experimental_rerun()
 
     # Apply filters to the dataset
@@ -347,9 +354,9 @@ with tab2:
     resort_df = resort_df.dropna(subset=['Check In', 'Check Out'])
 
     mask = (
-        (resort_df['Check In'] >= st.session_state['check_in_start']) & 
-        (resort_df['Check In'] <= st.session_state['check_in_end']) & 
-        (resort_df['Check Out'] >= st.session_state['check_out_start']) & 
+        (resort_df['Check In'] >= st.session_state['check_in_start']) &
+        (resort_df['Check In'] <= st.session_state['check_in_end']) &
+        (resort_df['Check Out'] >= st.session_state['check_out_start']) &
         (resort_df['Check Out'] <= st.session_state['check_out_end'])
     )
     filtered_df = resort_df[mask]
@@ -419,59 +426,8 @@ with tab2:
             key="guest_editor"
         )
 
-    # Text Templates Section
-    st.markdown("---")
-    st.subheader("Message Templates")
+    # Rest of your code (Message Templates, SMS functionality, etc.)
 
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
-    }
-
-    selected_template = st.selectbox(
-        "Choose a Message Template",
-        options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-    # Add "Send SMS to Selected Guests" Button
-    if 'edited_df' in locals() and not edited_df.empty:
-        selected_guests = edited_df[edited_df['Select']]
-        if not selected_guests.empty:
-            if st.button("Send SMS to Selected Guests"):
-                openphone_url = "https://api.openphone.com/v1/messages"
-                headers = {
-                    "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Your OpenPhone API key
-                    "Content-Type": "application/json"
-                }
-                # Your OpenPhone number
-                sender_phone_number = "+18438972426"  # Replace with your OpenPhone number
-
-                # Sending SMS to each selected guest
-                for _, row in selected_guests.iterrows():
-                    recipient_phone = "+14075206507"  # Hard-coded test number
-                    payload = {
-                        "content": message_preview,
-                        "from": sender_phone_number,
-                        "to": [recipient_phone]
-                    }
-
-                    response = requests.post(openphone_url, json=payload, headers=headers)
-
-                    if response.status_code == 202:
-                        st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
-                    else:
-                        st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-                        st.write("Response Status Code:", response.status_code)
-                        st.write("Response Body:", response.json())
-                        st.write(headers)
-        else:
-            st.info("No guests selected to send SMS.")
-    else:
-        st.info("No guest data available to send SMS.")
 
 # Tour Prediction Tab
 with tab3:
