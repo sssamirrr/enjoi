@@ -257,7 +257,7 @@ with tab2:
     st.subheader(f"Guest Information for {selected_resort}")
 
     # Function to initialize or update date filters
-    def update_date_filters():
+    def update_date_filters(resort_df):
         if not resort_df.empty:
             arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
             departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
@@ -266,20 +266,30 @@ with tab2:
             arrival_dates = arrival_dates[arrival_dates.notna()]
             departure_dates = departure_dates[departure_dates.notna()]
 
-            if not arrival_dates.empty:
-                st.session_state['check_in_start'] = arrival_dates.min().date()
-                st.session_state['check_in_end'] = arrival_dates.max().date()
+            min_arrival_date = arrival_dates.min()
+            max_arrival_date = arrival_dates.max()
+            min_departure_date = departure_dates.min()
+            max_departure_date = departure_dates.max()
+
+            if pd.notnull(min_arrival_date):
+                st.session_state['check_in_start'] = min_arrival_date.date()
             else:
                 # Set default dates if no valid arrival dates
                 st.session_state['check_in_start'] = datetime.today().date()
+
+            if pd.notnull(max_arrival_date):
+                st.session_state['check_in_end'] = max_arrival_date.date()
+            else:
                 st.session_state['check_in_end'] = datetime.today().date()
 
-            if not departure_dates.empty:
-                st.session_state['check_out_start'] = departure_dates.min().date()
-                st.session_state['check_out_end'] = departure_dates.max().date()
+            if pd.notnull(min_departure_date):
+                st.session_state['check_out_start'] = min_departure_date.date()
             else:
-                # Set default dates if no valid departure dates
                 st.session_state['check_out_start'] = datetime.today().date()
+
+            if pd.notnull(max_departure_date):
+                st.session_state['check_out_end'] = max_departure_date.date()
+            else:
                 st.session_state['check_out_end'] = datetime.today().date()
         else:
             # Set default dates if resort_df is empty
@@ -291,7 +301,7 @@ with tab2:
     # Check if 'selected_resort' has changed
     if 'prev_selected_resort' not in st.session_state or st.session_state['prev_selected_resort'] != selected_resort:
         # Update date filters for the new resort
-        update_date_filters()
+        update_date_filters(resort_df)
         st.session_state['prev_selected_resort'] = selected_resort
 
     # Date filters
@@ -326,7 +336,7 @@ with tab2:
     with col3:
         if st.button("Reset Dates"):
             # Reset date filters
-            update_date_filters()
+            update_date_filters(resort_df)
             st.experimental_rerun()
 
     # Apply filters to the dataset
@@ -462,7 +472,6 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
-
 
 # Tour Prediction Tab
 with tab3:
