@@ -244,7 +244,7 @@ if 'select_all_state' not in st.session_state:
 
 import requests
 
-Function to get the last communication status (message or call) for a given phone number
+# Function to get the last communication status (message or call) for a given phone number
 def get_last_communication_status(phone_number, headers):
     # Prepare the URLs
     messages_url = "https://api.openphone.com/v1/messages"
