@@ -1,4 +1,4 @@
-st.write(st.secrets) f
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -6,7 +6,7 @@ from datetime import datetime
 import gspread
 from google.oauth2 import service_account
 import math
-
+st.write(st.secrets)
 # Set page config
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
