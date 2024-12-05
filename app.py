@@ -244,28 +244,106 @@ if 'select_all_state' not in st.session_state:
 
 import requests
 
-# Import necessary modules at the top of your script
-import streamlit as st
-import pandas as pd
-import requests
-from datetime import datetime
+Function to get the last communication status (message or call) for a given phone number
+def get_last_communication_status(phone_number, headers):
+    # Prepare the URLs
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+    
+    # Parameters to filter messages and calls by the contact's phone number
+    params = {
+        "filter[contact_phone_number]": phone_number,
+        "page[size]": 1,
+        "sort": "-created_at"
+    }
+    
+    # Initialize variables
+    last_message = None
+    last_call = None
+    
+    # Fetch the last message
+    message_response = requests.get(messages_url, headers=headers, params=params)
+    if message_response.status_code == 200:
+        message_data = message_response.json()
+        if message_data['data']:
+            last_message = message_data['data'][0]
+    else:
+        return "Error"
+    
+    # Fetch the last call
+    call_response = requests.get(calls_url, headers=headers, params=params)
+    if call_response.status_code == 200:
+        call_data = call_response.json()
+        if call_data['data']:
+            last_call = call_data['data'][0]
+    else:
+        return "Error"
+    
+    # Determine the most recent communication
+    if last_message and last_call:
+        message_time = datetime.fromisoformat(last_message['attributes']['created_at'].replace('Z', '+00:00'))
+        call_time = datetime.fromisoformat(last_call['attributes']['created_at'].replace('Z', '+00:00'))
+        if message_time > call_time:
+            # The last communication was a message
+            direction = last_message['attributes']['direction']
+            if direction == 'outgoing':
+                return "Sent Message"
+            elif direction == 'incoming':
+                return "Received Message"
+        else:
+            # The last communication was a call
+            direction = last_call['attributes']['direction']
+            if direction == 'outgoing':
+                return "Made Call"
+            elif direction == 'incoming':
+                return "Received Call"
+    elif last_message:
+        # Only message exists
+        direction = last_message['attributes']['direction']
+        if direction == 'outgoing':
+            return "Sent Message"
+        elif direction == 'incoming':
+            return "Received Message"
+    elif last_call:
+        # Only call exists
+        direction = last_call['attributes']['direction']
+        if direction == 'outgoing':
+            return "Made Call"
+        elif direction == 'incoming':
+            return "Received Call"
+    else:
+        # No communications found
+        return "No Communications"
+    
+    # Default case
+    return "No Communications"
 
-# ... (other imports and code)
+# Cached function to fetch communication statuses for all guests
+@st.cache_data
+def fetch_communication_statuses(guest_df, headers):
+    statuses = []
+    for idx, row in guest_df.iterrows():
+        phone_number = row['Phone Number']
+        status = get_last_communication_status(phone_number, headers)
+        statuses.append(status)
+        # Introduce a small delay to respect rate limits
+        time.sleep(0.2)  # Wait for 0.2 seconds between requests (5 requests per second)
+    return statuses
 
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
-
+    
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
         options=sorted(df['Market'].unique())
     )
-
+    
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
-
+    
     # Initialize or check session state variables
     if 'prev_selected_resort' not in st.session_state:
         st.session_state['prev_selected_resort'] = None
@@ -352,13 +430,9 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            # Option 1: Use st.rerun() to reload the app
+            # Use st.rerun() to reload the app
             st.session_state['reset_dates'] = True
             st.rerun()
-
-            # Option 2: Update dates without rerunning
-            # update_date_filters(resort_df)
-            # st.session_state['reset_dates'] = False
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -378,7 +452,7 @@ with tab2:
     # Handle empty DataFrame
     if filtered_df.empty:
         st.warning("No guests found for the selected filters.")
-        display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number'])
+        display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status'])
     else:
         # Prepare display DataFrame
         display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
@@ -400,14 +474,26 @@ with tab2:
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
 
+        # Initialize the 'Communication Status' column
+        display_df['Communication Status'] = 'Checking...'
+
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All", key="select_all_checkbox")
 
         # Apply "Select All" state to the Select column
         display_df['Select'] = select_all
 
+        # Prepare headers for API calls
+        headers = {
+            "Authorization": "Bearer j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Your OpenPhone API key
+            "Content-Type": "application/json"
+        }
+
+        # Fetch communication statuses
+        display_df['Communication Status'] = fetch_communication_statuses(display_df, headers)
+
         # Reorder columns to have "Select" as the leftmost column
-        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number']]
+        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status']]
 
         # Interactive data editor
         edited_df = st.data_editor(
@@ -433,6 +519,11 @@ with tab2:
                 "Phone Number": st.column_config.TextColumn(
                     "Phone Number",
                     help="Guest's phone number"
+                ),
+                "Communication Status": st.column_config.TextColumn(
+                    "Communication Status",
+                    help="Last communication status with the guest",
+                    disabled=True
                 ),
             },
             hide_index=True,
@@ -473,8 +564,8 @@ with tab2:
                 # Your OpenPhone number
                 sender_phone_number = "+18438972426"  # Replace with your OpenPhone number
 
-                # Sending SMS to each selected guest
-                for _, row in selected_guests.iterrows():
+                # Sending SMS to each selected guest with rate limiting
+                for idx, row in selected_guests.iterrows():
                     recipient_phone = "+14075206507"  # Hard-coded test number
                     payload = {
                         "content": message_preview,
@@ -491,6 +582,9 @@ with tab2:
                         st.write("Response Status Code:", response.status_code)
                         st.write("Response Body:", response.json())
                         st.write(headers)
+
+                    # Introduce a delay to respect rate limits
+                    time.sleep(0.2)  # Wait for 0.2 seconds between requests (5 requests per second)
         else:
             st.info("No guests selected to send SMS.")
     else:
