@@ -256,17 +256,43 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Initialize session state for dates
-    if 'check_in_start' not in st.session_state:
-        st.session_state['check_in_start'] = pd.to_datetime(resort_df['Arrival Date Short']).min().date()
-    if 'check_in_end' not in st.session_state:
-        st.session_state['check_in_end'] = pd.to_datetime(resort_df['Arrival Date Short']).max().date()
-    if 'check_out_start' not in st.session_state:
-        st.session_state['check_out_start'] = pd.to_datetime(resort_df['Departure Date Short']).min().date()
-    if 'check_out_end' not in st.session_state:
-        st.session_state['check_out_end'] = pd.to_datetime(resort_df['Departure Date Short']).max().date()
-    if 'select_all_state' not in st.session_state:
-        st.session_state['select_all_state'] = False
+    # Function to initialize or update date filters
+    def update_date_filters():
+        if not resort_df.empty:
+            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+            # Filter out NaT values
+            arrival_dates = arrival_dates[arrival_dates.notna()]
+            departure_dates = departure_dates[departure_dates.notna()]
+
+            if not arrival_dates.empty:
+                st.session_state['check_in_start'] = arrival_dates.min().date()
+                st.session_state['check_in_end'] = arrival_dates.max().date()
+            else:
+                # Set default dates if no valid arrival dates
+                st.session_state['check_in_start'] = datetime.today().date()
+                st.session_state['check_in_end'] = datetime.today().date()
+
+            if not departure_dates.empty:
+                st.session_state['check_out_start'] = departure_dates.min().date()
+                st.session_state['check_out_end'] = departure_dates.max().date()
+            else:
+                # Set default dates if no valid departure dates
+                st.session_state['check_out_start'] = datetime.today().date()
+                st.session_state['check_out_end'] = datetime.today().date()
+        else:
+            # Set default dates if resort_df is empty
+            st.session_state['check_in_start'] = datetime.today().date()
+            st.session_state['check_in_end'] = datetime.today().date()
+            st.session_state['check_out_start'] = datetime.today().date()
+            st.session_state['check_out_end'] = datetime.today().date()
+
+    # Check if 'selected_resort' has changed
+    if 'prev_selected_resort' not in st.session_state or st.session_state['prev_selected_resort'] != selected_resort:
+        # Update date filters for the new resort
+        update_date_filters()
+        st.session_state['prev_selected_resort'] = selected_resort
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
@@ -300,15 +326,15 @@ with tab2:
     with col3:
         if st.button("Reset Dates"):
             # Reset date filters
-            st.session_state['check_in_start'] = pd.to_datetime(resort_df['Arrival Date Short']).min().date()
-            st.session_state['check_in_end'] = pd.to_datetime(resort_df['Arrival Date Short']).max().date()
-            st.session_state['check_out_start'] = pd.to_datetime(resort_df['Departure Date Short']).min().date()
-            st.session_state['check_out_end'] = pd.to_datetime(resort_df['Departure Date Short']).max().date()
+            update_date_filters()
             st.experimental_rerun()
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
     resort_df['Check Out'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').dt.date
+
+    # Filter out rows with invalid dates
+    resort_df = resort_df.dropna(subset=['Check In', 'Check Out'])
 
     mask = (
         (resort_df['Check In'] >= st.session_state['check_in_start']) & 
@@ -408,17 +434,11 @@ with tab2:
             if st.button("Send SMS to Selected Guests"):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers = {
-                    "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",
+                    "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Your OpenPhone API key
                     "Content-Type": "application/json"
                 }
                 # Your OpenPhone number
                 sender_phone_number = "+18438972426"  # Replace with your OpenPhone number
-
-                # Helper function to format phone numbers
-                def format_phone_number(phone):
-                    if not phone.startswith("+"):
-                        return f"+1{phone}"  # Assuming US numbers
-                    return phone
 
                 # Sending SMS to each selected guest
                 for _, row in selected_guests.iterrows():
