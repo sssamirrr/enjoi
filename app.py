@@ -386,7 +386,7 @@ with tab2:
         selected_guests = edited_df[edited_df['Select']]
         openphone_url = "https://api.openphone.com/v1/messages"
         headers = {
-            "Authorization": f"Bearer {st.secrets['openphone']['api_key']}",
+            "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Hard-coded API key
             "Content-Type": "application/json"
         }
 
