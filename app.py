@@ -8,10 +8,10 @@ import math
 import requests
 import time
 
-# Set page config
+# Set page configuration
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
-# Add CSS for styling (optional)
+# Add CSS for optional styling (can be customized or removed)
 st.markdown("""
     <style>
     .stDateInput {
@@ -280,16 +280,25 @@ with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
-        fig_hotels = px.bar(
-            filtered_df['Market'].value_counts().reset_index(),
-            x='index',
-            y='Market',
-            labels={'index': 'Hotel', 'Market': 'Reservations'},
-            title='Reservations by Hotel'
-        )
-        st.plotly_chart(fig_hotels, use_container_width=True)
+        # Reservations by Hotel using groupby
+        reservations_by_hotel = filtered_df.groupby('Market').size().reset_index(name='Reservations')
+        reservations_by_hotel = reservations_by_hotel.rename(columns={'Market': 'Hotel'})
+        
+        # Conditional Plotting
+        if reservations_by_hotel.empty:
+            st.warning("No reservation data available for the selected filters.")
+        else:
+            fig_hotels = px.bar(
+                reservations_by_hotel,
+                x='Hotel',
+                y='Reservations',
+                labels={'Hotel': 'Hotel', 'Reservations': 'Reservations'},
+                title='Reservations by Hotel'
+            )
+            st.plotly_chart(fig_hotels, use_container_width=True)
 
     with col2:
+        # Length of Stay Distribution
         fig_los = px.histogram(
             filtered_df,
             x='# Nights',
@@ -300,6 +309,7 @@ with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
+        # Rate Code Distribution
         fig_rate = px.pie(
             filtered_df,
             names='Rate Code Name',
@@ -308,14 +318,19 @@ with tab1:
         st.plotly_chart(fig_rate, use_container_width=True)
 
     with col2:
+        # Arrivals by Date
         daily_arrivals = filtered_df['Arrival Date Short'].value_counts().sort_index()
-        fig_arrivals = px.line(
-            x=daily_arrivals.index,
-            y=daily_arrivals.values,
-            labels={'x': 'Date', 'y': 'Arrivals'},
-            title='Arrivals by Date'
-        )
-        st.plotly_chart(fig_arrivals, use_container_width=True)
+        
+        if daily_arrivals.empty:
+            st.warning("No arrival data available for the selected filters.")
+        else:
+            fig_arrivals = px.line(
+                x=daily_arrivals.index,
+                y=daily_arrivals.values,
+                labels={'x': 'Date', 'y': 'Arrivals'},
+                title='Arrivals by Date'
+            )
+            st.plotly_chart(fig_arrivals, use_container_width=True)
 
 ############################################
 # Marketing Tab
@@ -436,7 +451,6 @@ with tab2:
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        display_df['Select'] = False
         display_df['Communication Status'] = 'Checking...'
 
         # Add "Select All" checkbox
@@ -445,7 +459,7 @@ with tab2:
 
         # Prepare headers for API calls
         headers = {
-            "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
+            "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Hard-coded API key
             "Content-Type": "application/json"
         }
 
@@ -522,10 +536,10 @@ with tab2:
             if st.button(button_label):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers_sms = {
-                    "Authorization": j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7,  # No "Bearer " prefix as per user request
+                    "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Hard-coded API key
                     "Content-Type": "application/json"
                 }
-                sender_phone_number = +18438972426  # Your OpenPhone number
+                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
 
                 for idx, row in selected_guests.iterrows():
                     recipient_phone = row['Phone Number']  # Use actual guest's phone number
