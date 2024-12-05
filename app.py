@@ -257,11 +257,7 @@ def get_phone_number_id(headers, phone_number):
         st.write("Response:", response.text)
     return None
 
-    else:
-        st.write(f"Error retrieving phone numbers: {response.status_code}")
-        st.write("Response:", response.text)
-    return None
-
+   
 # Function to get the last communication status (message or call) for a given phone number
 def get_last_communication_status(phone_number, headers, openphone_number):
     # Get phoneNumberId for your OpenPhone number
