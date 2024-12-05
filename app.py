@@ -380,7 +380,7 @@ with tab2:
             if st.button("Send SMS to Selected Guests"):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers = {
-                    "Authorization": "Bearer ebScqkTyM2AxT25gryN9F5qnyTT77vuz",  # Hard-coded API key
+                    "Authorization": f"Bearer {st.secrets['openphone']['api_key']}",  # Correct Authorization header
                     "Content-Type": "application/json"
                 }
 
