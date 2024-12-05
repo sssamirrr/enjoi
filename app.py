@@ -6,6 +6,8 @@ from datetime import datetime
 import gspread
 from google.oauth2 import service_account
 import math
+api_key = "ebScqkTyM2AxT25gryN9F5qnyTT77vuz"  # Temporary hardcoded value for testing
+st.success("Using Hardcoded API Key for Testing")
 
 # Set page config
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
