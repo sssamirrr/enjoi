@@ -438,10 +438,10 @@ with col3:
     resort_df = resort_df.dropna(subset=['Check In', 'Check Out'])
 
     mask = (
-        (resort_df['Check In'] >= st.session_state['check_in_start']) &
-        (resort_df['Check In'] <= st.session_state['check_in_end']) &
-        (resort_df['Check Out'] >= st.session_state['check_out_start']) &
-        (resort_df['Check Out'] <= st.session_state['check_out_end'])
+    (resort_df['Check In'] >= st.session_state['check_in_start']) &
+    (resort_df['Check In'] <= st.session_state['check_in_end']) &
+    (resort_df['Check Out'] >= st.session_state['check_out_start']) &
+    (resort_df['Check Out'] <= st.session_state['check_out_end'])
     )
     filtered_df = resort_df[mask]
 
