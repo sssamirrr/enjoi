@@ -106,14 +106,15 @@ def get_phone_number_id(headers, phone_number):
         st.error(f"Exception during phone number retrieval: {str(e)}")
     return None
 
-def get_last_communication_status(phone_number, headers, openphone_number):
+def get_last_communication_info(phone_number, headers, openphone_number):
     """
-    For a given guest's phone number, retrieve the last communication status (message or call).
+    For a given guest's phone number, retrieve the last communication status (message or call)
+    and the date of that communication.
     """
     # Get phoneNumberId for your OpenPhone number
     phone_number_id = get_phone_number_id(headers, openphone_number)
     if not phone_number_id:
-        return "Error"
+        return ("Error", None)
 
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
@@ -137,10 +138,10 @@ def get_last_communication_status(phone_number, headers, openphone_number):
                 last_message = message_data['data'][0]
         else:
             st.warning(f"Message API Error for {phone_number}: {message_response.status_code}")
-            return "Error"
+            return ("Error", None)
     except Exception as e:
         st.warning(f"Exception during message retrieval for {phone_number}: {str(e)}")
-        return "Error"
+        return ("Error", None)
 
     # Fetch the last call
     try:
@@ -151,10 +152,10 @@ def get_last_communication_status(phone_number, headers, openphone_number):
                 last_call = call_data['data'][0]
         else:
             st.warning(f"Call API Error for {phone_number}: {call_response.status_code}")
-            return "Error"
+            return ("Error", None)
     except Exception as e:
         st.warning(f"Exception during call retrieval for {phone_number}: {str(e)}")
-        return "Error"
+        return ("Error", None)
 
     # Helper functions to parse datetime and direction
     def parse_datetime(item):
@@ -175,37 +176,46 @@ def get_last_communication_status(phone_number, headers, openphone_number):
         if message_time and call_time:
             if message_time > call_time:
                 direction = parse_direction(last_message)
-                return "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
+                status = "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
+                return (status, message_time.strftime("%Y-%m-%d %H:%M:%S"))
             else:
                 direction = parse_direction(last_call)
-                return "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+                status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+                return (status, call_time.strftime("%Y-%m-%d %H:%M:%S"))
         elif message_time:
             direction = parse_direction(last_message)
-            return "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
+            status = "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
+            return (status, message_time.strftime("%Y-%m-%d %H:%M:%S"))
         elif call_time:
             direction = parse_direction(last_call)
-            return "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+            status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+            return (status, call_time.strftime("%Y-%m-%d %H:%M:%S"))
     elif last_message:
         direction = parse_direction(last_message)
-        return "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
+        status = "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
+        return (status, message_time.strftime("%Y-%m-%d %H:%M:%S"))
     elif last_call:
         direction = parse_direction(last_call)
-        return "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+        status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+        return (status, call_time.strftime("%Y-%m-%d %H:%M:%S"))
 
-    return "No Communications"
+    return ("No Communications", None)
 
 @st.cache_data
-def fetch_communication_statuses(guest_df, headers, openphone_number):
+def fetch_communication_info(guest_df, headers, openphone_number):
     """
-    Fetch communication statuses for all guests in the dataframe.
+    Fetch communication statuses and dates for all guests in the dataframe.
+    Returns two lists: statuses and dates.
     """
     statuses = []
+    dates = []
     for idx, row in guest_df.iterrows():
         phone_number = row['Phone Number']
-        status = get_last_communication_status(phone_number, headers, openphone_number)
+        status, date = get_last_communication_info(phone_number, headers, openphone_number)
         statuses.append(status)
+        dates.append(date)
         time.sleep(0.2)  # Respect rate limits
-    return statuses
+    return statuses, dates
 
 ############################################
 # Create Tabs
@@ -433,7 +443,7 @@ with tab2:
     # Handle empty DataFrame
     if filtered_df.empty:
         st.warning("No guests found for the selected filters.")
-        display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status'])
+        display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date'])
     else:
         # Prepare display DataFrame
         display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
@@ -452,6 +462,7 @@ with tab2:
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
         display_df['Communication Status'] = 'Checking...'
+        display_df['Last Communication Date'] = None  # Initialize the new column
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All", key="select_all_checkbox")
@@ -459,15 +470,17 @@ with tab2:
 
         # Prepare headers for API calls
         headers = {
-            "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Hard-coded API key
+            "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
             "Content-Type": "application/json"
         }
 
-        # Fetch communication statuses
-        display_df['Communication Status'] = fetch_communication_statuses(display_df, headers, OPENPHONE_NUMBER)
+        # Fetch communication statuses and dates
+        statuses, dates = fetch_communication_info(display_df, headers, OPENPHONE_NUMBER)
+        display_df['Communication Status'] = statuses
+        display_df['Last Communication Date'] = dates
 
         # Reorder columns to have "Select" as the leftmost column
-        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status']]
+        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date']]
 
         # Interactive data editor
         edited_df = st.data_editor(
@@ -497,6 +510,11 @@ with tab2:
                 "Communication Status": st.column_config.TextColumn(
                     "Communication Status",
                     help="Last communication status with the guest",
+                    disabled=True
+                ),
+                "Last Communication Date": st.column_config.TextColumn(
+                    "Last Communication Date",
+                    help="Date and time of the last communication with the guest",
                     disabled=True
                 ),
             },
@@ -536,7 +554,7 @@ with tab2:
             if st.button(button_label):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers_sms = {
-                    "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Hard-coded API key
+                    "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
                     "Content-Type": "application/json"
                 }
                 sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
