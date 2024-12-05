@@ -256,23 +256,52 @@ def get_phone_number_id(headers, phone_number):
         st.write(f"Error retrieving phone numbers: {response.status_code}")
         st.write("Response:", response.text)
     return None
+
+
+# Import necessary modules at the top of your script
+import streamlit as st
+import pandas as pd
+import requests
+import time
+from datetime import datetime
+
+# Function to get the phoneNumberId for your OpenPhone number
+def get_phone_number_id(headers, phone_number):
+    url = "https://api.openphone.com/v1/phone_numbers"
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        for number in data['data']:
+            if number['attributes']['phone_number'] == phone_number:
+                return number['id']
+    else:
+        st.write(f"Error retrieving phone numbers: {response.status_code}")
+        st.write("Response:", response.text)
+    return None
+
 # Function to get the last communication status (message or call) for a given phone number
-def get_last_communication_status(phone_number, headers):
+def get_last_communication_status(phone_number, headers, openphone_number):
+    # Get phoneNumberId for your OpenPhone number
+    phone_number_id = get_phone_number_id(headers, openphone_number)
+    if not phone_number_id:
+        st.write("Failed to retrieve phoneNumberId")
+        return "Error"
+
     # Prepare the URLs
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
-    
-    # Parameters to filter messages and calls by the phone number
+
+    # Parameters for API requests
     params = {
-        "filter[phone_number]": phone_number,
-        "page[size]": 1,
-        "sort": "-created_at"
+        "phoneNumberId": phone_number_id,
+        "participants": [phone_number],
+        "maxResults": 1
     }
-    
+
     # Initialize variables
     last_message = None
     last_call = None
-    
+
     # Fetch the last message
     message_response = requests.get(messages_url, headers=headers, params=params)
     if message_response.status_code == 200:
@@ -283,7 +312,7 @@ def get_last_communication_status(phone_number, headers):
         st.write(f"Message API Error for {phone_number}: {message_response.status_code}")
         st.write("Response:", message_response.text)
         return "Error"
-    
+
     # Fetch the last call
     call_response = requests.get(calls_url, headers=headers, params=params)
     if call_response.status_code == 200:
@@ -294,7 +323,7 @@ def get_last_communication_status(phone_number, headers):
         st.write(f"Call API Error for {phone_number}: {call_response.status_code}")
         st.write("Response:", call_response.text)
         return "Error"
-    
+
     # Determine the most recent communication
     if last_message and last_call:
         message_time = datetime.fromisoformat(last_message['attributes']['created_at'].replace('Z', '+00:00'))
@@ -330,17 +359,14 @@ def get_last_communication_status(phone_number, headers):
     else:
         # No communications found
         return "No Communications"
-    
-    # Default case
-    return "No Communications"
 
 # Cached function to fetch communication statuses for all guests
 @st.cache_data
-def fetch_communication_statuses(guest_df, headers):
+def fetch_communication_statuses(guest_df, headers, openphone_number):
     statuses = []
     for idx, row in guest_df.iterrows():
         phone_number = row['Phone Number']
-        status = get_last_communication_status(phone_number, headers)
+        status = get_last_communication_status(phone_number, headers, openphone_number)
         statuses.append(status)
         # Introduce a small delay to respect rate limits
         time.sleep(0.2)  # Wait for 0.2 seconds between requests (5 requests per second)
@@ -349,17 +375,17 @@ def fetch_communication_statuses(guest_df, headers):
 # Marketing Tab
 with tab2:
     st.title("📊 Marketing Information by Resort")
-    
+
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
         options=sorted(df['Market'].unique())
     )
-    
+
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
-    
+
     # Initialize or check session state variables
     if 'prev_selected_resort' not in st.session_state:
         st.session_state['prev_selected_resort'] = None
@@ -501,12 +527,15 @@ with tab2:
 
         # Prepare headers for API calls
         headers = {
-            "Authorization": "Bearer j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Your OpenPhone API key
+            "Authorization": "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # Your OpenPhone API key
             "Content-Type": "application/json"
         }
 
+        # Your OpenPhone number
+        openphone_number = "+18438972426"  # Replace with your OpenPhone number
+
         # Fetch communication statuses
-        display_df['Communication Status'] = fetch_communication_statuses(display_df, headers)
+        display_df['Communication Status'] = fetch_communication_statuses(display_df, headers, openphone_number)
 
         # Reorder columns to have "Select" as the leftmost column
         display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status']]
@@ -605,7 +634,6 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
-
 
 # Tour Prediction Tab
 with tab3:
