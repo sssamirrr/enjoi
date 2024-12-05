@@ -378,61 +378,86 @@ with tab2:
     st.subheader(f"Guest Information for {selected_resort}")
 
     # Date filters layout
-    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-    with col1:
-        st.session_state['check_in_start'] = st.date_input(
-            "Check In Date (Start)",
-            value=st.session_state['check_in_start'],
-            key='check_in_start_input'
-        )
+col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+with col1:
+    check_in_start = st.date_input(
+        "Check In Date (Start)",
+        value=st.session_state['check_in_start'],
+        key='check_in_start_input'
+    )
+    if check_in_start != st.session_state['check_in_start']:
+        st.session_state['check_in_start'] = check_in_start
 
-        st.session_state['check_in_end'] = st.date_input(
-            "Check In Date (End)",
-            value=st.session_state['check_in_end'],
-            key='check_in_end_input'
-        )
+    check_in_end = st.date_input(
+        "Check In Date (End)",
+        value=st.session_state['check_in_end'],
+        key='check_in_end_input'
+    )
+    if check_in_end != st.session_state['check_in_end']:
+        st.session_state['check_in_end'] = check_in_end
 
-    with col2:
-        st.session_state['check_out_start'] = st.date_input(
-            "Check Out Date (Start)",
-            value=st.session_state['check_out_start'],
-            key='check_out_start_input'
-        )
+with col2:
+    check_out_start = st.date_input(
+        "Check Out Date (Start)",
+        value=st.session_state['check_out_start'],
+        key='check_out_start_input'
+    )
+    if check_out_start != st.session_state['check_out_start']:
+        st.session_state['check_out_start'] = check_out_start
 
-        st.session_state['check_out_end'] = st.date_input(
-            "Check Out Date (End)",
-            value=st.session_state['check_out_end'],
-            key='check_out_end_input'
-        )
+    check_out_end = st.date_input(
+        "Check Out Date (End)",
+        value=st.session_state['check_out_end'],
+        key='check_out_end_input'
+    )
+    if check_out_end != st.session_state['check_out_end']:
+        st.session_state['check_out_end'] = check_out_end
 
-    with col3:
+with col3:
     def reset_dates():
-        if not resort_df.empty:
-            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+        try:
+            if not resort_df.empty:
+                arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+                departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-            arrival_dates = arrival_dates[arrival_dates.notna()]
-            departure_dates = departure_dates[departure_dates.notna()]
+                arrival_dates = arrival_dates[arrival_dates.notna()]
+                departure_dates = departure_dates[departure_dates.notna()]
 
-            if not arrival_dates.empty and not departure_dates.empty:
-                st.session_state['check_in_start'] = arrival_dates.min().date()
-                st.session_state['check_in_end'] = arrival_dates.max().date()
-                st.session_state['check_out_start'] = departure_dates.min().date()
-                st.session_state['check_out_end'] = departure_dates.max().date()
+                if not arrival_dates.empty and not departure_dates.empty:
+                    st.session_state['check_in_start'] = arrival_dates.min().date()
+                    st.session_state['check_in_end'] = arrival_dates.max().date()
+                    st.session_state['check_out_start'] = departure_dates.min().date()
+                    st.session_state['check_out_end'] = departure_dates.max().date()
+                else:
+                    st.session_state['check_in_start'] = datetime.today().date()
+                    st.session_state['check_in_end'] = datetime.today().date()
+                    st.session_state['check_out_start'] = datetime.today().date()
+                    st.session_state['check_out_end'] = datetime.today().date()
             else:
-                today = datetime.today().date()
-                st.session_state['check_in_start'] = today
-                st.session_state['check_in_end'] = today
-                st.session_state['check_out_start'] = today
-                st.session_state['check_out_end'] = today
-        else:
-            today = datetime.today().date()
-            st.session_state['check_in_start'] = today
-            st.session_state['check_in_end'] = today
-            st.session_state['check_out_start'] = today
-            st.session_state['check_out_end'] = today
+                st.session_state['check_in_start'] = datetime.today().date()
+                st.session_state['check_in_end'] = datetime.today().date()
+                st.session_state['check_out_start'] = datetime.today().date()
+                st.session_state['check_out_end'] = datetime.today().date()
+        except Exception as e:
+            st.error(f"Error resetting dates: {str(e)}")
+            st.session_state['check_in_start'] = datetime.today().date()
+            st.session_state['check_in_end'] = datetime.today().date()
+            st.session_state['check_out_start'] = datetime.today().date()
+            st.session_state['check_out_end'] = datetime.today().date()
 
     st.button("Reset Dates", key='reset_dates_button', on_click=reset_dates)
+
+# Add date validation
+if check_in_start > check_in_end:
+    st.error("Check-in start date cannot be after check-in end date")
+    check_in_end = check_in_start
+    st.session_state['check_in_end'] = check_in_start
+
+if check_out_start > check_out_end:
+    st.error("Check-out start date cannot be after check-out end date")
+    check_out_end = check_out_start
+    st.session_state['check_out_end'] = check_out_start
+
 
             # No need to call st.experimental_rerun() as updating session_state triggers a rerun
 
