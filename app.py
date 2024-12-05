@@ -388,27 +388,41 @@ with tab2:
     message_preview = message_templates[selected_template]
     st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
-    # "Send SMS to Selected Guests" Button (Always Visible)
-    if st.button("Send SMS to Selected Guests"):
-        api_key = st.secrets["openphone"]["api_key"]
-        openphone_url = "https://api.openphone.co/v1/messages"
+   if st.button("Send SMS to Selected Guests"):
+    openphone_url = "https://api.openphone.com/v1/messages"
+    headers = {
+        "Authorization": f"Bearer {st.secrets['openphone']['api_key']}",
+        "Content-Type": "application/json"
+    }
 
-        for _, row in edited_df.iterrows():  # Iterate over all rows
-            if row['Select']:  # Only send SMS to selected guests
-                payload = {
-                    "to": row['Phone Number'],
-                    "message": message_preview
-                }
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
+    # Example sender phone number (replace with your OpenPhone number)
+    sender_phone_number = "+15555555555"  # Replace with your OpenPhone number in E.164 format
 
-                response = requests.post(openphone_url, json=payload, headers=headers)
-                if response.status_code == 200:
-                    st.success(f"Message sent to {row['Guest Name']} ({row['Phone Number']})")
-                else:
-                    st.error(f"Failed to send message to {row['Guest Name']} ({row['Phone Number']})")
+    # Helper function to format phone numbers
+    def format_phone_number(phone):
+        if not phone.startswith("+"):
+            return f"+1{phone}"  # Assuming US numbers
+        return phone
+
+    # Sending SMS to each selected guest
+    for _, row in selected_guests.iterrows():
+        recipient_phone = format_phone_number(row['Phone Number'])
+        payload = {
+            "content": message_preview,  # The message content
+            "from": sender_phone_number,  # Your OpenPhone number
+            "to": [recipient_phone]  # Array with one recipient
+        }
+
+        response = requests.post(openphone_url, json=payload, headers=headers)
+
+        # Handle API response
+        if response.status_code == 202:  # Success
+            st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
+        else:
+            st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
+            st.write("Response Status Code:", response.status_code)
+            st.write("Response Body:", response.json())  # Debugging response
+
 
 # Tour Prediction Tab
 with tab3:
