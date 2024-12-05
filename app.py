@@ -435,7 +435,7 @@ with tab2:
                 st.session_state['check_out_start'] = today
                 st.session_state['check_out_end'] = today
             
-            st.rerun()  # Changed from st.experimental_rerun() to st.rerun()
+            st.rerun() 
 
 
     # Apply filters to the dataset
