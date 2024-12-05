@@ -40,13 +40,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 ############################################
-# Hard-coded OpenPhone Credentials
+# Securely Access Secrets
 ############################################
 
-# **IMPORTANT:** It's highly recommended to store sensitive information like API keys in `st.secrets` or environment variables.
-# For demonstration purposes, they are hard-coded here as per your request.
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
-OPENPHONE_NUMBER = "+18438972426"
+# Ensure that you have set up your secrets correctly in Streamlit Cloud or your deployment environment.
+# Here's how you can access them:
+
+# Access OpenPhone credentials securely
+OPENPHONE_API_KEY = st.secrets["openphone"]["api_key"]
+OPENPHONE_NUMBER = st.secrets["openphone"]["number"]
 
 ############################################
 # Connect to Google Sheets
@@ -81,6 +83,20 @@ df = get_google_sheet_data()
 if df is None:
     st.error("Failed to load data. Please check your connection and credentials.")
     st.stop()
+
+############################################
+# Initialize Session State
+############################################
+
+# Initialize date filters for the Marketing Tab
+if 'check_in_start' not in st.session_state:
+    st.session_state['check_in_start'] = datetime.today().date()
+if 'check_in_end' not in st.session_state:
+    st.session_state['check_in_end'] = datetime.today().date()
+if 'check_out_start' not in st.session_state:
+    st.session_state['check_out_start'] = datetime.today().date()
+if 'check_out_end' not in st.session_state:
+    st.session_state['check_out_end'] = datetime.today().date()
 
 ############################################
 # OpenPhone API Functions
@@ -361,76 +377,62 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Initialize or check session state variables
-    if 'prev_selected_resort' not in st.session_state:
-        st.session_state['prev_selected_resort'] = None
-    if 'reset_dates' not in st.session_state:
-        st.session_state['reset_dates'] = False
-    # Initialize date filters if not present
-    if 'check_in_start' not in st.session_state:
-        st.session_state['check_in_start'] = datetime.today().date()
-    if 'check_in_end' not in st.session_state:
-        st.session_state['check_in_end'] = datetime.today().date()
-    if 'check_out_start' not in st.session_state:
-        st.session_state['check_out_start'] = datetime.today().date()
-    if 'check_out_end' not in st.session_state:
-        st.session_state['check_out_end'] = datetime.today().date()
+    # Date filters layout
+    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+    with col1:
+        st.session_state['check_in_start'] = st.date_input(
+            "Check In Date (Start)",
+            value=st.session_state['check_in_start'],
+            key='check_in_start_input'
+        )
 
-    # Function to initialize or update date filters
-    # Date filters
-col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-with col1:
-    st.session_state['check_in_start'] = st.date_input(
-        "Check In Date (Start)",
-        value=st.session_state['check_in_start'],
-        key='check_in_start_input'
-    )
+        st.session_state['check_in_end'] = st.date_input(
+            "Check In Date (End)",
+            value=st.session_state['check_in_end'],
+            key='check_in_end_input'
+        )
 
-    st.session_state['check_in_end'] = st.date_input(
-        "Check In Date (End)",
-        value=st.session_state['check_in_end'],
-        key='check_in_end_input'
-    )
+    with col2:
+        st.session_state['check_out_start'] = st.date_input(
+            "Check Out Date (Start)",
+            value=st.session_state['check_out_start'],
+            key='check_out_start_input'
+        )
 
-with col2:
-    st.session_state['check_out_start'] = st.date_input(
-        "Check Out Date (Start)",
-        value=st.session_state['check_out_start'],
-        key='check_out_start_input'
-    )
+        st.session_state['check_out_end'] = st.date_input(
+            "Check Out Date (End)",
+            value=st.session_state['check_out_end'],
+            key='check_out_end_input'
+        )
 
-    st.session_state['check_out_end'] = st.date_input(
-        "Check Out Date (End)",
-        value=st.session_state['check_out_end'],
-        key='check_out_end_input'
-    )
+    with col3:
+        if st.button("Reset Dates", key='reset_dates_button'):
+            if not resort_df.empty:
+                arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+                departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-with col3:
-    if st.button("Reset Dates", key='reset_dates_button'):
-        if not resort_df.empty:
-            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+                arrival_dates = arrival_dates[arrival_dates.notna()]
+                departure_dates = departure_dates[departure_dates.notna()]
 
-            arrival_dates = arrival_dates[arrival_dates.notna()]
-            departure_dates = departure_dates[departure_dates.notna()]
-
-            if not arrival_dates.empty and not departure_dates.empty:
-                st.session_state['check_in_start'] = arrival_dates.min().date()
-                st.session_state['check_in_end'] = arrival_dates.max().date()
-                st.session_state['check_out_start'] = departure_dates.min().date()
-                st.session_state['check_out_end'] = departure_dates.max().date()
+                if not arrival_dates.empty and not departure_dates.empty:
+                    st.session_state['check_in_start'] = arrival_dates.min().date()
+                    st.session_state['check_in_end'] = arrival_dates.max().date()
+                    st.session_state['check_out_start'] = departure_dates.min().date()
+                    st.session_state['check_out_end'] = departure_dates.max().date()
+                else:
+                    today = datetime.today().date()
+                    st.session_state['check_in_start'] = today
+                    st.session_state['check_in_end'] = today
+                    st.session_state['check_out_start'] = today
+                    st.session_state['check_out_end'] = today
             else:
                 today = datetime.today().date()
                 st.session_state['check_in_start'] = today
                 st.session_state['check_in_end'] = today
                 st.session_state['check_out_start'] = today
                 st.session_state['check_out_end'] = today
-        else:
-            today = datetime.today().date()
-            st.session_state['check_in_start'] = today
-            st.session_state['check_in_end'] = today
-            st.session_state['check_out_start'] = today
-            st.session_state['check_out_end'] = today
+
+            # No need to call st.experimental_rerun() as updating session_state triggers a rerun
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -438,10 +440,10 @@ with col3:
     resort_df = resort_df.dropna(subset=['Check In', 'Check Out'])
 
     mask = (
-    (resort_df['Check In'] >= st.session_state['check_in_start']) &
-    (resort_df['Check In'] <= st.session_state['check_in_end']) &
-    (resort_df['Check Out'] >= st.session_state['check_out_start']) &
-    (resort_df['Check Out'] <= st.session_state['check_out_end'])
+        (resort_df['Check In'] >= st.session_state['check_in_start']) &
+        (resort_df['Check In'] <= st.session_state['check_in_end']) &
+        (resort_df['Check Out'] >= st.session_state['check_out_start']) &
+        (resort_df['Check Out'] <= st.session_state['check_out_end'])
     )
     filtered_df = resort_df[mask]
 
@@ -600,12 +602,14 @@ with tab3:
     with col1:
         start_date = st.date_input(
             "Start Date for Tour Prediction", 
-            value=pd.to_datetime(df['Arrival Date Short']).min().date()
+            value=pd.to_datetime(df['Arrival Date Short']).min().date(),
+            key='tour_start_date'
         )
     with col2:
         end_date = st.date_input(
             "End Date for Tour Prediction", 
-            value=pd.to_datetime(df['Arrival Date Short']).max().date()
+            value=pd.to_datetime(df['Arrival Date Short']).max().date(),
+            key='tour_end_date'
         )
 
     # Validate date range
