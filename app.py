@@ -604,62 +604,78 @@ with tab3:
             value=pd.to_datetime(df['Arrival Date Short']).max().date()
         )
 
-    # Prepare a DataFrame to collect all resort data
-    all_resorts_tour_data = []
-    
-    for resort in sorted(df['Market'].unique()):
-        resort_df = df[df['Market'] == resort].copy()
-        resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-        filtered_resort_df = resort_df[
-            (resort_df['Arrival Date Short'].dt.date >= start_date) & 
-            (resort_df['Arrival Date Short'].dt.date <= end_date)
-        ]
-
-        # Daily Arrivals
-        daily_arrivals = filtered_resort_df.groupby(filtered_resort_df['Arrival Date Short'].dt.date).size().reset_index(name='Arrivals')
-        daily_arrivals = daily_arrivals.rename(columns={'Arrival Date Short': 'Date'})  # Rename for consistency
-
-        st.subheader(f"{resort}")
-
-        # Conversion Rate Input
-        conversion_rate = st.number_input(
-            f"Conversion Rate for {resort} (%)", 
-            min_value=0.0, 
-            max_value=100.0, 
-            value=10.0, 
-            step=0.5,
-            key=f"conversion_{resort}"
-        ) / 100
-
-        # Calculate Tours, rounded down using math.floor
-        daily_arrivals['Tours'] = daily_arrivals['Arrivals'].apply(
-            lambda a: math.floor(a * conversion_rate)
-        )
-
-        st.dataframe(daily_arrivals)
-
-        # Aggregate summaries for visualization later
-        all_resorts_tour_data.append(daily_arrivals.assign(Market=resort))
-
-    # Concatenate all resort data
-    if all_resorts_tour_data:
-        full_summary_df = pd.concat(all_resorts_tour_data)
-
-        # Overall Summary
-        st.markdown("---")
-        st.subheader("Overall Tour Summary Across All Resorts")
-
-        overall_summary = full_summary_df.groupby('Date').sum().reset_index()
-
-        st.dataframe(overall_summary)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Arrivals for All Resorts", overall_summary['Arrivals'].sum())
-        with col2:
-            st.metric("Total Estimated Tours for All Resorts", overall_summary['Tours'].sum())
+    # Validate date range
+    if start_date > end_date:
+        st.error("Start Date cannot be after End Date.")
     else:
-        st.info("No tour data available for the selected date range.")
+        # Prepare a DataFrame to collect all resort data
+        all_resorts_tour_data = []
+        
+        for resort in sorted(df['Market'].unique()):
+            resort_df = df[df['Market'] == resort].copy()
+            resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+            filtered_resort_df = resort_df[
+                (resort_df['Arrival Date Short'].dt.date >= start_date) & 
+                (resort_df['Arrival Date Short'].dt.date <= end_date)
+            ]
+
+            # Daily Arrivals
+            daily_arrivals = filtered_resort_df.groupby(filtered_resort_df['Arrival Date Short'].dt.date).size().reset_index(name='Arrivals')
+            daily_arrivals = daily_arrivals.rename(columns={'Arrival Date Short': 'Date'})  # Rename for consistency
+
+            st.subheader(f"{resort}")
+
+            # Conversion Rate Input
+            conversion_rate = st.number_input(
+                f"Conversion Rate for {resort} (%)", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=10.0, 
+                step=0.5,
+                key=f"conversion_{resort}"
+            ) / 100
+
+            # Calculate Tours, rounded down using math.floor
+            daily_arrivals['Tours'] = daily_arrivals['Arrivals'].apply(
+                lambda a: math.floor(a * conversion_rate)
+            )
+
+            st.dataframe(daily_arrivals)
+
+            # Aggregate summaries for visualization later
+            all_resorts_tour_data.append(daily_arrivals.assign(Market=resort))
+
+        # Concatenate all resort data
+        if all_resorts_tour_data:
+            full_summary_df = pd.concat(all_resorts_tour_data, ignore_index=True)
+
+            # Check if 'Date' column exists
+            if 'Date' not in full_summary_df.columns:
+                st.error("The 'Date' column is missing from the tour summary data.")
+            else:
+                # Overall Summary
+                st.markdown("---")
+                st.subheader("Overall Tour Summary Across All Resorts")
+
+                # Handle empty DataFrame
+                if full_summary_df.empty:
+                    st.warning("No tour data available for the selected date range.")
+                else:
+                    overall_summary = full_summary_df.groupby('Date').sum().reset_index()
+
+                    # Check if 'Date' column exists
+                    if 'Date' not in overall_summary.columns:
+                        st.error("The 'Date' column is missing from the overall summary data.")
+                    else:
+                        st.dataframe(overall_summary)
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Total Arrivals for All Resorts", overall_summary['Arrivals'].sum())
+                        with col2:
+                            st.metric("Total Estimated Tours for All Resorts", overall_summary['Tours'].sum())
+        else:
+            st.info("No tour data available for the selected date range.")
 
 ############################################
 # Raw Data Viewer
