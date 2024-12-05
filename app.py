@@ -43,7 +43,8 @@ st.markdown("""
 # Hard-coded OpenPhone Credentials
 ############################################
 
-# Replace with your actual OpenPhone API key and number
+# **IMPORTANT:** It's highly recommended to store sensitive information like API keys in `st.secrets` or environment variables.
+# For demonstration purposes, they are hard-coded here as per your request.
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 OPENPHONE_NUMBER = "+18438972426"
 
@@ -115,7 +116,7 @@ def get_last_communication_info(phone_number, headers, openphone_number):
 
     # Get phoneNumberId for your OpenPhone number
     phone_number_id = get_phone_number_id(headers, openphone_number)
-    if not phone_number_id or "Error" in phone_number_id:
+    if not phone_number_id or "Error" in phone_number_id or "Exception" in phone_number_id:
         return (phone_number_id, "")
 
     messages_url = "https://api.openphone.com/v1/messages"
@@ -384,20 +385,25 @@ with tab2:
             arrival_dates = arrival_dates[arrival_dates.notna()]
             departure_dates = departure_dates[departure_dates.notna()]
 
-            min_arrival_date = arrival_dates.min()
-            max_arrival_date = arrival_dates.max()
-            min_departure_date = departure_dates.min()
-            max_departure_date = departure_dates.max()
-
-            st.session_state['check_in_start'] = min_arrival_date.date() if pd.notnull(min_arrival_date) else datetime.today().date()
-            st.session_state['check_in_end'] = max_arrival_date.date() if pd.notnull(max_arrival_date) else datetime.today().date()
-            st.session_state['check_out_start'] = min_departure_date.date() if pd.notnull(min_departure_date) else datetime.today().date()
-            st.session_state['check_out_end'] = max_departure_date.date() if pd.notnull(max_departure_date) else datetime.today().date()
+            if not arrival_dates.empty and not departure_dates.empty:
+                st.session_state['check_in_start'] = arrival_dates.min().date()
+                st.session_state['check_in_end'] = arrival_dates.max().date()
+                st.session_state['check_out_start'] = departure_dates.min().date()
+                st.session_state['check_out_end'] = departure_dates.max().date()
+            else:
+                # Set to today if no valid dates
+                today = datetime.today().date()
+                st.session_state['check_in_start'] = today
+                st.session_state['check_in_end'] = today
+                st.session_state['check_out_start'] = today
+                st.session_state['check_out_end'] = today
         else:
-            st.session_state['check_in_start'] = datetime.today().date()
-            st.session_state['check_in_end'] = datetime.today().date()
-            st.session_state['check_out_start'] = datetime.today().date()
-            st.session_state['check_out_end'] = datetime.today().date()
+            # Set to today if DataFrame is empty
+            today = datetime.today().date()
+            st.session_state['check_in_start'] = today
+            st.session_state['check_in_end'] = today
+            st.session_state['check_out_start'] = today
+            st.session_state['check_out_end'] = today
 
     # Check if 'selected_resort' has changed or if 'reset_dates' is True
     if st.session_state['prev_selected_resort'] != selected_resort or st.session_state['reset_dates']:
@@ -482,7 +488,7 @@ with tab2:
 
         # Prepare headers for API calls
         headers = {
-            "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
+            "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per your request
             "Content-Type": "application/json"
         }
 
@@ -566,7 +572,7 @@ with tab2:
             if st.button(button_label):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers_sms = {
-                    "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
+                    "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per your request
                     "Content-Type": "application/json"
                 }
                 sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
@@ -584,13 +590,12 @@ with tab2:
                         if response.status_code == 202:
                             st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
                         else:
+                            # Update the Communication Status with the error code
+                            edited_df.at[idx, 'Communication Status'] = f"Error {response.status_code}"
                             st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-                            st.write("Response Status Code:", response.status_code)
-                            try:
-                                st.write("Response Body:", response.json())
-                            except:
-                                st.write("Response Body:", response.text)
                     except Exception as e:
+                        # Update the Communication Status with the exception message
+                        edited_df.at[idx, 'Communication Status'] = f"Exception: {str(e)}"
                         st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
 
                     time.sleep(0.2)  # Respect rate limits
