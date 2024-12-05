@@ -250,9 +250,9 @@ def get_last_communication_status(phone_number, headers):
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
     
-    # Parameters to filter messages and calls by the contact's phone number
+    # Parameters to filter messages and calls by the phone number
     params = {
-        "filter[contact_phone_number]": phone_number,
+        "filter[phone_number]": phone_number,
         "page[size]": 1,
         "sort": "-created_at"
     }
@@ -268,6 +268,8 @@ def get_last_communication_status(phone_number, headers):
         if message_data['data']:
             last_message = message_data['data'][0]
     else:
+        st.write(f"Message API Error for {phone_number}: {message_response.status_code}")
+        st.write("Response:", message_response.text)
         return "Error"
     
     # Fetch the last call
@@ -277,6 +279,8 @@ def get_last_communication_status(phone_number, headers):
         if call_data['data']:
             last_call = call_data['data'][0]
     else:
+        st.write(f"Call API Error for {phone_number}: {call_response.status_code}")
+        st.write("Response:", call_response.text)
         return "Error"
     
     # Determine the most recent communication
