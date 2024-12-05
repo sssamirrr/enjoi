@@ -22,31 +22,6 @@ st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
 # Your existing Google Sheets and Data loading logic goes here...
 
-# Add a section for the curl command
-st.title("📡 OpenPhone API Test")
-
-# Define the curl command
-curl_command = """
-curl --request GET \
-  --url https://api.openphone.com/v1/phone-numbers \
-  --header 'Authorization: Bearer ebScqkTyM2AxT25gryN9F5qnyTT77vuz'
-"""
-
-# Button to execute the command
-if st.button("Run Curl Command"):
-    # Use subprocess to run the curl command
-    result = subprocess.run(curl_command, shell=True, capture_output=True, text=True)
-
-    # Display the result
-    if result.returncode == 0:
-        st.success("Command executed successfully!")
-        st.text_area("API Response", result.stdout, height=200)
-    else:
-        st.error("Failed to execute command!")
-        st.text_area("Error Output", result.stderr, height=200)
-
-# Rest of your Streamlit app logic goes here...
-
 
 # Set page config
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
