@@ -324,6 +324,12 @@ with tab2:
         display_df['Check In'] = pd.to_datetime(display_df['Check In'], errors='coerce')
         display_df['Check Out'] = pd.to_datetime(display_df['Check Out'], errors='coerce')
         display_df['Phone Number'] = display_df['Phone Number'].astype(str)
+        
+        # Select/Deselect All Button
+        select_all = st.checkbox("Select/Deselect All Guests", value=False)
+
+        # Update the Select column based on the checkbox
+        display_df['Select'] = select_all
 
         # Interactive data editor
         edited_df = st.data_editor(
