@@ -423,7 +423,7 @@ with tab2:
         if st.button("Reset Dates"):
             for key, value in default_dates.items():
             st.session_state[key] = value  # Remove the condition and directly set the values
-        st.rerun()
+            st.rerun()
 
 
 
