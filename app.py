@@ -358,10 +358,9 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Function to initialize or update date filters dynamically
-    def update_date_filters(resort_df):
+    # Function to compute default date ranges
+    def compute_default_dates(resort_df):
         today = datetime.today().date()
-
         if not resort_df.empty:
             arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
             departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
@@ -369,50 +368,61 @@ with tab2:
             arrival_dates = arrival_dates.dropna()
             departure_dates = departure_dates.dropna()
 
-            st.session_state['check_in_start'] = arrival_dates.min().date() if not arrival_dates.empty else today
-            st.session_state['check_in_end'] = arrival_dates.max().date() if not arrival_dates.empty else today
-            st.session_state['check_out_start'] = departure_dates.min().date() if not departure_dates.empty else today
-            st.session_state['check_out_end'] = departure_dates.max().date() if not departure_dates.empty else today
-        else:
-            st.session_state['check_in_start'] = today
-            st.session_state['check_in_end'] = today
-            st.session_state['check_out_start'] = today
-            st.session_state['check_out_end'] = today
+            return {
+                'check_in_start': arrival_dates.min().date() if not arrival_dates.empty else today,
+                'check_in_end': arrival_dates.max().date() if not arrival_dates.empty else today,
+                'check_out_start': departure_dates.min().date() if not departure_dates.empty else today,
+                'check_out_end': departure_dates.max().date() if not departure_dates.empty else today,
+            }
+        return {
+            'check_in_start': today,
+            'check_in_end': today,
+            'check_out_start': today,
+            'check_out_end': today,
+        }
 
-    # Initialize session state if not already present
+    # Initialize session state for filters if not already present
     if 'check_in_start' not in st.session_state or 'check_in_end' not in st.session_state:
-        update_date_filters(resort_df)
+        default_dates = compute_default_dates(resort_df)
+        st.session_state.update(default_dates)
+
+    # Create temporary variables for filter manipulation
+    temp_check_in_start = st.session_state['check_in_start']
+    temp_check_in_end = st.session_state['check_in_end']
+    temp_check_out_start = st.session_state['check_out_start']
+    temp_check_out_end = st.session_state['check_out_end']
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
-        check_in_start = st.date_input(
+        temp_check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state['check_in_start'],
+            value=temp_check_in_start,
             key='check_in_start'
         )
-        check_in_end = st.date_input(
+        temp_check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state['check_in_end'],
+            value=temp_check_in_end,
             key='check_in_end'
         )
 
     with col2:
-        check_out_start = st.date_input(
+        temp_check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state['check_out_start'],
+            value=temp_check_out_start,
             key='check_out_start'
         )
-        check_out_end = st.date_input(
+        temp_check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state['check_out_end'],
+            value=temp_check_out_end,
             key='check_out_end'
         )
 
     with col3:
         if st.button("Reset Dates"):
-            # Reset the date filters dynamically to include all data
-            update_date_filters(resort_df)
+            # Recompute default date ranges and update session state
+            default_dates = compute_default_dates(resort_df)
+            st.session_state.update(default_dates)
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -420,10 +430,10 @@ with tab2:
     resort_df = resort_df.dropna(subset=['Check In', 'Check Out'])
 
     mask = (
-        (resort_df['Check In'] >= st.session_state['check_in_start']) &
-        (resort_df['Check In'] <= st.session_state['check_in_end']) &
-        (resort_df['Check Out'] >= st.session_state['check_out_start']) &
-        (resort_df['Check Out'] <= st.session_state['check_out_end'])
+        (resort_df['Check In'] >= temp_check_in_start) &
+        (resort_df['Check In'] <= temp_check_in_end) &
+        (resort_df['Check Out'] >= temp_check_out_start) &
+        (resort_df['Check Out'] <= temp_check_out_end)
     )
     filtered_df = resort_df[mask]
 
