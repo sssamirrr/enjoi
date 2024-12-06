@@ -270,20 +270,17 @@ def get_last_communication_info(phone_number, headers):
     return ("No Communications", None)
 
 @st.cache_data
-def fetch_communication_info(guest_df, headers, openphone_number):
-    """
-    Fetch communication statuses and dates for all guests in the dataframe.
-    Returns two lists: statuses and dates.
-    """
+def fetch_communication_info(guest_df, headers):
     statuses = []
     dates = []
     for idx, row in guest_df.iterrows():
         phone_number = row['Phone Number']
-        status, date = get_last_communication_info(phone_number, headers, openphone_number)
+        status, date = get_last_communication_info(phone_number, headers)  # Only pass phone_number and headers
         statuses.append(status)
         dates.append(date)
         time.sleep(0.2)  # Respect rate limits
     return statuses, dates
+
 
 ############################################
 # Create Tabs
@@ -560,7 +557,7 @@ with tab2:
         }
 
         # Fetch communication statuses and dates
-        statuses, dates = fetch_communication_info(display_df, headers, OPENPHONE_NUMBER)
+        statuses, dates = fetch_communication_info(display_df, headers)
         display_df['Communication Status'] = statuses
         display_df['Last Communication Date'] = dates
 
