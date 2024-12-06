@@ -420,8 +420,12 @@ with tab2:
         )
 
     with col3:
-        if st.button("Reset Dates"):
-            reset_filters()
+    if st.button("Reset Dates"):
+        for key, value in default_dates.items():
+            if key not in st.session_state:
+                st.session_state[key] = value
+        st.rerun()
+
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
