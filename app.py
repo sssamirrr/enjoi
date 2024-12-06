@@ -352,18 +352,6 @@ def reset_filters():
     st.session_state.update(default_dates)  # Update with the default values
 
 
-
-
-# Function to reset date filters to defaults
-def reset_filters():
-    # Retrieve default dates from session state
-    default_dates = st.session_state['default_dates']
-    for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
-        if key in st.session_state:
-            del st.session_state[key]  # Remove key to reinitialize widget values
-    st.session_state.update(default_dates)  # Set to default dates
-
-
 import pandas as pd
 import requests
 import time
