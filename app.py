@@ -395,23 +395,22 @@ with tab2:
             'check_out_end': max_check_out,
         }
 
-    # Function to reset filters
-def reset_filters():
-    # Retrieve default dates from session state
-    default_dates = st.session_state['default_dates']
-    
-    # Clear the date input widgets by removing their keys from session state
-    keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
-    for key in keys_to_remove:
-        if key in st.session_state:
-            del st.session_state[key]
-    
-    # Reset to default dates
-    st.session_state.update(default_dates)
-    
-    # Force a rerun of the app
-    st.rerun()
-
+        # Function to reset filters (move this definition outside the if block)
+        def reset_filters():
+            # Retrieve default dates from session state
+            default_dates = st.session_state['default_dates']
+            
+            # Clear the date input widgets by removing their keys from session state
+            keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
+            for key in keys_to_remove:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Reset to default dates
+            st.session_state.update(default_dates)
+            
+            # Force a rerun of the app
+            st.rerun()
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
