@@ -364,32 +364,27 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Initialize or check session state variables
+    # Define default dates (earliest and latest)
     if 'default_dates' not in st.session_state:
-        # Get earliest and latest dates for the dataset
-        min_check_in = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
-        max_check_out = pd.to_datetime(df['Departure Date Short'], errors='coerce').max().date()
-
-        # Store the defaults in session state
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dropna()
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').dropna()
         st.session_state['default_dates'] = {
-            'check_in_start': min_check_in,
-            'check_in_end': max_check_out,
-            'check_out_start': min_check_in,
-            'check_out_end': max_check_out
+            'check_in_start': arrival_dates.min().date() if not arrival_dates.empty else datetime.today().date(),
+            'check_in_end': arrival_dates.max().date() if not arrival_dates.empty else datetime.today().date(),
+            'check_out_start': departure_dates.min().date() if not departure_dates.empty else datetime.today().date(),
+            'check_out_end': departure_dates.max().date() if not departure_dates.empty else datetime.today().date(),
         }
 
-    # Retrieve default dates
-    default_dates = st.session_state['default_dates']
-
-    # Initialize filters if not present in session state
-    for key, value in default_dates.items():
+    # Initialize session state for date filters
+    for key, value in st.session_state['default_dates'].items():
         if key not in st.session_state:
             st.session_state[key] = value
 
-    # Function to reset date filters to defaults
+    # Function to reset filters
     def reset_filters():
-        for key, value in default_dates.items():
+        for key, value in st.session_state['default_dates'].items():
             st.session_state[key] = value
+        st.rerun()
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
@@ -420,12 +415,9 @@ with tab2:
         )
 
     with col3:
+        # Reset Button
         if st.button("Reset Dates"):
-            for key, value in default_dates.items():
-                st.session_state[key] = value  # Remove the condition and directly set the values
-            st.rerun()
-
-
+            reset_filters()
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -581,7 +573,6 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
-
 
 ############################################
 # Tour Prediction Tab
