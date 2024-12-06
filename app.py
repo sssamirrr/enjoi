@@ -364,58 +364,64 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Define default dates (earliest and latest)
+    # Initialize or check session state variables
     if 'default_dates' not in st.session_state:
-        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dropna()
-        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').dropna()
-        st.session_state['default_dates'] = {
-            'check_in_start': arrival_dates.min().date() if not arrival_dates.empty else datetime.today().date(),
-            'check_in_end': arrival_dates.max().date() if not arrival_dates.empty else datetime.today().date(),
-            'check_out_start': departure_dates.min().date() if not departure_dates.empty else datetime.today().date(),
-            'check_out_end': departure_dates.max().date() if not departure_dates.empty else datetime.today().date(),
-        }
+        st.session_state['default_dates'] = {}
 
-    # Initialize session state for date filters
-    for key, value in st.session_state['default_dates'].items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    # Set default dates to the earliest check-in and latest check-out
+    if not resort_df.empty:
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        arrival_dates = arrival_dates.dropna()
+        departure_dates = departure_dates.dropna()
+
+        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else datetime.today().date()
+        max_check_out = departure_dates.max().date() if not departure_dates.empty else datetime.today().date()
+
+        st.session_state['default_dates'] = {
+            'check_in_start': min_check_in,
+            'check_in_end': max_check_out,
+            'check_out_start': min_check_in,
+            'check_out_end': max_check_out,
+        }
 
     # Function to reset filters
     def reset_filters():
         for key, value in st.session_state['default_dates'].items():
-            st.session_state[key] = value
-        st.rerun()
+            if key in st.session_state:
+                del st.session_state[key]  # Remove existing keys to reset them
+        st.rerun()  # Rerun the app to apply the reset state
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state['check_in_start'],
+            value=st.session_state.get('check_in_start', st.session_state['default_dates']['check_in_start']),
             key='check_in_start'
         )
 
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state['check_in_end'],
+            value=st.session_state.get('check_in_end', st.session_state['default_dates']['check_in_end']),
             key='check_in_end'
         )
 
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state['check_out_start'],
+            value=st.session_state.get('check_out_start', st.session_state['default_dates']['check_out_start']),
             key='check_out_start'
         )
 
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state['check_out_end'],
+            value=st.session_state.get('check_out_end', st.session_state['default_dates']['check_out_end']),
             key='check_out_end'
         )
 
     with col3:
-        # Reset Button
         if st.button("Reset Dates"):
             reset_filters()
 
@@ -565,6 +571,11 @@ with tab2:
                             st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
                         else:
                             st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
+                            st.write("Response Status Code:", response.status_code)
+                            try:
+                                st.write("Response Body:", response.json())
+                            except:
+                                st.write("Response Body:", response.text)
                     except Exception as e:
                         st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
 
