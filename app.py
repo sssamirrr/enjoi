@@ -588,7 +588,6 @@ with tab2:
     else:
         st.info("No guest data available to send SMS.")
 
-
 ############################################
 # Tour Prediction Tab
 ############################################
