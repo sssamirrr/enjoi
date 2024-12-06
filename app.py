@@ -376,26 +376,39 @@ with tab2:
     # Function to initialize or update date filters
     def update_date_filters(resort_df):
         if not resort_df.empty:
-            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+            try:
+                # Convert to datetime and handle missing data
+                arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+                departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-            arrival_dates = arrival_dates[arrival_dates.notna()]
-            departure_dates = departure_dates[departure_dates.notna()]
+                arrival_dates = arrival_dates[arrival_dates.notna()]
+                departure_dates = departure_dates[departure_dates.notna()]
 
-            min_arrival_date = arrival_dates.min()
-            max_arrival_date = arrival_dates.max()
-            min_departure_date = departure_dates.min()
-            max_departure_date = departure_dates.max()
+                min_arrival_date = arrival_dates.min() if not arrival_dates.empty else None
+                max_arrival_date = arrival_dates.max() if not arrival_dates.empty else None
+                min_departure_date = departure_dates.min() if not departure_dates.empty else None
+                max_departure_date = departure_dates.max() if not departure_dates.empty else None
 
-            st.session_state['check_in_start'] = min_arrival_date.date() if pd.notnull(min_arrival_date) else datetime.today().date()
-            st.session_state['check_in_end'] = max_arrival_date.date() if pd.notnull(max_arrival_date) else datetime.today().date()
-            st.session_state['check_out_start'] = min_departure_date.date() if pd.notnull(min_departure_date) else datetime.today().date()
-            st.session_state['check_out_end'] = max_departure_date.date() if pd.notnull(max_departure_date) else datetime.today().date()
+                today = datetime.today().date()
+                st.session_state['check_in_start'] = min_arrival_date.date() if min_arrival_date else today
+                st.session_state['check_in_end'] = max_arrival_date.date() if max_arrival_date else today
+                st.session_state['check_out_start'] = min_departure_date.date() if min_departure_date else today
+                st.session_state['check_out_end'] = max_departure_date.date() if max_departure_date else today
+            except Exception as e:
+                # Log error and reset to defaults
+                st.error(f"Error updating filters: {e}")
+                today = datetime.today().date()
+                st.session_state['check_in_start'] = today
+                st.session_state['check_in_end'] = today
+                st.session_state['check_out_start'] = today
+                st.session_state['check_out_end'] = today
         else:
-            st.session_state['check_in_start'] = datetime.today().date()
-            st.session_state['check_in_end'] = datetime.today().date()
-            st.session_state['check_out_start'] = datetime.today().date()
-            st.session_state['check_out_end'] = datetime.today().date()
+            # Reset to today's date if the dataset is empty
+            today = datetime.today().date()
+            st.session_state['check_in_start'] = today
+            st.session_state['check_in_end'] = today
+            st.session_state['check_out_start'] = today
+            st.session_state['check_out_end'] = today
 
     # Check if 'selected_resort' has changed or if 'reset_dates' is True
     if st.session_state['prev_selected_resort'] != selected_resort or st.session_state['reset_dates']:
@@ -435,8 +448,7 @@ with tab2:
         if st.button("Reset Dates"):
             # Reset the date filters to their initial state
             update_date_filters(resort_df)
-            st.session_state['reset_dates'] = False  # Ensure it doesn't trigger again
-            # No need to call st.experimental_rerun()
+            st.session_state['reset_dates'] = False
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -534,69 +546,6 @@ with tab2:
             key="guest_editor"
         )
 
-    ############################################
-    # Message Templates Section
-    ############################################
-    st.markdown("---")
-    st.subheader("Message Templates")
-
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
-    }
-
-    selected_template = st.selectbox(
-        "Choose a Message Template",
-        options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-    ############################################
-    # Send SMS to Selected Guests
-    ############################################
-    if 'edited_df' in locals() and not edited_df.empty:
-        selected_guests = edited_df[edited_df['Select']]
-        num_selected = len(selected_guests)
-        if not selected_guests.empty:
-            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-            if st.button(button_label):
-                openphone_url = "https://api.openphone.com/v1/messages"
-                headers_sms = {
-                    "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
-                    "Content-Type": "application/json"
-                }
-                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
-
-                for idx, row in selected_guests.iterrows():
-                    recipient_phone = row['Phone Number']  # Use actual guest's phone number
-                    payload = {
-                        "content": message_preview,
-                        "from": sender_phone_number,
-                        "to": [recipient_phone]
-                    }
-
-                    try:
-                        response = requests.post(openphone_url, json=payload, headers=headers_sms)
-                        if response.status_code == 202:
-                            st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
-                        else:
-                            st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-                            st.write("Response Status Code:", response.status_code)
-                            try:
-                                st.write("Response Body:", response.json())
-                            except:
-                                st.write("Response Body:", response.text)
-                    except Exception as e:
-                        st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
-
-                    time.sleep(0.2)  # Respect rate limits
-        else:
-            st.info("No guests selected to send SMS.")
-    else:
-        st.info("No guest data available to send SMS.")
 
 ############################################
 # Tour Prediction Tab
