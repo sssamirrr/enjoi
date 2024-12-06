@@ -563,17 +563,15 @@ with tab2:
                             st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
                         else:
                             st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-                            st.write("Response Status Code:", response.status_code)
-                            try:
-                                st.write("Response Body:", response.json())
-                            except:
-                                st.write("Response Body:", response.text)
                     except Exception as e:
                         st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
 
                     time.sleep(0.2)  # Respect rate limits
         else:
             st.info("No guests selected to send SMS.")
+    else:
+        st.info("No guest data available to send SMS.")
+
 
 ############################################
 # Tour Prediction Tab
