@@ -351,20 +351,20 @@ with tab2:
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
-        options=sorted(df['Market'].unique())
+        options=sorted(df['Market'].unique()),
+        key="selected_resort"
     )
 
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Initialize or check session state variables
-    if 'default_dates' not in st.session_state:
-        # Get earliest and latest dates for the dataset
-        min_check_in = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
-        max_check_out = pd.to_datetime(df['Departure Date Short'], errors='coerce').max().date()
+    # Default date range from the dataset
+    min_check_in = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').min().date() if not resort_df.empty else datetime.today().date()
+    max_check_out = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').max().date() if not resort_df.empty else datetime.today().date()
 
-        # Store the defaults in session state
+    # Initialize session state for default dates and reset functionality
+    if 'default_dates' not in st.session_state:
         st.session_state['default_dates'] = {
             'check_in_start': min_check_in,
             'check_in_end': max_check_out,
@@ -372,50 +372,45 @@ with tab2:
             'check_out_end': max_check_out
         }
 
-    # Retrieve default dates
-    default_dates = st.session_state['default_dates']
+    if 'reset_triggered' not in st.session_state:
+        st.session_state['reset_triggered'] = False
 
-    # Initialize filters if not present in session state
-    for key, value in default_dates.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    # Widget-controlled values for the filters
+    check_in_start = st.date_input(
+        "Check In Date (Start)",
+        value=st.session_state['default_dates']['check_in_start'],
+        key='check_in_start_widget'
+    )
 
-    # Function to reset date filters to defaults
+    check_in_end = st.date_input(
+        "Check In Date (End)",
+        value=st.session_state['default_dates']['check_in_end'],
+        key='check_in_end_widget'
+    )
+
+    check_out_start = st.date_input(
+        "Check Out Date (Start)",
+        value=st.session_state['default_dates']['check_out_start'],
+        key='check_out_start_widget'
+    )
+
+    check_out_end = st.date_input(
+        "Check Out Date (End)",
+        value=st.session_state['default_dates']['check_out_end'],
+        key='check_out_end_widget'
+    )
+
+    # Reset filters function
     def reset_filters():
-        for key, value in default_dates.items():
-            st.session_state[key] = value
+        st.session_state['reset_triggered'] = True
+        st.session_state['check_in_start_widget'] = st.session_state['default_dates']['check_in_start']
+        st.session_state['check_in_end_widget'] = st.session_state['default_dates']['check_in_end']
+        st.session_state['check_out_start_widget'] = st.session_state['default_dates']['check_out_start']
+        st.session_state['check_out_end_widget'] = st.session_state['default_dates']['check_out_end']
 
-    # Date filters
-    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-    with col1:
-        check_in_start = st.date_input(
-            "Check In Date (Start)",
-            value=st.session_state['check_in_start'],
-            key='check_in_start'
-        )
-
-        check_in_end = st.date_input(
-            "Check In Date (End)",
-            value=st.session_state['check_in_end'],
-            key='check_in_end'
-        )
-
-    with col2:
-        check_out_start = st.date_input(
-            "Check Out Date (Start)",
-            value=st.session_state['check_out_start'],
-            key='check_out_start'
-        )
-
-        check_out_end = st.date_input(
-            "Check Out Date (End)",
-            value=st.session_state['check_out_end'],
-            key='check_out_end'
-        )
-
-    with col3:
-        if st.button("Reset Dates"):
-            reset_filters()
+    # Reset button
+    if st.button("Reset Dates"):
+        reset_filters()
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -423,19 +418,18 @@ with tab2:
     resort_df = resort_df.dropna(subset=['Check In', 'Check Out'])
 
     mask = (
-        (resort_df['Check In'] >= st.session_state['check_in_start']) &
-        (resort_df['Check In'] <= st.session_state['check_in_end']) &
-        (resort_df['Check Out'] >= st.session_state['check_out_start']) &
-        (resort_df['Check Out'] <= st.session_state['check_out_end'])
+        (resort_df['Check In'] >= check_in_start) &
+        (resort_df['Check In'] <= check_in_end) &
+        (resort_df['Check Out'] >= check_out_start) &
+        (resort_df['Check Out'] <= check_out_end)
     )
     filtered_df = resort_df[mask]
 
-    # Handle empty DataFrame
+    # Display filtered data
     if filtered_df.empty:
         st.warning("No guests found for the selected filters.")
-        display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date'])
+        display_df = pd.DataFrame(columns=['Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date'])
     else:
-        # Prepare display DataFrame
         display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
@@ -449,10 +443,10 @@ with tab2:
             else:
                 return phone  # Return as is if it doesn't match expected patterns
 
-        # Apply phone number formatting
+        # Apply formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
         display_df['Communication Status'] = 'Checking...'
-        display_df['Last Communication Date'] = None  # Initialize the new column
+        display_df['Last Communication Date'] = None
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All", key="select_all_checkbox")
@@ -460,7 +454,7 @@ with tab2:
 
         # Prepare headers for API calls
         headers = {
-            "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
+            "Authorization": OPENPHONE_API_KEY,
             "Content-Type": "application/json"
         }
 
@@ -469,52 +463,15 @@ with tab2:
         display_df['Communication Status'] = statuses
         display_df['Last Communication Date'] = dates
 
-        # Reorder columns to have "Select" as the leftmost column
-        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date']]
-
-        # Interactive data editor
+        # Display data in an editable table
         edited_df = st.data_editor(
             display_df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Select or deselect this guest",
-                    default=select_all
-                ),
-                "Guest Name": st.column_config.TextColumn(
-                    "Guest Name",
-                    help="Guest's full name"
-                ),
-                "Check In": st.column_config.DateColumn(
-                    "Check In",
-                    help="Check-in date"
-                ),
-                "Check Out": st.column_config.DateColumn(
-                    "Check Out",
-                    help="Check-out date"
-                ),
-                "Phone Number": st.column_config.TextColumn(
-                    "Phone Number",
-                    help="Guest's phone number"
-                ),
-                "Communication Status": st.column_config.TextColumn(
-                    "Communication Status",
-                    help="Last communication status with the guest",
-                    disabled=True
-                ),
-                "Last Communication Date": st.column_config.TextColumn(
-                    "Last Communication Date",
-                    help="Date and time of the last communication with the guest",
-                    disabled=True
-                ),
-            },
             hide_index=True,
-            use_container_width=True,
-            key="guest_editor"
+            use_container_width=True
         )
 
     ############################################
-    # Message Templates Section
+    # Message Templates and SMS Functionality
     ############################################
     st.markdown("---")
     st.subheader("Message Templates")
@@ -533,44 +490,29 @@ with tab2:
     message_preview = message_templates[selected_template]
     st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
-    ############################################
-    # Send SMS to Selected Guests
-    ############################################
+    # Send SMS to selected guests
     if 'edited_df' in locals() and not edited_df.empty:
         selected_guests = edited_df[edited_df['Select']]
         num_selected = len(selected_guests)
         if not selected_guests.empty:
-            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-            if st.button(button_label):
+            if st.button(f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"):
                 openphone_url = "https://api.openphone.com/v1/messages"
-                headers_sms = {
-                    "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
-                    "Content-Type": "application/json"
-                }
-                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
-
                 for idx, row in selected_guests.iterrows():
-                    recipient_phone = row['Phone Number']  # Use actual guest's phone number
+                    recipient_phone = row['Phone Number']
                     payload = {
                         "content": message_preview,
-                        "from": sender_phone_number,
+                        "from": OPENPHONE_NUMBER,
                         "to": [recipient_phone]
                     }
 
                     try:
-                        response = requests.post(openphone_url, json=payload, headers=headers_sms)
+                        response = requests.post(openphone_url, json=payload, headers=headers)
                         if response.status_code == 202:
                             st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
                         else:
                             st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
                     except Exception as e:
-                        st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
-
-                    time.sleep(0.2)  # Respect rate limits
-        else:
-            st.info("No guests selected to send SMS.")
-    else:
-        st.info("No guest data available to send SMS.")
+                        st.error(f"Error sending message to {row['Guest Name']} ({recipient_phone}): {e}")
 
 
 ############################################
