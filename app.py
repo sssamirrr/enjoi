@@ -369,60 +369,61 @@ with tab2:
             departure_dates = departure_dates.dropna()
 
             return {
-                'check_in_start': arrival_dates.min().date() if not arrival_dates.empty else today,
-                'check_in_end': arrival_dates.max().date() if not arrival_dates.empty else today,
-                'check_out_start': departure_dates.min().date() if not departure_dates.empty else today,
-                'check_out_end': departure_dates.max().date() if not departure_dates.empty else today,
+                'default_check_in_start': arrival_dates.min().date() if not arrival_dates.empty else today,
+                'default_check_in_end': arrival_dates.max().date() if not arrival_dates.empty else today,
+                'default_check_out_start': departure_dates.min().date() if not departure_dates.empty else today,
+                'default_check_out_end': departure_dates.max().date() if not departure_dates.empty else today,
             }
         return {
-            'check_in_start': today,
-            'check_in_end': today,
-            'check_out_start': today,
-            'check_out_end': today,
+            'default_check_in_start': today,
+            'default_check_in_end': today,
+            'default_check_out_start': today,
+            'default_check_out_end': today,
         }
 
+    # Compute default dates for the selected resort
+    default_dates = compute_default_dates(resort_df)
+
     # Initialize session state for filters if not already present
-    if 'check_in_start' not in st.session_state or 'check_in_end' not in st.session_state:
-        default_dates = compute_default_dates(resort_df)
-        st.session_state.update(default_dates)
+    for key, value in default_dates.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
     # Create temporary variables for filter manipulation
-    temp_check_in_start = st.session_state['check_in_start']
-    temp_check_in_end = st.session_state['check_in_end']
-    temp_check_out_start = st.session_state['check_out_start']
-    temp_check_out_end = st.session_state['check_out_end']
+    temp_check_in_start = st.session_state['default_check_in_start']
+    temp_check_in_end = st.session_state['default_check_in_end']
+    temp_check_out_start = st.session_state['default_check_out_start']
+    temp_check_out_end = st.session_state['default_check_out_end']
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         temp_check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=temp_check_in_start,
-            key='check_in_start'
+            value=temp_check_in_start
         )
         temp_check_in_end = st.date_input(
             "Check In Date (End)",
-            value=temp_check_in_end,
-            key='check_in_end'
+            value=temp_check_in_end
         )
 
     with col2:
         temp_check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=temp_check_out_start,
-            key='check_out_start'
+            value=temp_check_out_start
         )
         temp_check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=temp_check_out_end,
-            key='check_out_end'
+            value=temp_check_out_end
         )
 
     with col3:
         if st.button("Reset Dates"):
-            # Recompute default date ranges and update session state
-            default_dates = compute_default_dates(resort_df)
-            st.session_state.update(default_dates)
+            # Reset the filters to the default dates
+            temp_check_in_start = st.session_state['default_check_in_start']
+            temp_check_in_end = st.session_state['default_check_in_end']
+            temp_check_out_start = st.session_state['default_check_out_start']
+            temp_check_out_end = st.session_state['default_check_out_end']
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
@@ -519,6 +520,7 @@ with tab2:
             use_container_width=True,
             key="guest_editor"
         )
+
 
 
 ############################################
