@@ -342,6 +342,12 @@ with tab1:
             )
             st.plotly_chart(fig_arrivals, use_container_width=True)
 
+
+# Function to reset filters
+def reset_filters():
+    for key, value in st.session_state['default_dates'].items():
+        st.session_state[key] = value
+    st.rerun()
 ############################################
 # Marketing Tab
 ############################################
