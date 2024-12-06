@@ -348,9 +348,7 @@ def reset_filters():
     for key, value in st.session_state['default_dates'].items():
         st.session_state[key] = value
     st.rerun()
-############################################
 # Marketing Tab
-############################################
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -364,34 +362,34 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Initialize or check session state variables
+    # Function to update default dates based on selected resort
+    def set_default_dates(resort_df):
+        if not resort_df.empty:
+            # Calculate earliest check-in and latest check-out
+            min_check_in = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').min().date()
+            max_check_out = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').max().date()
+            # Set defaults in session state
+            st.session_state['default_dates'] = {
+                'check_in_start': min_check_in,
+                'check_in_end': max_check_out,
+                'check_out_start': min_check_in,
+                'check_out_end': max_check_out,
+            }
+
+    # Set default dates dynamically when a new resort is selected
+    if 'prev_selected_resort' not in st.session_state or st.session_state['prev_selected_resort'] != selected_resort:
+        set_default_dates(resort_df)
+        st.session_state['prev_selected_resort'] = selected_resort
+
+    # Initialize filters with default dates if not already set
     if 'default_dates' not in st.session_state:
-        st.session_state['default_dates'] = {}
+        set_default_dates(resort_df)
 
-    # Set default dates to the earliest check-in and latest check-out
-    if not resort_df.empty:
-        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
-
-        arrival_dates = arrival_dates.dropna()
-        departure_dates = departure_dates.dropna()
-
-        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else datetime.today().date()
-        max_check_out = departure_dates.max().date() if not departure_dates.empty else datetime.today().date()
-
-        st.session_state['default_dates'] = {
-            'check_in_start': min_check_in,
-            'check_in_end': max_check_out,
-            'check_out_start': min_check_in,
-            'check_out_end': max_check_out,
-        }
-
-    # Function to reset filters
+    # Reset filters to default
     def reset_filters():
         for key, value in st.session_state['default_dates'].items():
-            if key in st.session_state:
-                del st.session_state[key]  # Remove existing keys to reset them
-        st.rerun()  # Rerun the app to apply the reset state
+            st.session_state[key] = value
+        st.rerun()
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
@@ -521,69 +519,6 @@ with tab2:
             key="guest_editor"
         )
 
-    ############################################
-    # Message Templates Section
-    ############################################
-    st.markdown("---")
-    st.subheader("Message Templates")
-
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
-    }
-
-    selected_template = st.selectbox(
-        "Choose a Message Template",
-        options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-    ############################################
-    # Send SMS to Selected Guests
-    ############################################
-    if 'edited_df' in locals() and not edited_df.empty:
-        selected_guests = edited_df[edited_df['Select']]
-        num_selected = len(selected_guests)
-        if not selected_guests.empty:
-            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-            if st.button(button_label):
-                openphone_url = "https://api.openphone.com/v1/messages"
-                headers_sms = {
-                    "Authorization": OPENPHONE_API_KEY,  # No "Bearer " prefix as per user request
-                    "Content-Type": "application/json"
-                }
-                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
-
-                for idx, row in selected_guests.iterrows():
-                    recipient_phone = row['Phone Number']  # Use actual guest's phone number
-                    payload = {
-                        "content": message_preview,
-                        "from": sender_phone_number,
-                        "to": [recipient_phone]
-                    }
-
-                    try:
-                        response = requests.post(openphone_url, json=payload, headers=headers_sms)
-                        if response.status_code == 202:
-                            st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
-                        else:
-                            st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-                            st.write("Response Status Code:", response.status_code)
-                            try:
-                                st.write("Response Body:", response.json())
-                            except:
-                                st.write("Response Body:", response.text)
-                    except Exception as e:
-                        st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
-
-                    time.sleep(0.2)  # Respect rate limits
-        else:
-            st.info("No guests selected to send SMS.")
-    else:
-        st.info("No guest data available to send SMS.")
 
 ############################################
 # Tour Prediction Tab
