@@ -187,13 +187,29 @@ def fetch_communication_info(guest_df, headers):
     """
     statuses = []
     dates = []
+    
+    # Create a progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    total_rows = len(guest_df)
+    
     for idx, row in guest_df.iterrows():
+        # Update progress
+        progress = (idx + 1) / total_rows
+        progress_bar.progress(progress)
+        status_text.text(f"Processing {idx + 1} of {total_rows}: {row['Phone Number']}")
+        
         phone_number = row['Phone Number']
         status, date = get_last_communication_info(phone_number, headers)
         statuses.append(status)
         dates.append(date)
     
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+    
     return statuses, dates
+
 
 
 
