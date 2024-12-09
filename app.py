@@ -179,13 +179,6 @@ def get_last_communication_info(phone_number, headers):
     last_date = latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
     return (status, last_date)
 
-@st.cache_data(show_spinner=False)
-def fetch_communication_info_cached(phone_number, headers):
-    """
-    Cached version of getting communication info for a single phone number
-    """
-    status, date = get_last_communication_info(phone_number, headers)
-    return status, date
 
 @st.cache_data(show_spinner=False)
 def fetch_communication_info_cached(phone_number, headers):
