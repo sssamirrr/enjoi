@@ -90,16 +90,17 @@ import requests
 import streamlit as st
 from datetime import datetime
 
+# Apply rate limiting directly here
 def rate_limited_request(url, headers, params, request_type='get'):
     """
     Make an API request while respecting rate limits.
     """
+    time.sleep(1 / 5)  # Ensure at least 0.2 seconds between requests (5 requests per second max)
     response = None
     try:
         if request_type == 'get':
             response = requests.get(url, headers=headers, params=params)
-        # Add other request types if needed, like POST, PUT
-
+        
         if response.status_code == 200:
             return response.json()
         else:
@@ -160,8 +161,6 @@ def get_last_communication_info(phone_number, headers):
                     messages.extend(data.get('data', []))
                 else:
                     break
-        else:
-            messages = []
 
         # Fetch calls
         data = rate_limited_request(calls_url, headers, params)
@@ -174,8 +173,6 @@ def get_last_communication_info(phone_number, headers):
                     calls.extend(data.get('data', []))
                 else:
                     break
-        else:
-            calls = []
 
         # Process messages
         for msg in messages:
@@ -195,7 +192,7 @@ def get_last_communication_info(phone_number, headers):
     comm_type = latest_comm['type']
     direction = latest_comm['direction']
     status = "Sent Message" if comm_type == 'Message' and direction in ['outgoing', 'outbound'] else "Received Message" if comm_type == 'Message' else "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
-    
+
     last_date = latest_comm['datetime'].strftime("%Y-%m-%d %H:%M:%S")
     return (status, last_date)
 
@@ -212,8 +209,9 @@ def fetch_communication_info(guest_df, headers):
         status, date = get_last_communication_info(phone_number, headers)
         statuses.append(status)
         dates.append(date)
-        time.sleep(1/5)  # 1 second divided by 5 requests to ensure no more than 5 requests per second
+    
     return statuses, dates
+
 
 ############################################
 # Create Tabs
