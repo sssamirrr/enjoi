@@ -198,12 +198,16 @@ def fetch_communication_info_cached(phone_number, headers):
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the dataframe.
-    Returns two lists: statuses and dates.
+    Returns two lists: statuses and dates with the same length as the input DataFrame.
     """
     statuses = []
     dates = []
     
-    # Create a list of valid phone numbers only
+    # Initialize lists with default values for all rows
+    statuses = ["No Status"] * len(guest_df)
+    dates = [None] * len(guest_df)
+    
+    # Process only valid phone numbers
     valid_rows = [(idx, row) for idx, row in guest_df.iterrows() if not pd.isna(row['Phone Number']) and str(row['Phone Number']).strip()]
     total_valid = len(valid_rows)
     
@@ -214,13 +218,15 @@ def fetch_communication_info(guest_df, headers):
         # Show current status
         if phone_number:
             st.write(f"Processing {current} of {total_valid}: {phone_number}")
+            # Use the cached version for each phone number
+            status, date = fetch_communication_info_cached(phone_number, headers)
+            # Update the status and date at the correct index
+            statuses[idx] = status
+            dates[idx] = date
         else:
             st.write(f"Skipping invalid number at row {idx}")
-        
-        # Use the cached version for each phone number
-        status, date = fetch_communication_info_cached(phone_number, headers)
-        statuses.append(status)
-        dates.append(date)
+            statuses[idx] = "Invalid Number"
+            dates[idx] = None
     
     return statuses, dates
 
