@@ -202,18 +202,28 @@ def fetch_communication_info(guest_df, headers):
     """
     statuses = []
     dates = []
-    total_rows = len(guest_df)
     
-    for idx, row in guest_df.iterrows():
+    # Create a list of valid phone numbers only
+    valid_rows = [(idx, row) for idx, row in guest_df.iterrows() if not pd.isna(row['Phone Number']) and str(row['Phone Number']).strip()]
+    total_valid = len(valid_rows)
+    
+    for current, (idx, row) in enumerate(valid_rows, 1):
+        # Format phone number
+        phone_number = format_phone_number(row['Phone Number'])
+        
         # Show current status
-        st.write(f"Processing {idx + 1} of {total_rows}: {row['Phone Number']}")
+        if phone_number:
+            st.write(f"Processing {current} of {total_valid}: {phone_number}")
+        else:
+            st.write(f"Skipping invalid number at row {idx}")
         
         # Use the cached version for each phone number
-        status, date = fetch_communication_info_cached(row['Phone Number'], headers)
+        status, date = fetch_communication_info_cached(phone_number, headers)
         statuses.append(status)
         dates.append(date)
     
     return statuses, dates
+
 
 
 
