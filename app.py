@@ -106,15 +106,115 @@ def get_phone_number_id(headers, phone_number):
         st.error(f"Exception during phone number retrieval: {str(e)}")
     return None
 
-def get_last_communication_info(phone_number, headers, openphone_number):
+def get_last_communication_info(phone_number, headers):
     """
-    For a given guest's phone number, retrieve the last communication status (message or call)
-    and the date of that communication.
+    For a given phone number, retrieve the last communication status (message or call)
+    and the date of that communication across all OpenPhone numbers and users.
     """
-    # Get phoneNumberId for your OpenPhone number
-    phone_number_id = get_phone_number_id(headers, openphone_number)
-    if not phone_number_id:
-        return ("Error", None)
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    params = {
+        "participants": [phone_number],
+        "maxResults": 50  # Adjust as needed
+    }
+
+    # Helper functions to parse datetime and direction
+    def parse_datetime(item):
+        created_at = item.get('createdAt')
+        if created_at:
+            return datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        return None
+
+    def parse_direction(item):
+        return item.get('direction')
+
+    # Fetch messages involving the phone number
+    messages = []
+    try:
+        response = requests.get(messages_url, headers=headers, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            messages.extend(data.get('data', []))
+
+            # Handle pagination if required
+            next_page_id = data.get('meta', {}).get('nextPageId')
+            while next_page_id:
+                params['pageId'] = next_page_id
+                response = requests.get(messages_url, headers=headers, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    messages.extend(data.get('data', []))
+                    next_page_id = data.get('meta', {}).get('nextPageId')
+                else:
+                    break
+        else:
+            st.warning(f"Message API Error for {phone_number}: {response.status_code}")
+    except Exception as e:
+        st.warning(f"Exception during message retrieval for {phone_number}: {str(e)}")
+
+    # Fetch calls involving the phone number
+    calls = []
+    try:
+        response = requests.get(calls_url, headers=headers, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            calls.extend(data.get('data', []))
+
+            # Handle pagination if required
+            next_page_id = data.get('meta', {}).get('nextPageId')
+            while next_page_id:
+                params['pageId'] = next_page_id
+                response = requests.get(calls_url, headers=headers, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    calls.extend(data.get('data', []))
+                    next_page_id = data.get('meta', {}).get('nextPageId')
+                else:
+                    break
+        else:
+            st.warning(f"Call API Error for {phone_number}: {response.status_code}")
+    except Exception as e:
+        st.warning(f"Exception during call retrieval for {phone_number}: {str(e)}")
+
+    # Combine messages and calls
+    communications = []
+
+    for msg in messages:
+        msg_time = parse_datetime(msg)
+        if msg_time:
+            communications.append({
+                'type': 'Message',
+                'direction': parse_direction(msg),
+                'datetime': msg_time
+            })
+
+    for call in calls:
+        call_time = parse_datetime(call)
+        if call_time:
+            communications.append({
+                'type': 'Call',
+                'direction': parse_direction(call),
+                'datetime': call_time
+            })
+
+    if not communications:
+        return ("No Communications", None)
+
+    # Find the most recent communication
+    latest_comm = max(communications, key=lambda x: x['datetime'])
+    comm_type = latest_comm['type']
+    direction = latest_comm['direction']
+    status = ""
+
+    if comm_type == 'Message':
+        status = "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
+    else:
+        status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+
+    last_date = latest_comm['datetime'].strftime("%Y-%m-%d %H:%M:%S")
+    return (status, last_date)
+
 
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
@@ -202,7 +302,7 @@ def get_last_communication_info(phone_number, headers, openphone_number):
     return ("No Communications", None)
 
 @st.cache_data
-def fetch_communication_info(guest_df, headers, openphone_number):
+def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the dataframe.
     Returns two lists: statuses and dates.
@@ -211,11 +311,12 @@ def fetch_communication_info(guest_df, headers, openphone_number):
     dates = []
     for idx, row in guest_df.iterrows():
         phone_number = row['Phone Number']
-        status, date = get_last_communication_info(phone_number, headers, openphone_number)
+        status, date = get_last_communication_info(phone_number, headers)
         statuses.append(status)
         dates.append(date)
-        time.sleep(0.2)  # Respect rate limits
+        time.sleep(0.2)  # Respect API rate limits
     return statuses, dates
+
 
 ############################################
 # Create Tabs
@@ -485,16 +586,17 @@ with tab2:
         select_all = st.checkbox("Select All")
         display_df['Select'] = select_all
 
-        # Prepare headers for API calls
+        ## Prepare headers for API calls
         headers = {
             "Authorization": OPENPHONE_API_KEY,
             "Content-Type": "application/json"
         }
 
         # Fetch communication statuses and dates
-        statuses, dates = fetch_communication_info(display_df, headers, OPENPHONE_NUMBER)
+        statuses, dates = fetch_communication_info(display_df, headers)
         display_df['Communication Status'] = statuses
         display_df['Last Communication Date'] = dates
+
 
         # Reorder columns to have "Select" as the leftmost column
         display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date']]
