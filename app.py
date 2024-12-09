@@ -180,6 +180,13 @@ def get_last_communication_info(phone_number, headers):
     return (status, last_date)
 
 @st.cache_data(show_spinner=False)
+def fetch_communication_info_cached(phone_number, headers):
+    """
+    Cached version of getting communication info for a single phone number
+    """
+    status, date = get_last_communication_info(phone_number, headers)
+    return status, date
+
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the dataframe.
@@ -190,6 +197,7 @@ def fetch_communication_info(guest_df, headers):
     
     # Create a progress bar
     progress_bar = st.progress(0)
+    status_text = st.empty()
     total_rows = len(guest_df)
     
     for idx, row in guest_df.iterrows():
@@ -198,15 +206,16 @@ def fetch_communication_info(guest_df, headers):
         progress_bar.progress(progress)
         
         # Show current status
-        st.write(f"Processing {idx + 1} of {total_rows}: {row['Phone Number']}")
+        status_text.text(f"Processing {idx + 1} of {total_rows}: {row['Phone Number']}")
         
-        phone_number = row['Phone Number']
-        status, date = get_last_communication_info(phone_number, headers)
+        # Use the cached version for each phone number
+        status, date = fetch_communication_info_cached(row['Phone Number'], headers)
         statuses.append(status)
         dates.append(date)
     
-    # Clear progress bar
+    # Clear progress indicators
     progress_bar.empty()
+    status_text.empty()
     
     return statuses, dates
 
