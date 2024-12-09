@@ -90,7 +90,6 @@ import requests
 import streamlit as st
 from datetime import datetime
 
-# Apply rate limiting directly here
 def rate_limited_request(url, headers, params, request_type='get'):
     """
     Make an API request while respecting rate limits.
@@ -141,59 +140,43 @@ def get_last_communication_info(phone_number, headers):
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
 
-    communications = []
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
 
     for phone_number_id in phone_number_ids:
         params = {
             "phoneNumberId": phone_number_id,
             "participants": [phone_number],
-            "maxResults": 50  # Adjust as needed
+            "maxResults": 50  # Ensures we only fetch the first page
         }
 
         # Fetch messages
         data = rate_limited_request(messages_url, headers, params)
         if data:
-            messages = data.get('data', [])
-            while 'nextPageToken' in data:
-                params['pageToken'] = data['nextPageToken']
-                data = rate_limited_request(messages_url, headers, params)
-                if data:
-                    messages.extend(data.get('data', []))
-                else:
-                    break
+            for msg in data.get('data', []):
+                msg_time = datetime.fromisoformat(msg.get('createdAt').replace('Z', '+00:00'))
+                if latest_datetime is None or msg_time > latest_datetime:
+                    latest_datetime = msg_time
+                    latest_type = 'Message'
+                    latest_direction = msg.get('direction')
 
         # Fetch calls
         data = rate_limited_request(calls_url, headers, params)
         if data:
-            calls = data.get('data', [])
-            while 'nextPageToken' in data:
-                params['pageToken'] = data['nextPageToken']
-                data = rate_limited_request(calls_url, headers, params)
-                if data:
-                    calls.extend(data.get('data', []))
-                else:
-                    break
+            for call in data.get('data', []):
+                call_time = datetime.fromisoformat(call.get('createdAt').replace('Z', '+00:00'))
+                if latest_datetime is None or call_time > latest_datetime:
+                    latest_datetime = call_time
+                    latest_type = 'Call'
+                    latest_direction = call.get('direction')
 
-        # Process messages
-        for msg in messages:
-            msg_time = datetime.fromisoformat(msg.get('createdAt').replace('Z', '+00:00'))
-            communications.append({'type': 'Message', 'direction': msg.get('direction'), 'datetime': msg_time})
-
-        # Process calls
-        for call in calls:
-            call_time = datetime.fromisoformat(call.get('createdAt').replace('Z', '+00:00'))
-            communications.append({'type': 'Call', 'direction': call.get('direction'), 'datetime': call_time})
-
-    if not communications:
+    if latest_datetime is None:
         return ("No Communications", None)
 
-    # Find the most recent communication
-    latest_comm = max(communications, key=lambda x: x['datetime'])
-    comm_type = latest_comm['type']
-    direction = latest_comm['direction']
-    status = "Sent Message" if comm_type == 'Message' and direction in ['outgoing', 'outbound'] else "Received Message" if comm_type == 'Message' else "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
+    status = "Sent Message" if latest_type == 'Message' and latest_direction in ['outgoing', 'outbound'] else "Received Message" if latest_type == 'Message' else "Made Call" if latest_direction in ['outgoing', 'outbound'] else "Received Call"
 
-    last_date = latest_comm['datetime'].strftime("%Y-%m-%d %H:%M:%S")
+    last_date = latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
     return (status, last_date)
 
 @st.cache_data
