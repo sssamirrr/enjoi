@@ -85,39 +85,39 @@ if df is None:
 # OpenPhone API Functions
 ############################################
 
-def get_phone_number_id(headers, phone_number):
+def get_all_phone_number_ids(headers):
     """
-    Retrieve the phoneNumberId for the specified OpenPhone number.
+    Retrieve all phoneNumberIds associated with your OpenPhone account.
     """
-    url = "https://api.openphone.com/v1/phone-numbers"
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    phone_number_ids = []
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(phone_numbers_url, headers=headers)
         if response.status_code == 200:
             data = response.json()
             for pn in data.get('data', []):
-                # Compare top-level 'number' field to the desired phone_number
-                if pn.get('number') == phone_number:
-                    return pn['id']
-            st.error(f"Phone number {phone_number} not found in OpenPhone account.")
+                phone_number_id = pn.get('id')
+                if phone_number_id:
+                    phone_number_ids.append(phone_number_id)
         else:
             st.error(f"Error retrieving phone numbers: {response.status_code}")
             st.error(f"Response: {response.text}")
     except Exception as e:
         st.error(f"Exception during phone number retrieval: {str(e)}")
-    return None
+    return phone_number_ids
 
 def get_last_communication_info(phone_number, headers):
     """
     For a given phone number, retrieve the last communication status (message or call)
-    and the date of that communication across all OpenPhone numbers and users.
+    and the date of that communication across all OpenPhone numbers.
     """
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        st.error("No OpenPhone numbers found in the account.")
+        return ("Error", None)
+
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
-
-    params = {
-        "participants": [phone_number],
-        "maxResults": 50  # Adjust as needed
-    }
 
     # Helper functions to parse datetime and direction
     def parse_datetime(item):
@@ -129,74 +129,84 @@ def get_last_communication_info(phone_number, headers):
     def parse_direction(item):
         return item.get('direction')
 
-    # Fetch messages involving the phone number
-    messages = []
-    try:
-        response = requests.get(messages_url, headers=headers, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            messages.extend(data.get('data', []))
-
-            # Handle pagination if required
-            next_page_id = data.get('meta', {}).get('nextPageId')
-            while next_page_id:
-                params['pageId'] = next_page_id
-                response = requests.get(messages_url, headers=headers, params=params)
-                if response.status_code == 200:
-                    data = response.json()
-                    messages.extend(data.get('data', []))
-                    next_page_id = data.get('meta', {}).get('nextPageId')
-                else:
-                    break
-        else:
-            st.warning(f"Message API Error for {phone_number}: {response.status_code}")
-    except Exception as e:
-        st.warning(f"Exception during message retrieval for {phone_number}: {str(e)}")
-
-    # Fetch calls involving the phone number
-    calls = []
-    try:
-        response = requests.get(calls_url, headers=headers, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            calls.extend(data.get('data', []))
-
-            # Handle pagination if required
-            next_page_id = data.get('meta', {}).get('nextPageId')
-            while next_page_id:
-                params['pageId'] = next_page_id
-                response = requests.get(calls_url, headers=headers, params=params)
-                if response.status_code == 200:
-                    data = response.json()
-                    calls.extend(data.get('data', []))
-                    next_page_id = data.get('meta', {}).get('nextPageId')
-                else:
-                    break
-        else:
-            st.warning(f"Call API Error for {phone_number}: {response.status_code}")
-    except Exception as e:
-        st.warning(f"Exception during call retrieval for {phone_number}: {str(e)}")
-
-    # Combine messages and calls
     communications = []
 
-    for msg in messages:
-        msg_time = parse_datetime(msg)
-        if msg_time:
-            communications.append({
-                'type': 'Message',
-                'direction': parse_direction(msg),
-                'datetime': msg_time
-            })
+    for phone_number_id in phone_number_ids:
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [phone_number],
+            "maxResults": 50  # Adjust as needed
+        }
 
-    for call in calls:
-        call_time = parse_datetime(call)
-        if call_time:
-            communications.append({
-                'type': 'Call',
-                'direction': parse_direction(call),
-                'datetime': call_time
-            })
+        # Fetch messages involving the phone number and current phoneNumberId
+        messages = []
+        try:
+            response = requests.get(messages_url, headers=headers, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                messages.extend(data.get('data', []))
+
+                # Handle pagination if required
+                next_page_token = data.get('nextPageToken')
+                while next_page_token:
+                    params['pageToken'] = next_page_token
+                    response = requests.get(messages_url, headers=headers, params=params)
+                    if response.status_code == 200:
+                        data = response.json()
+                        messages.extend(data.get('data', []))
+                        next_page_token = data.get('nextPageToken')
+                    else:
+                        break
+            else:
+                st.warning(f"Message API Error for {phone_number}: {response.status_code}")
+                st.warning(f"Response: {response.text}")
+        except Exception as e:
+            st.warning(f"Exception during message retrieval for {phone_number}: {str(e)}")
+
+        # Fetch calls involving the phone number and current phoneNumberId
+        calls = []
+        try:
+            response = requests.get(calls_url, headers=headers, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                calls.extend(data.get('data', []))
+
+                # Handle pagination if required
+                next_page_token = data.get('nextPageToken')
+                while next_page_token:
+                    params['pageToken'] = next_page_token
+                    response = requests.get(calls_url, headers=headers, params=params)
+                    if response.status_code == 200:
+                        data = response.json()
+                        calls.extend(data.get('data', []))
+                        next_page_token = data.get('nextPageToken')
+                    else:
+                        break
+            else:
+                st.warning(f"Call API Error for {phone_number}: {response.status_code}")
+                st.warning(f"Response: {response.text}")
+        except Exception as e:
+            st.warning(f"Exception during call retrieval for {phone_number}: {str(e)}")
+
+        # Process messages
+        for msg in messages:
+            msg_time = parse_datetime(msg)
+            if msg_time:
+                communications.append({
+                    'type': 'Message',
+                    'direction': parse_direction(msg),
+                    'datetime': msg_time
+                })
+
+        # Process calls
+        for call in calls:
+            call_time = parse_datetime(call)
+            if call_time:
+                communications.append({
+                    'type': 'Call',
+                    'direction': parse_direction(call),
+                    'datetime': call_time
+                })
 
     if not communications:
         return ("No Communications", None)
@@ -215,92 +225,6 @@ def get_last_communication_info(phone_number, headers):
     last_date = latest_comm['datetime'].strftime("%Y-%m-%d %H:%M:%S")
     return (status, last_date)
 
-
-    messages_url = "https://api.openphone.com/v1/messages"
-    calls_url = "https://api.openphone.com/v1/calls"
-
-    # Parameters must comply with API constraints
-    params = {
-        "phoneNumberId": phone_number_id,
-        "participants": [phone_number],
-        "maxResults": 2  # Must be greater than 1 as per API documentation
-    }
-
-    last_message = None
-    last_call = None
-
-    # Fetch the last message
-    try:
-        message_response = requests.get(messages_url, headers=headers, params=params)
-        if message_response.status_code == 200:
-            message_data = message_response.json()
-            if message_data.get('data'):
-                last_message = message_data['data'][0]
-        else:
-            st.warning(f"Message API Error for {phone_number}: {message_response.status_code}")
-            return ("Error", None)
-    except Exception as e:
-        st.warning(f"Exception during message retrieval for {phone_number}: {str(e)}")
-        return ("Error", None)
-
-    # Fetch the last call
-    try:
-        call_response = requests.get(calls_url, headers=headers, params=params)
-        if call_response.status_code == 200:
-            call_data = call_response.json()
-            if call_data.get('data'):
-                last_call = call_data['data'][0]
-        else:
-            st.warning(f"Call API Error for {phone_number}: {call_response.status_code}")
-            return ("Error", None)
-    except Exception as e:
-        st.warning(f"Exception during call retrieval for {phone_number}: {str(e)}")
-        return ("Error", None)
-
-    # Helper functions to parse datetime and direction
-    def parse_datetime(item):
-        # Try top-level 'createdAt'
-        created_at = item.get('createdAt')
-        if created_at:
-            return datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-        return None
-
-    def parse_direction(item):
-        return item.get('direction')
-
-    message_time = parse_datetime(last_message) if last_message else None
-    call_time = parse_datetime(last_call) if last_call else None
-
-    # Determine the most recent communication
-    if last_message and last_call:
-        if message_time and call_time:
-            if message_time > call_time:
-                direction = parse_direction(last_message)
-                status = "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
-                return (status, message_time.strftime("%Y-%m-%d %H:%M:%S"))
-            else:
-                direction = parse_direction(last_call)
-                status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
-                return (status, call_time.strftime("%Y-%m-%d %H:%M:%S"))
-        elif message_time:
-            direction = parse_direction(last_message)
-            status = "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
-            return (status, message_time.strftime("%Y-%m-%d %H:%M:%S"))
-        elif call_time:
-            direction = parse_direction(last_call)
-            status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
-            return (status, call_time.strftime("%Y-%m-%d %H:%M:%S"))
-    elif last_message:
-        direction = parse_direction(last_message)
-        status = "Sent Message" if direction in ['outgoing', 'outbound'] else "Received Message"
-        return (status, message_time.strftime("%Y-%m-%d %H:%M:%S"))
-    elif last_call:
-        direction = parse_direction(last_call)
-        status = "Made Call" if direction in ['outgoing', 'outbound'] else "Received Call"
-        return (status, call_time.strftime("%Y-%m-%d %H:%M:%S"))
-
-    return ("No Communications", None)
-
 @st.cache_data
 def fetch_communication_info(guest_df, headers):
     """
@@ -314,7 +238,7 @@ def fetch_communication_info(guest_df, headers):
         status, date = get_last_communication_info(phone_number, headers)
         statuses.append(status)
         dates.append(date)
-        time.sleep(0.2)  # Respect API rate limits
+        time.sleep(0.2)  # Adjust based on API rate limits
     return statuses, dates
 
 
