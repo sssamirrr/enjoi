@@ -44,7 +44,7 @@ st.markdown("""
 ############################################
 
 # Replace with your actual OpenPhone API key and number
- = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 OPENPHONE_NUMBER = "+18438972426"
 
 ############################################
