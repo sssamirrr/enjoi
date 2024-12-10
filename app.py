@@ -11,30 +11,11 @@ import time
 # Set page configuration
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
-# Add CSS for optional styling (can be customized or removed)
+# Add CSS for optional styling
 st.markdown("""
     <style>
     .stDateInput {
         width: 100%;
-    }
-    .stTextInput, .stNumberInput {
-        max-width: 200px;
-    }
-    div[data-baseweb="input"] {
-        width: 100%;
-    }
-    .stDateInput > div {
-        width: 100%;
-    }
-    div[data-baseweb="input"] > div {
-        width: 100%;
-    }
-    .stDataFrame {
-        width: 100%;
-    }
-    .dataframe-container {
-        margin-top: 1rem;
-        margin-bottom: 1rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -43,7 +24,6 @@ st.markdown("""
 # Hard-coded OpenPhone Credentials
 ############################################
 
-# Replace with your actual OpenPhone API key and number
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 OPENPHONE_NUMBER = "+18438972426"
 
@@ -54,7 +34,6 @@ OPENPHONE_NUMBER = "+18438972426"
 @st.cache_resource
 def get_google_sheet_data():
     try:
-        # Retrieve Google Sheets credentials from st.secrets
         service_account_info = st.secrets["gcp_service_account"]
 
         credentials = service_account.Credentials.from_service_account_info(
@@ -85,16 +64,7 @@ if df is None:
 # OpenPhone API Functions
 ############################################
 
-import time
-import requests
-import streamlit as st
-from datetime import datetime
-import pandas as pd
-
 def rate_limited_request(url, headers, params, request_type='get'):
-    """
-    Make an API request while respecting rate limits.
-    """
     time.sleep(1 / 5)  # 5 requests per second max
     try:
         st.write(f"Making API call to {url} with params: {params}")
@@ -113,19 +83,11 @@ def rate_limited_request(url, headers, params, request_type='get'):
     return None
 
 def get_all_phone_number_ids(headers):
-    """
-    Retrieve all phoneNumberIds associated with your OpenPhone account.
-    """
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     response_data = rate_limited_request(phone_numbers_url, headers, {})
     return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
 def get_last_communication_info(phone_number, headers):
-    """
-    Retrieve the last communication status (message or call),
-    the date of that communication, the call duration (if applicable),
-    and the agent's name who made the call or sent the message.
-    """
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         st.error("No OpenPhone numbers found in the account.")
@@ -138,10 +100,9 @@ def get_last_communication_info(phone_number, headers):
     latest_type = None
     latest_direction = None
     call_duration = None
-    agent_name = None  # New variable to store the agent's name
+    agent_name = None
 
     for phone_number_id in phone_number_ids:
-        # Fetch messages
         params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
         messages_response = rate_limited_request(messages_url, headers, params)
         if messages_response and 'data' in messages_response:
@@ -151,9 +112,8 @@ def get_last_communication_info(phone_number, headers):
                     latest_datetime = msg_time
                     latest_type = "Message"
                     latest_direction = message.get("direction", "unknown")
-                    agent_name = message.get("user", {}).get("name", "Unknown Agent")  # Extract agent name
+                    agent_name = message.get("user", {}).get("name", "Unknown Agent")
 
-        # Fetch calls
         calls_response = rate_limited_request(calls_url, headers, params)
         if calls_response and 'data' in calls_response:
             for call in calls_response['data']:
@@ -163,7 +123,7 @@ def get_last_communication_info(phone_number, headers):
                     latest_type = "Call"
                     latest_direction = call.get("direction", "unknown")
                     call_duration = call.get("duration")
-                    agent_name = call.get("user", {}).get("name", "Unknown Agent")  # Extract agent name
+                    agent_name = call.get("user", {}).get("name", "Unknown Agent")
 
     if not latest_datetime:
         return "No Communications", None, None, None
@@ -172,9 +132,6 @@ def get_last_communication_info(phone_number, headers):
 
 
 def fetch_communication_info(guest_df, headers):
-    """
-    Fetch communication statuses, dates, durations, and agent names for all guests in the DataFrame.
-    """
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
         return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
@@ -203,13 +160,6 @@ def fetch_communication_info(guest_df, headers):
             agent_names.append("Unknown")
 
     return statuses, dates, durations, agent_names
-
-
-    # Output results for debugging
-    st.write("Statuses:", statuses)
-    st.write("Dates:", dates)
-    return statuses, dates
-
 
 ############################################
 # Create Tabs
@@ -336,6 +286,9 @@ with tab1:
             )
             st.plotly_chart(fig_arrivals, use_container_width=True)
 
+# Initialize or check session state variables for communication
+if 'communication_fetched' not in st.session_state:
+    st.session_state.communication_fetched = False
 
 # Function to reset filters to defaults
 def reset_filters():
@@ -344,7 +297,6 @@ def reset_filters():
         if key in st.session_state:
             del st.session_state[key]  # Delete the existing key to allow widget reinitialization
     st.session_state.update(default_dates)  # Update with the default values
-
 
 import pandas as pd
 import requests
@@ -472,27 +424,25 @@ with tab2:
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        display_df['Communication Status'] = 'Checking...'
+        display_df['Communication Status'] = 'Not Checked'
         display_df['Last Communication Date'] = None  # Initialize the new column
+
+        # Condition to check communications
+        if st.button("Fetch Communication Status") or st.session_state.communication_fetched:
+            st.session_state.communication_fetched = True
+            headers = {
+                "Authorization": OPENPHONE_API_KEY,
+                "Content-Type": "application/json"
+            }
+            statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+            display_df['Communication Status'] = statuses
+            display_df['Last Communication Date'] = dates
+            display_df['Call Duration (seconds)'] = durations
+            display_df['Agent Name'] = agent_names
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
         display_df['Select'] = select_all
-
-        ## Prepare headers for API calls
-        headers = {
-            "Authorization": OPENPHONE_API_KEY,
-            "Content-Type": "application/json"
-        }
-
-        # Fetch communication statuses and dates
-        statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
-        display_df['Communication Status'] = statuses
-        display_df['Last Communication Date'] = dates
-        display_df['Call Duration (seconds)'] = durations
-        display_df['Agent Name'] = agent_names
-
-
 
         # Reorder columns to have "Select" as the leftmost column
         display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
@@ -565,7 +515,7 @@ with tab2:
         selected_guests = edited_df[edited_df['Select']]
         num_selected = len(selected_guests)
         if not selected_guests.empty:
-            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected!= 1 else ''}"
+            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
             if st.button(button_label):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers_sms = {
@@ -602,7 +552,6 @@ with tab2:
     else:
         st.info("No guest data available to send SMS.")
 
-
 ############################################
 # Tour Prediction Tab
 ############################################
@@ -611,12 +560,12 @@ with tab3:
     col1, col2 = st.columns(2)
     with col1:
         start_date = st.date_input(
-            "Start Date for Tour Prediction", 
+            "Start Date for Tour Prediction",
             value=pd.to_datetime(df['Arrival Date Short']).min().date()
         )
     with col2:
         end_date = st.date_input(
-            "End Date for Tour Prediction", 
+            "End Date for Tour Prediction",
             value=pd.to_datetime(df['Arrival Date Short']).max().date()
         )
 
@@ -643,10 +592,10 @@ with tab3:
 
             # Conversion Rate Input
             conversion_rate = st.number_input(
-                f"Conversion Rate for {resort} (%)", 
-                min_value=0.0, 
-                max_value=100.0, 
-                value=10.0, 
+                f"Conversion Rate for {resort} (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=10.0,
                 step=0.5,
                 key=f"conversion_{resort}"
             ) / 100
