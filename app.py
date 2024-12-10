@@ -389,23 +389,6 @@ with tab2:
             'check_out_end': max_check_out,
         }
 
-        # Function to reset filters (move this definition outside the if block)
-        def reset_filters():
-            # Retrieve default dates from session state
-            default_dates = st.session_state['default_dates']
-            
-            # Clear the date input widgets by removing their keys from session state
-            keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
-            for key in keys_to_remove:
-                if key in st.session_state:
-                    del st.session_state[key]
-            
-            # Reset to default dates
-            st.session_state.update(default_dates)
-            
-            # Force a rerun of the app
-            st.rerun()
-
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
@@ -468,38 +451,30 @@ with tab2:
             elif len(phone) == 11 and phone.startswith('1'):
                 return f"+{phone}"
             else:
-                return phone  # Return as is if it doesn't match expected patterns
+                return phone
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        display_df['Communication Status'] = 'Checking...'
-        display_df['Last Communication Date'] = None  # Initialize the new column
+        display_df['Communication Status'] = 'Not Fetched'
+        display_df['Last Communication Date'] = None
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
         display_df['Select'] = select_all
 
-        ## Prepare headers for API calls
-        headers = {
-            "Authorization": OPENPHONE_API_KEY,
-            "Content-Type": "application/json"
-        }
-
-        # Fetch communication statuses and dates
-             # Button to fetch communication info
+        # Button to fetch communication info
         if st.button("Fetch Communication Info"):
             headers = {
                 "Authorization": OPENPHONE_API_KEY,
                 "Content-Type": "application/json"
             }
-            # Fetch communication info and store in session state
             statuses, dates, durations, agent_names = fetch_communication_info(resort_df, headers)
             st.session_state['communication_statuses'] = statuses
             st.session_state['communication_dates'] = dates
             st.session_state['communication_durations'] = durations
             st.session_state['communication_agent_names'] = agent_names
             st.success("Communication information fetched successfully!")
-        
+
         # Update display_df with fetched data
         if 'communication_statuses' in st.session_state:
             display_df['Communication Status'] = st.session_state['communication_statuses']
@@ -511,11 +486,8 @@ with tab2:
             display_df['Last Communication Date'] = None
             display_df['Call Duration (seconds)'] = None
             display_df['Agent Name'] = "Unknown"
-        
 
-
-
-        # Reorder columns to have "Select" as the leftmost column
+        # Reorder columns
         display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
 
         # Interactive data editor
@@ -558,6 +530,8 @@ with tab2:
             use_container_width=True,
             key="guest_editor"
         )
+
+[Rest of the Marketing Tab code remains unchanged...]
 
     ############################################
     # Message Templates Section
