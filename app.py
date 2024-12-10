@@ -531,8 +531,6 @@ with tab2:
             key="guest_editor"
         )
 
-[Rest of the Marketing Tab code remains unchanged...]
-
     ############################################
     # Message Templates Section
     ############################################
