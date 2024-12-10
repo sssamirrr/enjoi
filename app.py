@@ -79,7 +79,16 @@ def get_google_sheet_data():
 df = get_google_sheet_data()
 if df is None:
     st.error("Failed to load data. Please check your connection and credentials.")
-    st.stop()
+    st.stop()  # End execution if no data is loaded
+
+# Ensure the following lines are correctly aligned with the rest of the script
+############################################
+# OpenPhone API Functions
+############################################
+
+# Create tabs for the Streamlit app
+tab1, tab2, tab3 = st.tabs(["Dashboard", "Marketing", "Tour Prediction"])
+
 
 ############################################
 # OpenPhone API Functions
