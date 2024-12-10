@@ -97,6 +97,7 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
+
 def rate_limited_request(url, headers, params, request_type="get"):
     """
     Make an API request while respecting rate limits.
@@ -122,6 +123,7 @@ def rate_limited_request(url, headers, params, request_type="get"):
         st.warning(f"Exception during request: {str(e)}")
     return None
 
+
 def get_all_phone_number_ids(headers):
     """
     Retrieve all phoneNumberIds associated with your OpenPhone account.
@@ -131,6 +133,7 @@ def get_all_phone_number_ids(headers):
     return (
         [pn.get("id") for pn in response_data.get("data", [])] if response_data else []
     )
+
 
 def get_last_communication_info(phone_number, headers):
     """
@@ -186,6 +189,7 @@ def get_last_communication_info(phone_number, headers):
         "%Y-%m-%d %H:%M:%S"
     )
 
+
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the DataFrame.
@@ -229,45 +233,128 @@ def fetch_communication_info(guest_df, headers):
     st.write("Dates:", dates)
     return statuses, dates
 
-############################################
-# Streamlit App
-############################################
 
-st.title("OpenPhone Communication Tracker")
+def load_status_all_numbers(headers):
+    """
+    Load status for all phone numbers.
+    """
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    return response_data.get("data", [])
 
-# Sample headers and guest data (replace with your actual data and headers)
-headers = {"Authorization": "Bearer YOUR_ACCESS_TOKEN"}
-guest_data = {
-    "Name": ["Alice", "Bob"],
-    "Phone Number": ["+1234567890", "+0987654321"]
-}
-guest_df = pd.DataFrame(guest_data)
 
-# Options for loading statuses
-if st.button("Load Communication Status for All Numbers"):
-    st.write("Loading communication status for all numbers...")
-    statuses, dates = fetch_communication_info(guest_df, headers)
-    guest_df['Status'] = statuses
-    guest_df['Last Communication Date'] = dates
+def load_status_individual_number(phone_number, headers):
+    """
+    Load status for a single phone number.
+    """
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        st.error("No OpenPhone numbers found in the account.")
+        return "No Communications", None
 
-selected_index = st.multiselect(
-    "Select rows to load communication status:",
-    guest_df.index,
-    format_func=lambda x: guest_df["Name"][x] + " - " + guest_df["Phone Number"][x]
-)
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
 
-if st.button("Load Communication Status for Selected Numbers"):
-    st.write("Loading communication status for selected numbers...")
-    if not selected_index:
-        st.warning("No numbers selected.")
-    else:
-        selected_df = guest_df.loc[selected_index]
-        statuses, dates = fetch_communication_info(selected_df, headers)
-        guest_df.loc[selected_index, 'Status'] = statuses
-        guest_df.loc[selected_index, 'Last Communication Date'] = dates
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
 
-# Display the DataFrame
-st.write(guest_df)
+    for phone_number_id in phone_number_ids:
+        # Fetch messages
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [phone_number],
+            "maxResults": 50,
+        }
+        messages_response = rate_limited_request(messages_url, headers, params)
+        if messages_response and "data" in messages_response:
+            for message in messages_response["data"]:
+                msg_time = datetime.fromisoformat(
+                    message["createdAt"].replace("Z", "+00:00")
+                )
+                if not latest_datetime or msg_time > latest_datetime:
+                    latest_datetime = msg_time
+                    latest_type = "Message"
+                    latest_direction = message.get("direction", "unknown")
+
+        # Fetch calls
+        calls_response = rate_limited_request(calls_url, headers, params)
+        if calls_response and "data" in calls_response:
+            for call in calls_response["data"]:
+                call_time = datetime.fromisoformat(
+                    call["createdAt"].replace("Z", "+00:00")
+                )
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
+                    latest_type = "Call"
+                    latest_direction = call.get("direction", "unknown")
+
+    if not latest_datetime:
+        return "No Communications", None
+
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+
+def main():
+    # Initialize headers
+    headers = {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    }
+
+    # Initialize DataFrame
+    guest_df = pd.DataFrame(
+        {
+            "Phone Number": ["1234567890", "9876543210", "5551234567"],
+        }
+    )
+
+    # Initialize status and date lists
+    statuses = []
+    dates = []
+
+    # Create a button to load status for all numbers
+    if st.button("Load Status for All Numbers"):
+        all_numbers = load_status_all_numbers(headers)
+        for pn in all_numbers:
+            status, date = load_status_individual_number(pn, headers)
+            statuses.append(status)
+            dates.append(date)
+
+    # Create a table to display the results
+    st.write("Statuses:")
+    st.write(pd.DataFrame({"Phone Number": guest_df["Phone Number"], "Status": statuses, "Date": dates}))
+
+    # Create a button to load status for individual numbers
+    if st.button("Load Status for Individual Number"):
+        for idx, row in guest_df.iterrows():
+            phone = row["Phone Number"]
+            status, date = load_status_individual_number(phone, headers)
+            statuses.append(status)
+            dates.append(date)
+
+    # Create a table to display the results
+    st.write("Statuses:")
+    st.write(pd.DataFrame({"Phone Number": guest_df["Phone Number"], "Status": statuses, "Date": dates}))
+
+    # Create a date picker to filter the results
+    date_filter = st.date_input("Filter by Date")
+    if date_filter:
+        filtered_df = guest_df[guest_df["Date"] >= date_filter]
+        st.write("Filtered Results:")
+        st.write(filtered_df)
+
+    # Create a checkbox to filter the results
+    checkbox = st.checkbox("Filter by Status")
+    if checkbox:
+        filtered_df = guest_df[guest_df["Status"] == "Message"]
+        st.write("Filtered Results:")
+        st.write(filtered_df)
+
+
+
 
 ############################################
 # Create Tabs
