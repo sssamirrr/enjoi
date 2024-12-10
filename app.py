@@ -492,7 +492,7 @@ with tab2:
         }
 
         # Fetch communication statuses and dates
-        statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+        statuses, dates, durations, agent_phone_numbers = fetch_communication_info(display_df, headers)
         display_df['Communication Status'] = statuses
         display_df['Last Communication Date'] = dates
         display_df['Call Duration (seconds)'] = durations
