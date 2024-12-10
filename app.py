@@ -355,6 +355,51 @@ import json
 ############################################
 # Marketing Tab
 ############################################
+
+############################################
+# Marketing Tab
+############################################
+############################################
+# Marketing Tab
+############################################
+
+def format_phone_number(phone):
+    """
+    Format phone numbers to E.164 format.
+    Remove invalid characters and handle multiple phone numbers.
+    """
+    # Extract only digits
+    phone = ''.join(filter(str.isdigit, str(phone)))
+
+    # Handle multiple numbers (e.g., separated by /)
+    if '/' in phone:
+        phone = phone.split('/')[0]  # Use the first number
+
+    # Ensure the phone number is in E.164 format
+    if len(phone) == 10:  # Assuming the number is US-based
+        return f"+1{phone}"
+    elif len(phone) > 10 and phone.startswith('1'):
+        return f"+{phone}"
+    elif len(phone) > 10 and not phone.startswith('+'):
+        return f"+{phone}"
+    else:
+        return None  # Invalid number
+
+
+def reset_filters():
+    # Clear the session state for dates
+    for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Reset to default dates from the session state
+    if 'default_dates' in st.session_state:
+        st.session_state.update(st.session_state['default_dates'])
+    
+    # Force rerun to update the UI
+    st.rerun()
+
+
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -444,82 +489,90 @@ with tab2:
         display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
-        # Add default values for communication status
-        display_df['Communication Status'] = 'Not Fetched'
-        display_df['Last Communication Date'] = None
+        # Apply phone number formatting
+        display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
 
-        # Add "Select All" checkbox
-        select_all = st.checkbox("Select All")
-        display_df['Select'] = select_all
+        # Filter out rows with invalid phone numbers
+        display_df = display_df[display_df['Phone Number'].notnull()]
 
-        # Button to fetch communication info
-        if st.button("Fetch Communication Info"):
-            headers = {
-                "Authorization": OPENPHONE_API_KEY,
-                "Content-Type": "application/json"
-            }
-            statuses, dates, durations, agent_names = fetch_communication_info(resort_df, headers)
-            st.session_state['communication_statuses'] = statuses
-            st.session_state['communication_dates'] = dates
-            st.session_state['communication_durations'] = durations
-            st.session_state['communication_agent_names'] = agent_names
-            st.success("Communication information fetched successfully!")
-
-        # Update display_df with fetched data
-        if 'communication_statuses' in st.session_state:
-            display_df['Communication Status'] = st.session_state['communication_statuses']
-            display_df['Last Communication Date'] = st.session_state['communication_dates']
-            display_df['Call Duration (seconds)'] = st.session_state['communication_durations']
-            display_df['Agent Name'] = st.session_state['communication_agent_names']
+        if display_df.empty:
+            st.warning("No valid phone numbers available after formatting.")
         else:
-            display_df['Communication Status'] = "Not Fetched"
+            display_df['Communication Status'] = 'Not Fetched'
             display_df['Last Communication Date'] = None
-            display_df['Call Duration (seconds)'] = None
-            display_df['Agent Name'] = "Unknown"
 
-        # Reorder columns
-        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
+            # Add "Select All" checkbox
+            select_all = st.checkbox("Select All")
+            display_df['Select'] = select_all
 
-        # Interactive data editor
-        edited_df = st.data_editor(
-            display_df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Select or deselect this guest",
-                    default=select_all
-                ),
-                "Guest Name": st.column_config.TextColumn(
-                    "Guest Name",
-                    help="Guest's full name"
-                ),
-                "Check In": st.column_config.DateColumn(
-                    "Check In",
-                    help="Check-in date"
-                ),
-                "Check Out": st.column_config.DateColumn(
-                    "Check Out",
-                    help="Check-out date"
-                ),
-                "Phone Number": st.column_config.TextColumn(
-                    "Phone Number",
-                    help="Guest's phone number"
-                ),
-                "Communication Status": st.column_config.TextColumn(
-                    "Communication Status",
-                    help="Last communication status with the guest",
-                    disabled=True
-                ),
-                "Last Communication Date": st.column_config.TextColumn(
-                    "Last Communication Date",
-                    help="Date and time of the last communication with the guest",
-                    disabled=True
-                ),
-            },
-            hide_index=True,
-            use_container_width=True,
-            key="guest_editor"
-        )
+            # Button to fetch communication info
+            if st.button("Fetch Communication Info"):
+                headers = {
+                    "Authorization": OPENPHONE_API_KEY,
+                    "Content-Type": "application/json"
+                }
+                statuses, dates, durations, agent_names = fetch_communication_info(resort_df, headers)
+                st.session_state['communication_statuses'] = statuses
+                st.session_state['communication_dates'] = dates
+                st.session_state['communication_durations'] = durations
+                st.session_state['communication_agent_names'] = agent_names
+                st.success("Communication information fetched successfully!")
+
+            # Update display_df with fetched data
+            if 'communication_statuses' in st.session_state:
+                display_df['Communication Status'] = st.session_state['communication_statuses']
+                display_df['Last Communication Date'] = st.session_state['communication_dates']
+                display_df['Call Duration (seconds)'] = st.session_state['communication_durations']
+                display_df['Agent Name'] = st.session_state['communication_agent_names']
+            else:
+                display_df['Communication Status'] = "Not Fetched"
+                display_df['Last Communication Date'] = None
+                display_df['Call Duration (seconds)'] = None
+                display_df['Agent Name'] = "Unknown"
+
+            # Reorder columns
+            display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
+
+            # Interactive data editor
+            edited_df = st.data_editor(
+                display_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select or deselect this guest",
+                        default=select_all
+                    ),
+                    "Guest Name": st.column_config.TextColumn(
+                        "Guest Name",
+                        help="Guest's full name"
+                    ),
+                    "Check In": st.column_config.DateColumn(
+                        "Check In",
+                        help="Check-in date"
+                    ),
+                    "Check Out": st.column_config.DateColumn(
+                        "Check Out",
+                        help="Check-out date"
+                    ),
+                    "Phone Number": st.column_config.TextColumn(
+                        "Phone Number",
+                        help="Guest's phone number"
+                    ),
+                    "Communication Status": st.column_config.TextColumn(
+                        "Communication Status",
+                        help="Last communication status with the guest",
+                        disabled=True
+                    ),
+                    "Last Communication Date": st.column_config.TextColumn(
+                        "Last Communication Date",
+                        help="Date and time of the last communication with the guest",
+                        disabled=True
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="guest_editor"
+            )
 
 
     ############################################
