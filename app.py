@@ -250,6 +250,10 @@ def fetch_communication_info(guest_df, headers):
     statuses = ["No Status"] * len(guest_df)
     dates = [None] * len(guest_df)
 
+    # Debugging: Inspect the DataFrame
+    st.write("Raw phone numbers from DataFrame:")
+    st.write(guest_df['Phone_Number'].tolist())  # Replace 'Phone_Number' with actual column name
+
     valid_rows = [
         (i, row) for i, row in enumerate(guest_df.itertuples(), start=0)
         if hasattr(row, 'Phone_Number') and not pd.isna(row.Phone_Number) and str(row.Phone_Number).strip()
