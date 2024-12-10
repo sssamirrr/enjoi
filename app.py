@@ -165,49 +165,7 @@ def get_last_communication_info(phone_number, headers):
     return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def fetch_communication_info(guest_df, headers):
-    """
-    Fetch communication statuses and dates for all guests in the DataFrame.
-    """
-    # Check if "Phone Number" column exists
     if 'Phone Number' not in guest_df.columns:
-        st.error("The column 'Phone Number' is missing in the DataFrame.")
-        st.write("Available columns:", guest_df.columns.tolist())
-        return ["No Status"] * len(guest_df), [None] * len(guest_df)
-
-    # Clean and validate phone numbers
-    guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
-    guest_df['Phone Number'] = guest_df['Phone Number'].apply(format_phone_number)
-    st.write("Cleaned phone numbers:", guest_df['Phone Number'].tolist())
-
-    # Initialize results lists
-    statuses = ["No Status"] * len(guest_df)
-    dates = [None] * len(guest_df)
-
-    # Use enumerate for positional indexing
-    for pos_idx, (idx, row) in enumerate(guest_df.iterrows()):
-        phone = row['Phone Number']
-        st.write(f"Processing phone number: {phone}")
-
-        if pd.notna(phone) and phone:  # Ensure phone number is valid
-            try:
-                # Fetch communication info
-                status, last_date = get_last_communication_info(phone, headers)
-                statuses[pos_idx] = status  # Use positional index
-                dates[pos_idx] = last_date
-            except Exception as e:
-                st.error(f"Error fetching communication info for {phone}: {str(e)}")
-                statuses[pos_idx] = "Error"
-                dates[pos_idx] = None
-        else:
-            statuses[pos_idx] = "Invalid Number"
-            dates[pos_idx] = None
-
-    # Output results for debugging
-    st.write("Statuses:", statuses)
-    st.write("Dates:", dates)
-    return statuses, dates
-
 
 ############################################
 # Create Tabs
