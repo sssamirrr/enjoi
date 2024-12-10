@@ -131,49 +131,47 @@ def get_last_communication_info(phone_number, headers):
         st.error("No OpenPhone numbers found in the account.")
         return "No Communications", None, None, None
 
-    messages_url = "https://api.openphone.com/v1/messages"
-    calls_url = "https://api.openphone.com/v1/calls"
-
-    latest_datetime = None
-    latest_type = None
-    latest_direction = None
-    call_duration = None
-    agent_phone_number = None
-
+    combined_data = []  # To store all fetched messages and calls
     for phone_number_id in phone_number_ids:
-        # Fetch messages
+        # Fetch messages and calls in one go
         params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
-        messages_response = rate_limited_request(messages_url, headers, params)
+        
+        # Fetch messages
+        messages_response = rate_limited_request("https://api.openphone.com/v1/messages", headers, params)
         if messages_response and 'data' in messages_response:
-            for message in messages_response['data']:
-                msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
-                if not latest_datetime or msg_time > latest_datetime:
-                    latest_datetime = msg_time
-                    latest_type = "Message"
-                    latest_direction = message.get("direction", "unknown")
-                    agent_phone_number = message.get("from", {}).get("phoneNumber", "Unknown Number")
+            combined_data.extend(messages_response['data'])
 
         # Fetch calls
-        calls_response = rate_limited_request(calls_url, headers, params)
+        calls_response = rate_limited_request("https://api.openphone.com/v1/calls", headers, params)
         if calls_response and 'data' in calls_response:
-            for call in calls_response['data']:
-                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
-                if not latest_datetime or call_time > latest_datetime:
-                    latest_datetime = call_time
-                    latest_type = "Call"
-                    latest_direction = call.get("direction", "unknown")
-                    duration_seconds = call.get("duration", 0)
-                    minutes = duration_seconds // 60
-                    seconds = duration_seconds % 60
-                    call_duration = f"{minutes}m {seconds}s"
-                    agent_phone_number = call.get("from", {}).get("phoneNumber", "Unknown Number")
+            combined_data.extend(calls_response['data'])
 
-    if not latest_datetime:
+    # Process combined data for the latest communication
+    latest_communication = None
+    for entry in combined_data:
+        comm_time = datetime.fromisoformat(entry['createdAt'].replace('Z', '+00:00'))
+        if not latest_communication or comm_time > latest_communication['createdAt']:
+            latest_communication = {
+                "type": "Message" if "text" in entry else "Call",
+                "direction": entry.get("direction", "unknown"),
+                "createdAt": comm_time,
+                "agentPhoneNumber": entry.get("from", {}).get("phoneNumber", "Unknown Number"),
+                "duration": entry.get("duration", 0) if "Call" in entry else None,
+            }
+
+    if not latest_communication:
         return "No Communications", None, None, None
 
-    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_phone_number
+    # Format the results
+    duration = latest_communication["duration"]
+    formatted_duration = f"{duration // 60}m {duration % 60}s" if duration else None
 
-
+    return (
+        f"{latest_communication['type']} - {latest_communication['direction']}",
+        latest_communication["createdAt"].strftime("%Y-%m-%d %H:%M:%S"),
+        formatted_duration,
+        latest_communication["agentPhoneNumber"]
+    )
 
 def fetch_communication_info(guest_df, headers):
     """
