@@ -273,7 +273,18 @@ def display_communication_interface(guest_df, headers):
     
     return guest_df
 
+# In your main app
+if 'current_df' not in st.session_state:
+    st.session_state.current_df = guest_df.copy()
 
+# Display the communication interface and update the DataFrame
+st.session_state.current_df = display_communication_interface(
+    st.session_state.current_df, 
+    headers
+)
+
+# Display the current state of the DataFrame
+st.dataframe(st.session_state.current_df)
 ############################################
 # Create Tabs
 ############################################
