@@ -98,18 +98,6 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
-# In your main app
-if 'current_df' not in st.session_state:
-    st.session_state.current_df = guest_df.copy()
-
-# Display the communication interface and update the DataFrame
-st.session_state.current_df = display_communication_interface(
-    st.session_state.current_df, 
-    headers
-)
-
-# Display the current state of the DataFrame
-st.dataframe(st.session_state.current_df)
 
 
 def rate_limited_request(url, headers, params, request_type="get"):
@@ -272,7 +260,6 @@ def display_communication_interface(guest_df, headers):
             return fetch_selected_communication_info(guest_df, headers, selected_rows)
     
     return guest_df
-
 # In your main app
 if 'current_df' not in st.session_state:
     st.session_state.current_df = guest_df.copy()
@@ -285,6 +272,8 @@ st.session_state.current_df = display_communication_interface(
 
 # Display the current state of the DataFrame
 st.dataframe(st.session_state.current_df)
+
+
 ############################################
 # Create Tabs
 ############################################
