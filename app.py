@@ -541,12 +541,25 @@ with tab2:
         display_df["Communication Status"] = "Checking..."
         display_df["Last Communication Date"] = None  # Initialize the new column
 
-        # Allow individual status loading
-        for idx in range(len(display_df)):
-            if st.button(f"Load Status for {display_df.loc[idx, 'Guest Name']}"):
-                status, last_date = get_last_communication_info(display_df.loc[idx, 'Phone Number'], headers)
-                display_df.loc[idx, 'Communication Status'] = status
-                display_df.loc[idx, 'Last Communication Date'] = last_date
+        if not display_df.empty:
+            st.button("Load Status for All Numbers", on_click=lambda: fetch_communication_info(display_df, headers))
+
+            for idx in range(len(display_df)):  # Iterate through indices
+                # Check if the 'Guest Name' column exists and retrieve the guest name
+                guest_name = display_df.iloc[idx]['Guest Name'] if 'Guest Name' in display_df.columns else "Unknown Guest"
+        
+                # Create a button to load the status for the guest
+                if st.button(f"Load Status for {guest_name}"):
+                    phone_number = display_df.iloc[idx]['Phone Number']  # Use iloc to access the phone number
+                    # Fetch communication info for the individual phone number
+                    status, last_date = get_last_communication_info(phone_number, headers)
+                    display_df.loc[idx, 'Communication Status'] = status
+                    display_df.loc[idx, 'Last Communication Date'] = last_date
+        else:
+            st.warning("No data available to display.")
+
+
+                
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
