@@ -127,7 +127,7 @@ def fetch_communication_info_batch(guest_df, headers, phone_number_id):
     """
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
-        return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
+        return guest_df
 
     guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
     participants = guest_df['Phone Number'].unique().tolist()  # Get unique phone numbers
@@ -171,37 +171,6 @@ def fetch_communication_info_batch(guest_df, headers, phone_number_id):
     guest_df['Agent Phone Number'] = guest_df['Phone Number'].map(agent_phone_numbers)
 
     return guest_df
-
-
-def get_last_communication_info(phone_number, headers):
-    """
-    Wrapper for backward compatibility.
-    Fetch the last communication info for a single phone number.
-    """
-    phone_number_ids = get_all_phone_number_ids(headers)
-    if not phone_number_ids:
-        st.error("No OpenPhone numbers found in the account.")
-        return "No Communications", None, None, None
-
-    for phone_number_id in phone_number_ids:
-        batch_result = fetch_communication_info_batch(pd.DataFrame({"Phone Number": [phone_number]}), headers, phone_number_id)
-        if not batch_result.empty:
-            return (
-                batch_result['Communication Status'].iloc[0],
-                batch_result['Last Communication Date'].iloc[0],
-                batch_result['Call Duration'].iloc[0],
-                batch_result['Agent Phone Number'].iloc[0]
-            )
-
-    return "No Communications", None, None, None
-
-
-
-
-    # Output results for debugging
-    st.write("Statuses:", statuses)
-    st.write("Dates:", dates)
-    return statuses, dates
 
 
 ############################################
