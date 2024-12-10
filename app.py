@@ -231,45 +231,51 @@ def fetch_communication_info_cached(phone_number, headers):
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the dataframe.
-    Returns two lists: statuses and dates.
+    Returns two lists: statuses and dates with the same length as the input DataFrame.
     """
+    # Initialize lists with default values for all rows
+    statuses = ["No Status"] * len(guest_df)
+    dates = [None] * len(guest_df)
+
+    # Filter valid rows
+    valid_rows = [
+        (i, row) for i, row in enumerate(guest_df.itertuples(), start=0)  # Keep original index for updates
+        if hasattr(row, 'Phone_Number') and not pd.isna(row.Phone_Number) and str(row.Phone_Number).strip()
+    ]
+    total_valid = len(valid_rows)
+
+    # Log total rows to process
     st.write("Starting to process phone numbers...")
-    st.write(f"Total rows to process: {len(guest_df)}")
-    
-    statuses = []
-    dates = []
-    total_rows = len(guest_df)
-    
-    for idx, row in guest_df.iterrows():
-        st.write(f"\nProcessing row {idx + 1} of {total_rows}")
+    st.write(f"Total rows to process: {total_valid}")
+
+    for current, (idx, row) in enumerate(valid_rows, start=1):
+        raw_phone_number = row.Phone_Number
+        formatted_phone_number = format_phone_number(raw_phone_number)
         
-        try:
-            # Get the phone number from the row
-            raw_phone = row.get('Phone Number', '')
-            st.write(f"Raw phone number: {raw_phone}")
-            
-            # Format phone number
-            phone_number = format_phone_number(raw_phone)
-            st.write(f"Formatted phone number: {phone_number}")
-            
-            # Use the cached version for each phone number
-            status, date = fetch_communication_info_cached(phone_number, headers)
-            
-            statuses.append(status)
-            dates.append(date)
-            
-            # Show progress
-            st.write(f"Completed {idx + 1}/{total_rows} ({(idx + 1)/total_rows*100:.1f}%)")
-            
-        except Exception as e:
-            st.error(f"Error processing row {idx}: {str(e)}")
-            statuses.append("Error")
-            dates.append(None)
-    
-    st.write("Finished processing all rows")
-    st.write(f"Total statuses collected: {len(statuses)}")
-    
+        # Log progress using the sequential index
+        st.write(f"Processing row {current} of {total_valid}")
+        st.write(f"Raw phone number: {raw_phone_number}")
+        st.write(f"Formatted phone number: {formatted_phone_number}")
+
+        if formatted_phone_number:
+            st.write(f"Fetching info for: {formatted_phone_number}")
+            try:
+                status, date = fetch_communication_info_cached(formatted_phone_number, headers)
+                st.write(f"Result: Status={status}, Date={date}")
+            except Exception as e:
+                st.error(f"Error fetching info for {formatted_phone_number}: {e}")
+                status, date = "Error", None
+
+            # Update statuses and dates for the original DataFrame index
+            statuses[idx] = status
+            dates[idx] = date
+
+        # Log completion percentage
+        completion_percentage = (current / total_valid) * 100
+        st.write(f"Completed {current}/{total_valid} ({completion_percentage:.1f}%)")
+
     return statuses, dates
+
 
 
 
