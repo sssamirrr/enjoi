@@ -1,6 +1,3 @@
-Here is the full code with the changes implemented for the Marketing tab as requested:
-
-```python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
