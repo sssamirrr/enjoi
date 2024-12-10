@@ -82,9 +82,15 @@ def get_google_sheet_data():
 
 # Load the data
 df = get_google_sheet_data()
-if df is None:
+
+if df is None:  # Check if the data was loaded successfully
     st.error("Failed to load data. Please check your connection and credentials.")
-    st.stop()  # Ensure the program stops execution if the data is not loaded
+    st.stop()  # Stop the app from running further if the data is unavailable
+
+############################################
+# OpenPhone API Functions
+############################################
+tab1, tab2, tab3 = st.tabs(["Dashboard", "Marketing", "Tour Prediction"])
 
 
 ############################################
