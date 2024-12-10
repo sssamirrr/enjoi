@@ -122,13 +122,14 @@ def get_all_phone_number_ids(headers):
 
 def get_last_communication_info(phone_number, headers):
     """
-    For a given phone number, retrieve the last communication status (message or call)
-    and the date of that communication across all OpenPhone numbers.
+    Retrieve the last communication status (message or call),
+    the date of that communication, the call duration (if applicable),
+    and the agent's name who made the call or sent the message.
     """
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         st.error("No OpenPhone numbers found in the account.")
-        return "No Communications", None
+        return "No Communications", None, None, None
 
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
@@ -136,6 +137,8 @@ def get_last_communication_info(phone_number, headers):
     latest_datetime = None
     latest_type = None
     latest_direction = None
+    call_duration = None
+    agent_name = None  # New variable to store the agent's name
 
     for phone_number_id in phone_number_ids:
         # Fetch messages
@@ -148,6 +151,7 @@ def get_last_communication_info(phone_number, headers):
                     latest_datetime = msg_time
                     latest_type = "Message"
                     latest_direction = message.get("direction", "unknown")
+                    agent_name = message.get("user", {}).get("name", "Unknown Agent")  # Extract agent name
 
         # Fetch calls
         calls_response = rate_limited_request(calls_url, headers, params)
@@ -158,50 +162,48 @@ def get_last_communication_info(phone_number, headers):
                     latest_datetime = call_time
                     latest_type = "Call"
                     latest_direction = call.get("direction", "unknown")
+                    call_duration = call.get("duration")
+                    agent_name = call.get("user", {}).get("name", "Unknown Agent")  # Extract agent name
 
     if not latest_datetime:
-        return "No Communications", None
+        return "No Communications", None, None, None
 
-    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_name
 
 
 def fetch_communication_info(guest_df, headers):
     """
-    Fetch communication statuses and dates for all guests in the DataFrame.
+    Fetch communication statuses, dates, durations, and agent names for all guests in the DataFrame.
     """
-    # Check if "Phone Number" column exists
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
-        st.write("Available columns:", guest_df.columns.tolist())
-        return ["No Status"] * len(guest_df), [None] * len(guest_df)
+        return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
 
-    # Clean and validate phone numbers
     guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
-    guest_df['Phone Number'] = guest_df['Phone Number'].apply(format_phone_number)
-    st.write("Cleaned phone numbers:", guest_df['Phone Number'].tolist())
+    statuses, dates, durations, agent_names = [], [], [], []
 
-    # Initialize results lists
-    statuses = ["No Status"] * len(guest_df)
-    dates = [None] * len(guest_df)
-
-    # Use enumerate for positional indexing
-    for pos_idx, (idx, row) in enumerate(guest_df.iterrows()):
+    for _, row in guest_df.iterrows():
         phone = row['Phone Number']
-        st.write(f"Processing phone number: {phone}")
-
-        if pd.notna(phone) and phone:  # Ensure phone number is valid
+        if phone:
             try:
-                # Fetch communication info
-                status, last_date = get_last_communication_info(phone, headers)
-                statuses[pos_idx] = status  # Use positional index
-                dates[pos_idx] = last_date
+                status, last_date, duration, agent_name = get_last_communication_info(phone, headers)
+                statuses.append(status)
+                dates.append(last_date)
+                durations.append(duration)
+                agent_names.append(agent_name)
             except Exception as e:
-                st.error(f"Error fetching communication info for {phone}: {str(e)}")
-                statuses[pos_idx] = "Error"
-                dates[pos_idx] = None
+                statuses.append("Error")
+                dates.append(None)
+                durations.append(None)
+                agent_names.append("Unknown")
         else:
-            statuses[pos_idx] = "Invalid Number"
-            dates[pos_idx] = None
+            statuses.append("Invalid Number")
+            dates.append(None)
+            durations.append(None)
+            agent_names.append("Unknown")
+
+    return statuses, dates, durations, agent_names
+
 
     # Output results for debugging
     st.write("Statuses:", statuses)
@@ -484,13 +486,16 @@ with tab2:
         }
 
         # Fetch communication statuses and dates
-        statuses, dates = fetch_communication_info(display_df, headers)
+        statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
         display_df['Communication Status'] = statuses
         display_df['Last Communication Date'] = dates
+        display_df['Call Duration (seconds)'] = durations
+        display_df['Agent Name'] = agent_names
+
 
 
         # Reorder columns to have "Select" as the leftmost column
-        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date']]
+        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
 
         # Interactive data editor
         edited_df = st.data_editor(
