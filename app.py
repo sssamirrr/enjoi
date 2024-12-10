@@ -544,20 +544,27 @@ with tab2:
         if not display_df.empty:
             st.button("Load Status for All Numbers", on_click=lambda: fetch_communication_info(display_df, headers))
 
-            for idx in range(len(display_df)):  # Iterate through indices
-                # Check if the 'Guest Name' column exists and retrieve the guest name
-                guest_name = display_df.iloc[idx]['Guest Name'] if 'Guest Name' in display_df.columns else "Unknown Guest"
-        
-                # Create a button to load the status for the guest
-                if st.button(f"Load Status for {guest_name}"):
-                    phone_number = display_df.iloc[idx]['Phone Number']  # Use iloc to access the phone number
-                    # Fetch communication info for the individual phone number
-                    status, last_date = get_last_communication_info(phone_number, headers)
-                    display_df.loc[idx, 'Communication Status'] = status
-                    display_df.loc[idx, 'Last Communication Date'] = last_date
-        else:
-            st.warning("No data available to display.")
+            if not display_df.empty:
+                # Create a unique button for loading status for all numbers
+                if st.button("Load Status for All Numbers"):
+                    fetch_communication_info(display_df, headers)
+            
+                for idx in range(len(display_df)):
+                    # Get the guest name, ensuring the column exists
+                    guest_name = display_df.iloc[idx]['Guest Name'] if 'Guest Name' in display_df.columns else "Unknown Guest"
+                    
+                    # Create a unique key for each button using the index
+                    button_id = f"load_status_{idx}"  # This ensures each button has a unique key
+                    if st.button(f"Load Status for {guest_name}", key=button_id):
+                        phone_number = display_df.iloc[idx]['Phone Number']
+                        # Fetch communication info for the individual phone number
+                        status, last_date = get_last_communication_info(phone_number, headers)
+                        display_df.loc[idx, 'Communication Status'] = status
+                        display_df.loc[idx, 'Last Communication Date'] = last_date
+            else:
+                st.warning("No data available to display.")
 
+            
 
                 
 
