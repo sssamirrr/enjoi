@@ -486,12 +486,13 @@ with tab2:
         }
 
         # Fetch communication statuses and dates
-                # Button to fetch communication info
+             # Button to fetch communication info
         if st.button("Fetch Communication Info"):
             headers = {
                 "Authorization": OPENPHONE_API_KEY,
                 "Content-Type": "application/json"
             }
+            # Fetch communication info and store in session state
             statuses, dates, durations, agent_names = fetch_communication_info(resort_df, headers)
             st.session_state['communication_statuses'] = statuses
             st.session_state['communication_dates'] = dates
@@ -499,17 +500,17 @@ with tab2:
             st.session_state['communication_agent_names'] = agent_names
             st.success("Communication information fetched successfully!")
         
-        # Use session state to display fetched data
+        # Update display_df with fetched data
         if 'communication_statuses' in st.session_state:
-            resort_df['Communication Status'] = st.session_state['communication_statuses']
-            resort_df['Last Communication Date'] = st.session_state['communication_dates']
-            resort_df['Call Duration (seconds)'] = st.session_state['communication_durations']
-            resort_df['Agent Name'] = st.session_state['communication_agent_names']
+            display_df['Communication Status'] = st.session_state['communication_statuses']
+            display_df['Last Communication Date'] = st.session_state['communication_dates']
+            display_df['Call Duration (seconds)'] = st.session_state['communication_durations']
+            display_df['Agent Name'] = st.session_state['communication_agent_names']
         else:
-            resort_df['Communication Status'] = "Not Fetched"
-            resort_df['Last Communication Date'] = None
-            resort_df['Call Duration (seconds)'] = None
-            resort_df['Agent Name'] = "Unknown"
+            display_df['Communication Status'] = "Not Fetched"
+            display_df['Last Communication Date'] = None
+            display_df['Call Duration (seconds)'] = None
+            display_df['Agent Name'] = "Unknown"
         
 
 
