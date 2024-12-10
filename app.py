@@ -177,10 +177,7 @@ with tab2:
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
-         headers = {
-            "Authorization": OPENPHONE_API_KEY,
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": OPENPHONE_API_KEY,"Content-Type": "application/json"}
 
         phone_number_id = get_all_phone_number_ids(headers)[0]
 
