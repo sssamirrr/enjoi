@@ -99,9 +99,6 @@ import pandas as pd
 
 
 def rate_limited_request(url, headers, params, request_type="get"):
-    """
-    Make an API request while respecting rate limits.
-    """
     time.sleep(1 / 5)  # 5 requests per second max
     try:
         st.write(f"Making API call to {url} with params: {params}")
@@ -115,14 +112,15 @@ def rate_limited_request(url, headers, params, request_type="get"):
         st.write(f"API call completed in {elapsed_time:.2f} seconds")
 
         if response and response.status_code == 200:
-            return response.json()  # Added return statement
+            return response.json()
         else:
             st.warning(f"API Error: {response.status_code}")
             st.warning(f"Response: {response.text}")
-            return None  # Added return statement
+            return None
     except Exception as e:
         st.warning(f"Exception during request: {str(e)}")
-        return None  # Added return statement
+        return None
+
 
 
 
