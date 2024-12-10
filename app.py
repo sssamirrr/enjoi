@@ -354,6 +354,20 @@ import json
 ############################################
 # Marketing Tab
 ############################################
+
+def reset_filters():
+    # Clear the session state for dates
+    for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Reset to default dates from the session state
+    if 'default_dates' in st.session_state:
+        st.session_state.update(st.session_state['default_dates'])
+    
+    # Force rerun to update the UI
+    st.rerun()
+
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -418,7 +432,7 @@ with tab2:
         )
 
     with col3:
-        if st.button("Reset Dates"):
+        if st.button("Reset Dates", key="reset_button"):
             reset_filters()
 
     # Apply filters to the dataset
@@ -530,6 +544,7 @@ with tab2:
             use_container_width=True,
             key="guest_editor"
         )
+
 
     ############################################
     # Message Templates Section
