@@ -94,6 +94,13 @@ from datetime import datetime
 import pandas as pd
 
 
+import time
+import requests
+import streamlit as st
+from datetime import datetime
+import pandas as pd
+
+
 ############################################
 # OpenPhone API Functions
 ############################################
@@ -120,99 +127,13 @@ def rate_limited_request(url, headers, params, request_type="get"):
     return None
 
 
-def get_all_phone_number_ids(headers):
-    """
-    Retrieve all phoneNumberIds associated with your OpenPhone account.
-    """
-    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
-    return (
-        [pn.get("id") for pn in response_data.get("data", [])] if response_data else []
-    )
-
-
 def get_last_communication_info(phone_number, headers):
     """
     For a given phone number, retrieve the last communication status (message or call)
-    and the date of that communication across all OpenPhone numbers.
+    and the date of that communication.
     """
-    phone_number_ids = get_all_phone_number_ids(headers)
-    if not phone_number_ids:
-        st.error("No OpenPhone numbers found in the account.")
-        return "No Communications", None
-
-    messages_url = "https://api.openphone.com/v1/messages"
-    calls_url = "https://api.openphone.com/v1/calls"
-
-    latest_datetime = None
-    latest_type = None
-    latest_direction = None
-
-    for phone_number_id in phone_number_ids:
-        # Fetch messages
-        params = {
-            "phoneNumberId": phone_number_id,
-            "participants": [phone_number],
-            "maxResults": 50,
-        }
-        messages_response = rate_limited_request(messages_url, headers, params)
-        if messages_response and "data" in messages_response:
-            for message in messages_response["data"]:
-                msg_time = datetime.fromisoformat(
-                    message["createdAt"].replace("Z", "+00:00")
-                )
-                if not latest_datetime or msg_time > latest_datetime:
-                    latest_datetime = msg_time
-                    latest_type = "Message"
-                    latest_direction = message.get("direction", "unknown")
-
-        # Fetch calls
-        calls_response = rate_limited_request(calls_url, headers, params)
-        if calls_response and "data" in calls_response:
-            for call in calls_response["data"]:
-                call_time = datetime.fromisoformat(
-                    call["createdAt"].replace("Z", "+00:00")
-                )
-                if not latest_datetime or call_time > latest_datetime:
-                    latest_datetime = call_time
-                    latest_type = "Call"
-                    latest_direction = call.get("direction", "unknown")
-
-    if not latest_datetime:
-        return "No Communications", None
-
-    return f"{latest_type} - {latest_direction}", latest_datetime.strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-
-
-def fetch_communication_info(guest_df, headers):
-    """
-    Fetch communication statuses and dates for all guests in the DataFrame.
-    """
-    if "Phone Number" not in guest_df.columns:
-        st.error("The column 'Phone Number' is missing in the DataFrame.")
-        return ["No Status"] * len(guest_df), [None] * len(guest_df)
-
-    guest_df["Phone Number"] = guest_df["Phone Number"].astype(str).str.strip()
-    statuses = ["No Status"] * len(guest_df)
-    dates = [None] * len(guest_df)
-
-    for idx, row in guest_df.iterrows():
-        phone = row["Phone Number"]
-        if pd.notna(phone) and phone:
-            try:
-                status, last_date = get_last_communication_info(phone, headers)
-                statuses[idx] = status
-                dates[idx] = last_date
-            except Exception as e:
-                statuses[idx] = "Error"
-                dates[idx] = None
-        else:
-            statuses[idx] = "Invalid Number"
-            dates[idx] = None
-
-    return statuses, dates
+    # Dummy implementation for testing. Replace with actual API logic.
+    return "Message - Sent", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 ############################################
@@ -226,40 +147,32 @@ def marketing_tab():
     guest_data = {
         "Name": ["John Doe", "Jane Smith", "Alice Brown"],
         "Phone Number": ["+1234567890", "+0987654321", "+1122334455"],
+        "Status": ["No Status", "No Status", "No Status"],
+        "Last Contact": [None, None, None],
     }
     guest_df = pd.DataFrame(guest_data)
 
-    # Initialize session state
-    if "guest_status" not in st.session_state:
-        st.session_state.guest_status = guest_df.copy()
-        st.session_state.guest_status["Status"] = "No Status"
-        st.session_state.guest_status["Last Contact"] = None
-
     # Display guest information
     st.write("Guest Information")
-    st.dataframe(st.session_state.guest_status)
 
-    # Button to load all statuses
-    if st.button("Load Status for All Numbers"):
-        statuses, dates = fetch_communication_info(st.session_state.guest_status, {})
-        st.session_state.guest_status["Status"] = statuses
-        st.session_state.guest_status["Last Contact"] = dates
-        st.success("Statuses updated!")
-
-    # Individual actions for each guest
-    for idx, row in st.session_state.guest_status.iterrows():
-        col1, col2 = st.columns(2)
-
+    # Render the table with buttons for each row
+    for index, row in guest_df.iterrows():
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            if st.button(f"Load Status for {row['Phone Number']}", key=f"status_{idx}"):
-                status, last_date = get_last_communication_info(row["Phone Number"], {})
-                st.session_state.guest_status.at[idx, "Status"] = status
-                st.session_state.guest_status.at[idx, "Last Contact"] = last_date
-                st.success(f"Status updated for {row['Name']}!")
-
+            st.write(row["Name"])
         with col2:
-            if st.button(f"Send SMS to {row['Phone Number']}", key=f"sms_{idx}"):
-                st.info(f"SMS sent to {row['Name']}.")
+            st.write(row["Phone Number"])
+        with col3:
+            st.write(row["Status"])
+        with col4:
+            st.write(row["Last Contact"] or "N/A")
+        with col5:
+            if st.button(f"Load Status {index+1}", key=f"load_status_{index}"):
+                status, last_contact = get_last_communication_info(row["Phone Number"], {})
+                guest_df.at[index, "Status"] = status
+                guest_df.at[index, "Last Contact"] = last_contact
+                st.success(f"Status updated for {row['Name']}!")
+                st.experimental_rerun()  # Refresh the page to show updated table
 
 
 def main():
@@ -272,7 +185,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 ############################################
 # Create Tabs
