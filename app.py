@@ -98,58 +98,30 @@ from datetime import datetime
 import pandas as pd
 
 
-def format_phone_number(number):
-    """
-    Format a phone number to E.164 format (+[country_code][number]).
-    Assumes US numbers if 10 digits or handles Peru country code '51' if present.
-    """
-    if not number:
-        return None
-
-    # Remove all non-digit characters
-    digits = ''.join(filter(str.isdigit, str(number)))
-
-    # Handle Peru numbers (starting with country code '51')
-    if digits.startswith('51') and len(digits) >= 11:
-        return f"+{digits}"
-
-    # Handle US numbers (10 or 11 digits)
-    elif len(digits) == 10:
-        return f"+1{digits}"
-    elif len(digits) == 11 and digits.startswith('1'):
-        return f"+{digits}"
-
-    else:
-        # Return with '+' prefix if it doesn't fit expected formats
-        return f"+{digits}" if digits else None
-
-
 def rate_limited_request(url, headers, params, request_type="get"):
     """
     Make an API request while respecting rate limits.
     """
-    time.sleep(1 / 5)  # Limit to 5 requests per second
+    time.sleep(1 / 5)  # 5 requests per second max
     try:
-        # Uncomment the line below for debugging
-        # st.write(f"Making API call to {url} with params: {params}")
+        st.write(f"Making API call to {url} with params: {params}")
         start_time = time.time()
-        if request_type == "get":
-            response = requests.get(url, headers=headers, params=params)
-        else:
-            response = None  # Extend this for other request types if needed
+        response = (
+            requests.get(url, headers=headers, params=params)
+            if request_type == "get"
+            else None
+        )
         elapsed_time = time.time() - start_time
-        # Uncomment the line below for debugging
-        # st.write(f"API call completed in {elapsed_time:.2f} seconds")
+        st.write(f"API call completed in {elapsed_time:.2f} seconds")
 
         if response and response.status_code == 200:
             return response.json()
         else:
             st.warning(f"API Error: {response.status_code}")
             st.warning(f"Response: {response.text}")
-            return None
     except Exception as e:
         st.warning(f"Exception during request: {str(e)}")
-        return None
+    return None
 
 
 def get_all_phone_number_ids(headers):
@@ -158,10 +130,9 @@ def get_all_phone_number_ids(headers):
     """
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     response_data = rate_limited_request(phone_numbers_url, headers, {})
-    if response_data and "data" in response_data:
-        return [pn.get("id") for pn in response_data.get("data", [])]
-    else:
-        return []
+    return (
+        [pn.get("id") for pn in response_data.get("data", [])] if response_data else []
+    )
 
 
 def get_last_communication_info(phone_number, headers):
@@ -214,34 +185,54 @@ def get_last_communication_info(phone_number, headers):
     if not latest_datetime:
         return "No Communications", None
 
-    status = f"{latest_type} - {latest_direction}"
-    date_str = latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
-    return status, date_str
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
-def fetch_communication_info(phone_numbers, headers):
+def fetch_communication_info(guest_df, headers):
     """
-    Fetch communication statuses and dates for a list of phone numbers.
-    Returns a dictionary mapping phone numbers to their statuses and dates.
+    Fetch communication statuses and dates for all guests in the DataFrame.
     """
-    statuses = {}
-    for phone in phone_numbers:
-        formatted_phone = format_phone_number(phone)
-        if formatted_phone:
-            # Uncomment the line below for debugging
-            # st.write(f"Fetching communication info for {formatted_phone}")
-            if pd.notna(formatted_phone) and formatted_phone:
-                try:
-                    status, last_date = get_last_communication_info(formatted_phone, headers)
-                    statuses[phone] = {'status': status, 'date': last_date}
-                except Exception as e:
-                    st.error(f"Error fetching communication info for {formatted_phone}: {str(e)}")
-                    statuses[phone] = {'status': "Error", 'date': None}
-            else:
-                statuses[phone] = {'status': "Invalid Number", 'date': None}
+    # Check if "Phone Number" column exists
+    if "Phone Number" not in guest_df.columns:
+        st.error("The column 'Phone Number' is missing in the DataFrame.")
+        st.write("Available columns:", guest_df.columns.tolist())
+        return ["No Status"] * len(guest_df), [None] * len(guest_df)
+
+    # Clean and validate phone numbers
+    guest_df["Phone Number"] = guest_df["Phone Number"].astype(str).str.strip()
+    guest_df["Phone Number"] = guest_df["Phone Number"].apply(format_phone_number)
+    st.write("Cleaned phone numbers:", guest_df["Phone Number"].tolist())
+
+    # Initialize results lists
+    statuses = ["No Status"] * len(guest_df)
+    dates = [None] * len(guest_df)
+
+    # Use enumerate for positional indexing
+    for pos_idx, (idx, row) in enumerate(guest_df.iterrows()):
+        phone = row["Phone Number"]
+        st.write(f"Processing phone number: {phone}")
+
+        if pd.notna(phone) and phone:  # Ensure phone number is valid
+            try:
+                # Fetch communication info
+                status, last_date = get_last_communication_info(phone, headers)
+                statuses[pos_idx] = status  # Use positional index
+                dates[pos_idx] = last_date
+            except Exception as e:
+                st.error(f"Error fetching communication info for {phone}: {str(e)}")
+                statuses[pos_idx] = "Error"
+                dates[pos_idx] = None
         else:
-            statuses[phone] = {'status': "Invalid Number", 'date': None}
-    return statuses
+            statuses[pos_idx] = "Invalid Number"
+            dates[pos_idx] = None
+
+    # Output results for debugging
+    st.write("Statuses:", statuses)
+    st.write("Dates:", dates)
+    return statuses, dates
+
 
 ############################################
 # Create Tabs
@@ -438,53 +429,53 @@ with tab2:
             "check_out_end": max_check_out,
         }
 
-    # Function to reset filters
-    def reset_filters():
-        # Retrieve default dates from session state
-        default_dates = st.session_state["default_dates"]
+        # Function to reset filters (move this definition outside the if block)
+        def reset_filters():
+            # Retrieve default dates from session state
+            default_dates = st.session_state["default_dates"]
 
-        # Clear the date input widgets by removing their keys from session state
-        keys_to_remove = [
-            "check_in_start",
-            "check_in_end",
-            "check_out_start",
-            "check_out_end",
-        ]
-        for key in keys_to_remove:
-            if key in st.session_state:
-                del st.session_state[key]
+            # Clear the date input widgets by removing their keys from session state
+            keys_to_remove = [
+                "check_in_start",
+                "check_in_end",
+                "check_out_start",
+                "check_out_end",
+            ]
+            for key in keys_to_remove:
+                if key in st.session_state:
+                    del st.session_state[key]
 
-        # Reset to default dates
-        st.session_state.update(default_dates)
+            # Reset to default dates
+            st.session_state.update(default_dates)
 
-        # Force a rerun of the app
-        st.experimental_rerun()
+            # Force a rerun of the app
+            st.rerun()
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state.get("check_in_start"),
+            value=st.session_state.get("check_in_start", min_check_in),
             key="check_in_start",
         )
 
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state.get("check_in_end"),
+            value=st.session_state.get("check_in_end", max_check_out),
             key="check_in_end",
         )
 
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state.get("check_out_start"),
+            value=st.session_state.get("check_out_start", min_check_in),
             key="check_out_start",
         )
 
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state.get("check_out_end"),
+            value=st.session_state.get("check_out_end", max_check_out),
             key="check_out_end",
         )
 
@@ -514,10 +505,13 @@ with tab2:
         st.warning("No guests found for the selected filters.")
         display_df = pd.DataFrame(
             columns=[
+                "Select",
                 "Guest Name",
                 "Check In",
                 "Check Out",
                 "Phone Number",
+                "Communication Status",
+                "Last Communication Date",
             ]
         )
     else:
@@ -527,69 +521,50 @@ with tab2:
         ].copy()
         display_df.columns = ["Guest Name", "Check In", "Check Out", "Phone Number"]
 
-        # Initialize session state for statuses
-        if 'statuses' not in st.session_state:
-            st.session_state['statuses'] = {}
+        # Function to format phone numbers
+        def format_phone_number(phone):
+            phone = "".join(filter(str.isdigit, str(phone)))
+            if len(phone) == 10:
+                return f"+1{phone}"
+            elif len(phone) == 11 and phone.startswith("1"):
+                return f"+{phone}"
+            else:
+                return phone  # Return as is if it doesn't match expected patterns
 
-        # Checkbox to show/hide communication statuses
-        show_statuses = st.checkbox("Show Communication Statuses", value=False)
-
-        if show_statuses:
-            # Global fetch button
-            if st.button("Fetch Communication Statuses for All Guests"):
-                phone_numbers = display_df["Phone Number"].tolist()
-                statuses_dict = fetch_communication_info(phone_numbers)
-                st.session_state['statuses'].update(statuses_dict)
-                st.success("Communication statuses updated.")
-
-            # Update DataFrame with statuses from session state
-            display_df['Communication Status'] = display_df['Phone Number'].map(
-                lambda x: st.session_state['statuses'].get(x, {}).get('status', 'Not Fetched')
-            )
-            display_df['Last Communication Date'] = display_df['Phone Number'].map(
-                lambda x: st.session_state['statuses'].get(x, {}).get('date', None)
-            )
-
-            # Reorder columns to include the new status columns
-            display_df = display_df[
-                [
-                    "Guest Name",
-                    "Check In",
-                    "Check Out",
-                    "Phone Number",
-                    "Communication Status",
-                    "Last Communication Date",
-                ]
-            ]
-
-            # Display the DataFrame with communication statuses
-            st.dataframe(display_df.reset_index(drop=True))
-
-            # Individual fetch buttons for each guest
-            st.subheader("Fetch Communication Status for Individual Guests")
-            for idx, row in display_df.iterrows():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"**Guest:** {row['Guest Name']} - **Phone:** {row['Phone Number']}")
-                    # Display status if fetched
-                    status_info = st.session_state['statuses'].get(row['Phone Number'])
-                    if status_info and status_info.get('status') != 'Not Fetched':
-                        st.write(f"**Status:** {status_info['status']}")
-                        st.write(f"**Last Communication Date:** {status_info['date']}")
-                with col2:
-                    if st.button(f"Fetch Status {idx+1}", key=f"fetch_{idx}"):
-                        phone = row['Phone Number']
-                        status_info = fetch_communication_info([phone])
-                        st.session_state['statuses'].update(status_info)
-                        st.write(f"**Status:** {status_info[phone]['status']}")
-                        st.write(f"**Last Communication Date:** {status_info[phone]['date']}")
-        else:
-            # Display the DataFrame without communication statuses
-            st.dataframe(display_df.reset_index(drop=True))
+        # Apply phone number formatting
+        display_df["Phone Number"] = display_df["Phone Number"].apply(
+            format_phone_number
+        )
+        display_df["Communication Status"] = "Checking..."
+        display_df["Last Communication Date"] = None  # Initialize the new column
 
         # Add "Select All" checkbox
-        select_all = st.checkbox("Select All Guests", value=False)
+        select_all = st.checkbox("Select All")
         display_df["Select"] = select_all
+
+        ## Prepare headers for API calls
+        headers = {
+            "Authorization": OPENPHONE_API_KEY,
+            "Content-Type": "application/json",
+        }
+
+        # Fetch communication statuses and dates
+        statuses, dates = fetch_communication_info(display_df, headers)
+        display_df["Communication Status"] = statuses
+        display_df["Last Communication Date"] = dates
+
+        # Reorder columns to have "Select" as the leftmost column
+        display_df = display_df[
+            [
+                "Select",
+                "Guest Name",
+                "Check In",
+                "Check Out",
+                "Phone Number",
+                "Communication Status",
+                "Last Communication Date",
+            ]
+        ]
 
         # Interactive data editor
         edited_df = st.data_editor(
@@ -610,7 +585,6 @@ with tab2:
                 "Phone Number": st.column_config.TextColumn(
                     "Phone Number", help="Guest's phone number"
                 ),
-                # Include the communication status columns if statuses are shown
                 "Communication Status": st.column_config.TextColumn(
                     "Communication Status",
                     help="Last communication status with the guest",
@@ -626,79 +600,6 @@ with tab2:
             use_container_width=True,
             key="guest_editor",
         )
-
-    ############################################
-    # Message Templates Section
-    ############################################
-    st.markdown("---")
-    st.subheader("Message Templates")
-
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁",
-    }
-
-    selected_template = st.selectbox(
-        "Choose a Message Template", options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-    ############################################
-    # Send SMS to Selected Guests
-    ############################################
-    if 'edited_df' in locals() and not edited_df.empty:
-        selected_guests = edited_df[edited_df["Select"]]
-        num_selected = len(selected_guests)
-        if not selected_guests.empty:
-            button_label = (
-                f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-            )
-            if st.button(button_label):
-                openphone_url = "https://api.openphone.com/v1/messages"
-                headers_sms = {
-                    "Authorization": f"Bearer {OPENPHONE_API_KEY}",  # Use your OpenPhone API key
-                    "Content-Type": "application/json",
-                }
-                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
-
-                for idx, row in selected_guests.iterrows():
-                    recipient_phone = row["Phone Number"]
-                    payload = {
-                        "content": message_preview,
-                        "from": sender_phone_number,
-                        "to": [recipient_phone],
-                    }
-
-                    try:
-                        response = requests.post(
-                            openphone_url, json=payload, headers=headers_sms
-                        )
-                        if response.status_code == 202:
-                            st.success(
-                                f"Message sent to {row['Guest Name']} ({recipient_phone})"
-                            )
-                        else:
-                            st.error(
-                                f"Failed to send message to {row['Guest Name']} ({recipient_phone})"
-                            )
-                            st.write("Response Status Code:", response.status_code)
-                            try:
-                                st.write("Response Body:", response.json())
-                            except:
-                                st.write("Response Body:", response.text)
-                    except Exception as e:
-                        st.error(
-                            f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}"
-                        )
-
-                    time.sleep(0.2)  # Respect rate limits
-        else:
-            st.info("No guests selected to send SMS.")
-    else:
-        st.info("No guest data available to send SMS.")
 
     ############################################
     # Message Templates Section
