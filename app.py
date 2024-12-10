@@ -404,9 +404,7 @@ with tab2:
     # Set default dates to the earliest check-in and latest check-out
     if not resort_df.empty:
         arrival_dates = pd.to_datetime(resort_df["Arrival Date Short"], errors="coerce")
-        departure_dates = pd.to_datetime(
-            resort_df["Departure Date Short"], errors="coerce"
-        )
+        departure_dates = pd.to_datetime(resort_df["Departure Date Short"], errors="coerce")
 
         arrival_dates = arrival_dates.dropna()
         departure_dates = departure_dates.dropna()
@@ -428,28 +426,6 @@ with tab2:
             "check_out_start": min_check_in,
             "check_out_end": max_check_out,
         }
-
-        # Function to reset filters (move this definition outside the if block)
-        def reset_filters():
-            # Retrieve default dates from session state
-            default_dates = st.session_state["default_dates"]
-
-            # Clear the date input widgets by removing their keys from session state
-            keys_to_remove = [
-                "check_in_start",
-                "check_in_end",
-                "check_out_start",
-                "check_out_end",
-            ]
-            for key in keys_to_remove:
-                if key in st.session_state:
-                    del st.session_state[key]
-
-            # Reset to default dates
-            st.session_state.update(default_dates)
-
-            # Force a rerun of the app
-            st.rerun()
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
@@ -531,109 +507,80 @@ with tab2:
             else:
                 return phone  # Return as is if it doesn't match expected patterns
 
-        # Add checkboxes for status loading
-        st.button("Load Status for All Numbers", on_click=lambda: fetch_communication_info(display_df, headers))
-
         # Apply phone number formatting
-        display_df["Phone Number"] = display_df["Phone Number"].apply(
-            format_phone_number
-        )
+        display_df["Phone Number"] = display_df["Phone Number"].apply(format_phone_number)
+        
+        # Initialize communication status columns
         display_df["Communication Status"] = "Checking..."
         display_df["Last Communication Date"] = None  # Initialize the new column
 
-        if not display_df.empty:
-            st.button("Load Status for All Numbers", on_click=lambda: fetch_communication_info(display_df, headers))
-
-            if not display_df.empty:
-                # Create a unique button for loading status for all numbers
-                if st.button("Load Status for All Numbers"):
-                    fetch_communication_info(display_df, headers)
-            
-                for idx in range(len(display_df)):
-                    # Get the guest name, ensuring the column exists
-                    guest_name = display_df.iloc[idx]['Guest Name'] if 'Guest Name' in display_df.columns else "Unknown Guest"
-                    
-                    # Create a unique key for each button using the index
-                    button_id = f"load_status_{idx}"  # This ensures each button has a unique key
-                    if st.button(f"Load Status for {guest_name}", key=button_id):
-                        phone_number = display_df.iloc[idx]['Phone Number']
-                        # Fetch communication info for the individual phone number
-                        status, last_date = get_last_communication_info(phone_number, headers)
-                        display_df.loc[idx, 'Communication Status'] = status
-                        display_df.loc[idx, 'Last Communication Date'] = last_date
-            else:
-                st.warning("No data available to display.")
-
-            
-
-                
-
-        # Add "Select All" checkbox
-        select_all = st.checkbox("Select All")
-        display_df["Select"] = select_all
-
-        ## Prepare headers for API calls
+        # Button to load statuses for all guests
         headers = {
             "Authorization": OPENPHONE_API_KEY,
             "Content-Type": "application/json",
         }
 
-        # Fetch communication statuses and dates
-        statuses, dates = fetch_communication_info(display_df, headers)
-        display_df["Communication Status"] = statuses
-        display_df["Last Communication Date"] = dates
+        if st.button("Load Status for All Numbers"):
+            # Fetch communication statuses and dates only once instead of multiple
+            statuses, dates = fetch_communication_info(display_df, headers)
+            display_df["Communication Status"] = statuses
+            display_df["Last Communication Date"] = dates
+        
+        if not display_df.empty:
+            # Loop over each guest to create individual load status buttons
+            for idx in range(len(display_df)):
+                guest_name = display_df.iloc[idx]['Guest Name'] if 'Guest Name' in display_df.columns else "Unknown Guest"
+                # Create a unique key for each button using the index
+                button_id = f"load_status_{idx}"  # Ensure uniqueness
+                if st.button(f"Load Status for {guest_name}", key=button_id):
+                    phone_number = display_df.iloc[idx]['Phone Number']
+                    # Fetch communication info for the individual phone number
+                    status, last_date = get_last_communication_info(phone_number, headers)
+                    display_df.loc[idx, 'Communication Status'] = status
+                    display_df.loc[idx, 'Last Communication Date'] = last_date
 
-        # Reorder columns to have "Select" as the leftmost column
-        display_df = display_df[
-            [
-                "Select",
-                "Guest Name",
-                "Check In",
-                "Check Out",
-                "Phone Number",
+    # Add more content as needed...
+
+    # Add "Select All" checkbox
+    select_all = st.checkbox("Select All")
+    display_df["Select"] = select_all
+
+    # Prepare the interactive data editor
+    edited_df = st.data_editor(
+        display_df,
+        column_config={
+            "Select": st.column_config.CheckboxColumn(
+                "Select", help="Select or deselect this guest", default=select_all
+            ),
+            "Guest Name": st.column_config.TextColumn(
+                "Guest Name", help="Guest's full name"
+            ),
+            "Check In": st.column_config.DateColumn(
+                "Check In", help="Check-in date"
+            ),
+            "Check Out": st.column_config.DateColumn(
+                "Check Out", help="Check-out date"
+            ),
+            "Phone Number": st.column_config.TextColumn(
+                "Phone Number", help="Guest's phone number"
+            ),
+            "Communication Status": st.column_config.TextColumn(
                 "Communication Status",
+                help="Last communication status with the guest",
+                disabled=True,
+            ),
+            "Last Communication Date": st.column_config.TextColumn(
                 "Last Communication Date",
-            ]
-        ]
+                help="Date and time of the last communication with the guest",
+                disabled=True,
+            ),
+        },
+        hide_index=True,
+        use_container_width=True,
+        key="guest_editor",
+    )
 
-        # Interactive data editor
-        edited_df = st.data_editor(
-            display_df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select", help="Select or deselect this guest", default=select_all
-                ),
-                "Guest Name": st.column_config.TextColumn(
-                    "Guest Name", help="Guest's full name"
-                ),
-                "Check In": st.column_config.DateColumn(
-                    "Check In", help="Check-in date"
-                ),
-                "Check Out": st.column_config.DateColumn(
-                    "Check Out", help="Check-out date"
-                ),
-                "Phone Number": st.column_config.TextColumn(
-                    "Phone Number", help="Guest's phone number"
-                ),
-                "Communication Status": st.column_config.TextColumn(
-                    "Communication Status",
-                    help="Last communication status with the guest",
-                    disabled=True,
-                ),
-                "Last Communication Date": st.column_config.TextColumn(
-                    "Last Communication Date",
-                    help="Date and time of the last communication with the guest",
-                    disabled=True,
-                ),
-            },
-            hide_index=True,
-            use_container_width=True,
-            key="guest_editor",
-        )
-
-    ############################################
     # Message Templates Section
-    ############################################
     st.markdown("---")
     st.subheader("Message Templates")
 
@@ -650,15 +597,13 @@ with tab2:
     message_preview = message_templates[selected_template]
     st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
-    ############################################
     # Send SMS to Selected Guests
-    ############################################
     if "edited_df" in locals() and not edited_df.empty:
         selected_guests = edited_df[edited_df["Select"]]
         num_selected = len(selected_guests)
         if not selected_guests.empty:
             button_label = (
-                f"Send SMS to {num_selected} Guest{'s' if num_selected!= 1 else ''}"
+                f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
             )
             if st.button(button_label):
                 openphone_url = "https://api.openphone.com/v1/messages"
