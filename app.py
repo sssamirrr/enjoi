@@ -479,17 +479,6 @@ with tab2:
     # Handle empty DataFrame
     if filtered_df.empty:
         st.warning("No guests found for the selected filters.")
-        display_df = pd.DataFrame(
-            columns=[
-                "Select",
-                "Guest Name",
-                "Check In",
-                "Check Out",
-                "Phone Number",
-                "Communication Status",
-                "Last Communication Date",
-            ]
-        )
     else:
         # Prepare display DataFrame
         display_df = filtered_df[
@@ -526,70 +515,47 @@ with tab2:
             display_df["Communication Status"] = statuses
             display_df["Last Communication Date"] = dates
 
-        # Create a list to store selected guest's statuses
-        selected_statuses = {}
-        
-        # Create interactive table with status check links
+        # Store statuses to prevent repeated function calls
+        stored_statuses = {}
+
+        # Adding a status check link to each row in the display table
+        status_info_rows = []
+
         for idx in range(len(display_df)):
             guest_name = display_df.iloc[idx]['Guest Name']
             phone_number = display_df.iloc[idx]['Phone Number']
+            current_status = display_df.at[idx, 'Communication Status']
+            last_date = display_df.at[idx, 'Last Communication Date']
 
-            # Checkbox for selecting the guest
-            selected = st.checkbox(f"Select {guest_name}", key=f"select_{idx}")
-
-            # Link to check status
-            if st.button(f"Check Status for {guest_name}", key=f"check_status_{idx}"):
-                # Fetch communication info for the individual phone number if not already fetched
-                if phone_number not in selected_statuses:
+            # Check Status link
+            check_status_key = f"check_status_{idx}"
+            if st.button(f"Check Status", key=check_status_key):
+                if phone_number not in stored_statuses:
                     status, last_date = get_last_communication_info(phone_number, headers)
-                    selected_statuses[phone_number] = (status, last_date)
+                    stored_statuses[phone_number] = (status, last_date)
                 else:
-                    status, last_date = selected_statuses[phone_number]
+                    status, last_date = stored_statuses[phone_number]
 
                 display_df.at[idx, 'Communication Status'] = status
                 display_df.at[idx, 'Last Communication Date'] = last_date
+            
+            # Format the status information
+            status_info_rows.append([
+                display_df.at[idx, 'Guest Name'],
+                display_df.at[idx, 'Check In'],
+                display_df.at[idx, 'Check Out'],
+                display_df.at[idx, 'Phone Number'],
+                current_status if current_status is not None else "No Status",
+                last_date if last_date is not None else "No Last Date"
+            ])
 
-            # Display current status if selected
-            if selected:
-                current_status = display_df.at[idx, 'Communication Status']
-                st.write(f"Status for {guest_name}: {current_status}")
+        # Create a new DataFrame for display
+        status_df = pd.DataFrame(status_info_rows, columns=[
+            "Guest Name", "Check In", "Check Out", "Phone Number", "Communication Status", "Last Communication Date"
+        ])
 
-    # Add more content as needed...
-
-    # Prepare the interactive data editor
-    edited_df = st.data_editor(
-        display_df,
-        column_config={
-            "Select": st.column_config.CheckboxColumn(
-                "Select", help="Select or deselect this guest"
-            ),
-            "Guest Name": st.column_config.TextColumn(
-                "Guest Name", help="Guest's full name"
-            ),
-            "Check In": st.column_config.DateColumn(
-                "Check In", help="Check-in date"
-            ),
-            "Check Out": st.column_config.DateColumn(
-                "Check Out", help="Check-out date"
-            ),
-            "Phone Number": st.column_config.TextColumn(
-                "Phone Number", help="Guest's phone number"
-            ),
-            "Communication Status": st.column_config.TextColumn(
-                "Communication Status",
-                help="Last communication status with the guest",
-                disabled=True,
-            ),
-            "Last Communication Date": st.column_config.TextColumn(
-                "Last Communication Date",
-                help="Date and time of the last communication with the guest",
-                disabled=True,
-            ),
-        },
-        hide_index=True,
-        use_container_width=True,
-        key="guest_editor",
-    )
+        # Display the DataFrame with the status check links
+        st.write(status_df)
 
     # Message Templates Section
     st.markdown("---")
