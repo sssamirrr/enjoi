@@ -486,32 +486,11 @@ with tab2:
         }
 
         # Fetch communication statuses and dates
-             # Button to fetch communication info
-        if st.button("Fetch Communication Info"):
-            headers = {
-                "Authorization": OPENPHONE_API_KEY,
-                "Content-Type": "application/json"
-            }
-            # Fetch communication info and store in session state
-            statuses, dates, durations, agent_names = fetch_communication_info(resort_df, headers)
-            st.session_state['communication_statuses'] = statuses
-            st.session_state['communication_dates'] = dates
-            st.session_state['communication_durations'] = durations
-            st.session_state['communication_agent_names'] = agent_names
-            st.success("Communication information fetched successfully!")
-        
-        # Update display_df with fetched data
-        if 'communication_statuses' in st.session_state:
-            display_df['Communication Status'] = st.session_state['communication_statuses']
-            display_df['Last Communication Date'] = st.session_state['communication_dates']
-            display_df['Call Duration (seconds)'] = st.session_state['communication_durations']
-            display_df['Agent Name'] = st.session_state['communication_agent_names']
-        else:
-            display_df['Communication Status'] = "Not Fetched"
-            display_df['Last Communication Date'] = None
-            display_df['Call Duration (seconds)'] = None
-            display_df['Agent Name'] = "Unknown"
-        
+        statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+        display_df['Communication Status'] = statuses
+        display_df['Last Communication Date'] = dates
+        display_df['Call Duration (seconds)'] = durations
+        display_df['Agent Name'] = agent_names
 
 
 
