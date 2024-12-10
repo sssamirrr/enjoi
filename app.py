@@ -230,6 +230,7 @@ def fetch_communication_info(guest_df, headers):
     return statuses, dates
 
 
+
 ############################################
 # Create Tabs
 ############################################
