@@ -163,6 +163,18 @@ def get_last_communication_info(phone_number, headers):
         else "Received Call"
     )
     return status, latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
+def clean_phone_number(phone):
+    """
+    Cleans and formats the phone number to ensure compatibility.
+    """
+    if pd.isna(phone) or not str(phone).strip():
+        return None
+    digits = ''.join(filter(str.isdigit, str(phone)))
+    if len(digits) == 10:
+        return f"+1{digits}"
+    elif len(digits) == 11 and digits.startswith('1'):
+        return f"+{digits}"
+    return None
 
 def format_phone_number(phone):
     """
