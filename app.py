@@ -115,13 +115,15 @@ def rate_limited_request(url, headers, params, request_type="get"):
         st.write(f"API call completed in {elapsed_time:.2f} seconds")
 
         if response and response.status_code == 200:
-            return response.json()
+            return response.json()  # Added return statement
         else:
             st.warning(f"API Error: {response.status_code}")
             st.warning(f"Response: {response.text}")
+            return None  # Added return statement
     except Exception as e:
         st.warning(f"Exception during request: {str(e)}")
-    return None
+        return None  # Added return statement
+
 
 
 def get_all_phone_number_ids(headers):
