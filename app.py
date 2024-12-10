@@ -85,11 +85,9 @@ if df is None:
 # OpenPhone API Functions
 ############################################
 
-import time
-import requests
-import streamlit as st
-from datetime import datetime
-import pandas as pd
+############################################
+# OpenPhone API Functions
+############################################
 
 def rate_limited_request(url, headers, params, request_type='get'):
     """
@@ -112,6 +110,7 @@ def rate_limited_request(url, headers, params, request_type='get'):
         st.warning(f"Exception during request: {str(e)}")
     return None
 
+
 def get_all_phone_number_ids(headers):
     """
     Retrieve all phoneNumberIds associated with your OpenPhone account.
@@ -120,92 +119,82 @@ def get_all_phone_number_ids(headers):
     response_data = rate_limited_request(phone_numbers_url, headers, {})
     return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
-def get_last_communication_info(phone_number, headers):
-    """
-    Retrieve the last communication status (message or call),
-    the date of that communication, the call duration in minutes and seconds,
-    and the phone number of the agent who made the call or sent the message.
-    """
-    phone_number_ids = get_all_phone_number_ids(headers)
-    if not phone_number_ids:
-        st.error("No OpenPhone numbers found in the account.")
-        return "No Communications", None, None, None
 
-    combined_data = []  # To store all fetched messages and calls
-    for phone_number_id in phone_number_ids:
-        # Fetch messages and calls in one go
-        params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
-        
-        # Fetch messages
-        messages_response = rate_limited_request("https://api.openphone.com/v1/messages", headers, params)
-        if messages_response and 'data' in messages_response:
-            combined_data.extend(messages_response['data'])
-
-        # Fetch calls
-        calls_response = rate_limited_request("https://api.openphone.com/v1/calls", headers, params)
-        if calls_response and 'data' in calls_response:
-            combined_data.extend(calls_response['data'])
-
-    # Process combined data for the latest communication
-    latest_communication = None
-    for entry in combined_data:
-        comm_time = datetime.fromisoformat(entry['createdAt'].replace('Z', '+00:00'))
-        if not latest_communication or comm_time > latest_communication['createdAt']:
-            latest_communication = {
-                "type": "Message" if "text" in entry else "Call",
-                "direction": entry.get("direction", "unknown"),
-                "createdAt": comm_time,
-                "agentPhoneNumber": entry.get("from", {}).get("phoneNumber", "Unknown Number"),
-                "duration": entry.get("duration", 0) if "Call" in entry else None,
-            }
-
-    if not latest_communication:
-        return "No Communications", None, None, None
-
-    # Format the results
-    duration = latest_communication["duration"]
-    formatted_duration = f"{duration // 60}m {duration % 60}s" if duration else None
-
-    return (
-        f"{latest_communication['type']} - {latest_communication['direction']}",
-        latest_communication["createdAt"].strftime("%Y-%m-%d %H:%M:%S"),
-        formatted_duration,
-        latest_communication["agentPhoneNumber"]
-    )
-
-def fetch_communication_info(guest_df, headers):
+def fetch_communication_info_batch(guest_df, headers, phone_number_id):
     """
     Fetch communication statuses, dates, durations (formatted as minutes and seconds),
-    and agent phone numbers for all guests in the DataFrame.
+    and agent phone numbers for multiple guests in a single API call (batching).
     """
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
         return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
 
     guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
-    statuses, dates, durations, agent_phone_numbers = [], [], [], []
+    participants = guest_df['Phone Number'].unique().tolist()  # Get unique phone numbers
 
-    for _, row in guest_df.iterrows():
-        phone = row['Phone Number']
-        if phone:
-            try:
-                status, last_date, duration, agent_phone_number = get_last_communication_info(phone, headers)
-                statuses.append(status)
-                dates.append(last_date)
-                durations.append(duration)
-                agent_phone_numbers.append(agent_phone_number)
-            except Exception as e:
-                statuses.append("Error")
-                dates.append(None)
-                durations.append(None)
-                agent_phone_numbers.append("Unknown")
-        else:
-            statuses.append("Invalid Number")
-            dates.append(None)
-            durations.append(None)
-            agent_phone_numbers.append("Unknown")
+    params = {
+        "phoneNumberId": phone_number_id,
+        "participants": participants,  # Send all phone numbers in one batch
+        "maxResults": 50
+    }
 
-    return statuses, dates, durations, agent_phone_numbers
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    # Make batch requests for messages and calls
+    messages_response = rate_limited_request(messages_url, headers, params)
+    calls_response = rate_limited_request(calls_url, headers, params)
+
+    # Initialize empty results
+    statuses, dates, durations, agent_phone_numbers = {}, {}, {}, {}
+
+    if messages_response and 'data' in messages_response:
+        for message in messages_response['data']:
+            phone = message.get('to', [{}])[0].get('phoneNumber', 'Unknown')
+            statuses[phone] = "Message - " + message.get("direction", "unknown")
+            dates[phone] = message.get('createdAt', None)
+            agent_phone_numbers[phone] = message.get("from", {}).get("phoneNumber", "Unknown")
+
+    if calls_response and 'data' in calls_response:
+        for call in calls_response['data']:
+            phone = call.get('to', [{}])[0].get('phoneNumber', 'Unknown')
+            statuses[phone] = "Call - " + call.get("direction", "unknown")
+            dates[phone] = call.get('createdAt', None)
+            duration_seconds = call.get('duration', 0)
+            durations[phone] = f"{duration_seconds // 60}m {duration_seconds % 60}s"
+            agent_phone_numbers[phone] = call.get("from", {}).get("phoneNumber", "Unknown")
+
+    # Map results back to guest_df
+    guest_df['Communication Status'] = guest_df['Phone Number'].map(statuses)
+    guest_df['Last Communication Date'] = guest_df['Phone Number'].map(dates)
+    guest_df['Call Duration'] = guest_df['Phone Number'].map(durations)
+    guest_df['Agent Phone Number'] = guest_df['Phone Number'].map(agent_phone_numbers)
+
+    return guest_df
+
+
+def get_last_communication_info(phone_number, headers):
+    """
+    Wrapper for backward compatibility.
+    Fetch the last communication info for a single phone number.
+    """
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        st.error("No OpenPhone numbers found in the account.")
+        return "No Communications", None, None, None
+
+    for phone_number_id in phone_number_ids:
+        batch_result = fetch_communication_info_batch(pd.DataFrame({"Phone Number": [phone_number]}), headers, phone_number_id)
+        if not batch_result.empty:
+            return (
+                batch_result['Communication Status'].iloc[0],
+                batch_result['Last Communication Date'].iloc[0],
+                batch_result['Call Duration'].iloc[0],
+                batch_result['Agent Phone Number'].iloc[0]
+            )
+
+    return "No Communications", None, None, None
+
 
 
 
