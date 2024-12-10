@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -128,48 +129,74 @@ def get_last_communication_info(phone_number, headers):
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         st.error("No OpenPhone numbers found in the account.")
-        return "No Communications", None
+        return "Error", None
 
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
-
-    latest_datetime = None
-    latest_type = None
-    latest_direction = None
+    latest_datetime, latest_type, latest_direction = None, None, None
 
     for phone_number_id in phone_number_ids:
-        # Fetch messages
         params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
-        messages_response = rate_limited_request(messages_url, headers, params)
-        if messages_response and 'data' in messages_response:
-            for message in messages_response['data']:
-                msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+
+        # Fetch messages
+        data = rate_limited_request(messages_url, headers, params)
+        if data:
+            for msg in data.get('data', []):
+                msg_time = datetime.fromisoformat(msg['createdAt'].replace('Z', '+00:00'))
                 if not latest_datetime or msg_time > latest_datetime:
-                    latest_datetime = msg_time
-                    latest_type = "Message"
-                    latest_direction = message.get("direction", "unknown")
+                    latest_datetime, latest_type, latest_direction = msg_time, 'Message', msg['direction']
 
         # Fetch calls
-        calls_response = rate_limited_request(calls_url, headers, params)
-        if calls_response and 'data' in calls_response:
-            for call in calls_response['data']:
+        data = rate_limited_request(calls_url, headers, params)
+        if data:
+            for call in data.get('data', []):
                 call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
                 if not latest_datetime or call_time > latest_datetime:
-                    latest_datetime = call_time
-                    latest_type = "Call"
-                    latest_direction = call.get("direction", "unknown")
+                    latest_datetime, latest_type, latest_direction = call_time, 'Call', call['direction']
 
     if not latest_datetime:
         return "No Communications", None
 
-    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
+    status = (
+        "Sent Message" if latest_type == 'Message' and latest_direction in ['outgoing', 'outbound'] 
+        else "Received Message" if latest_type == 'Message'
+        else "Made Call" if latest_direction in ['outgoing', 'outbound']
+        else "Received Call"
+    )
+    return status, latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
+def clean_phone_number(phone):
+    """
+    Cleans and formats the phone number to ensure compatibility.
+    """
+    if pd.isna(phone) or not str(phone).strip():
+        return None
+    digits = ''.join(filter(str.isdigit, str(phone)))
+    if len(digits) == 10:
+        return f"+1{digits}"
+    elif len(digits) == 11 and digits.startswith('1'):
+        return f"+{digits}"
+    return None
 
+def format_phone_number(phone):
+    """
+    Format phone number to match the required pattern: +1XXXXXXXXXX
+    """
+    if pd.isna(phone) or not str(phone).strip():
+        return None
+    digits = ''.join(filter(str.isdigit, str(phone)))
+    if len(digits) == 10:
+        return f"+1{digits}"
+    elif len(digits) == 11 and digits.startswith('1'):
+        return f"+{digits}"
+    return None
+
+@st.cache_data(show_spinner=False)
 
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the DataFrame.
     """
-    # Check if "Phone Number" column exists
+    # Check for the "Phone Number" column
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
         st.write("Available columns:", guest_df.columns.tolist())
@@ -177,36 +204,33 @@ def fetch_communication_info(guest_df, headers):
 
     # Clean and validate phone numbers
     guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
-    guest_df['Phone Number'] = guest_df['Phone Number'].apply(format_phone_number)
+    guest_df['Phone Number'] = guest_df['Phone Number'].apply(clean_phone_number)
     st.write("Cleaned phone numbers:", guest_df['Phone Number'].tolist())
 
-    # Initialize results lists
     statuses = ["No Status"] * len(guest_df)
     dates = [None] * len(guest_df)
 
-    # Use enumerate for positional indexing
-    for pos_idx, (idx, row) in enumerate(guest_df.iterrows()):
-        phone = row['Phone Number']
+    valid_rows = [
+        (i, row) for i, row in enumerate(guest_df.itertuples()) if row._asdict().get('Phone Number')
+    ]
+
+    if not valid_rows:
+        st.warning("No valid phone numbers to process.")
+        return statuses, dates
+
+    for idx, row in valid_rows:
+        phone = row._asdict().get('Phone Number')
         st.write(f"Processing phone number: {phone}")
-
-        if pd.notna(phone) and phone:  # Ensure phone number is valid
-            try:
-                # Fetch communication info
-                status, last_date = get_last_communication_info(phone, headers)
-                statuses[pos_idx] = status  # Use positional index
-                dates[pos_idx] = last_date
-            except Exception as e:
-                st.error(f"Error fetching communication info for {phone}: {str(e)}")
-                statuses[pos_idx] = "Error"
-                dates[pos_idx] = None
+        if phone:
+            statuses[idx], dates[idx] = fetch_communication_info_cached(phone, headers)
         else:
-            statuses[pos_idx] = "Invalid Number"
-            dates[pos_idx] = None
+            statuses[idx] = "Invalid Number"
+            dates[idx] = None
 
-    # Output results for debugging
     st.write("Statuses:", statuses)
     st.write("Dates:", dates)
     return statuses, dates
+
 
 
 ############################################
