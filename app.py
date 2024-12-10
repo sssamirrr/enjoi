@@ -85,7 +85,7 @@ if df is None:
 # OpenPhone API Functions
 ############################################
 
-iimport time
+import time
 import requests
 import streamlit as st
 from datetime import datetime
