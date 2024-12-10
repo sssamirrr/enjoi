@@ -91,23 +91,19 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
-
 def rate_limited_request(url, headers, params, request_type='get'):
     """
     Make an API request while respecting rate limits.
     """
-    time.sleep(1 / 5)  # Ensure at least 0.2 seconds between requests (5 requests per second max)
-    response = None
+    time.sleep(1 / 5)  # 5 requests per second max
     try:
         st.write(f"Making API call to {url} with params: {params}")
-        start_time = time.time()  # Log start time
-        if request_type == 'get':
-            response = requests.get(url, headers=headers, params=params)
-
-        elapsed_time = time.time() - start_time  # Calculate elapsed time
+        start_time = time.time()
+        response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
+        elapsed_time = time.time() - start_time
         st.write(f"API call completed in {elapsed_time:.2f} seconds")
 
-        if response.status_code == 200:
+        if response and response.status_code == 200:
             return response.json()
         else:
             st.warning(f"API Error: {response.status_code}")
@@ -116,25 +112,13 @@ def rate_limited_request(url, headers, params, request_type='get'):
         st.warning(f"Exception during request: {str(e)}")
     return None
 
-
 def get_all_phone_number_ids(headers):
     """
     Retrieve all phoneNumberIds associated with your OpenPhone account.
     """
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    phone_number_ids = []
-
     response_data = rate_limited_request(phone_numbers_url, headers, {})
-    if response_data:
-        for pn in response_data.get('data', []):
-            phone_number_id = pn.get('id')
-            if phone_number_id:
-                phone_number_ids.append(phone_number_id)
-    else:
-        st.error("Error retrieving phone numbers.")
-    
-    return phone_number_ids
-
+    return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
 def get_last_communication_info(phone_number, headers):
     """
@@ -148,39 +132,28 @@ def get_last_communication_info(phone_number, headers):
 
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
-
-    latest_datetime = None
-    latest_type = None
-    latest_direction = None
+    latest_datetime, latest_type, latest_direction = None, None, None
 
     for phone_number_id in phone_number_ids:
-        params = {
-            "phoneNumberId": phone_number_id,
-            "participants": [phone_number],
-            "maxResults": 50  # Ensures we only fetch the first page
-        }
+        params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
 
         # Fetch messages
         data = rate_limited_request(messages_url, headers, params)
         if data:
             for msg in data.get('data', []):
-                msg_time = datetime.fromisoformat(msg.get('createdAt').replace('Z', '+00:00'))
-                if latest_datetime is None or msg_time > latest_datetime:
-                    latest_datetime = msg_time
-                    latest_type = 'Message'
-                    latest_direction = msg.get('direction')
+                msg_time = datetime.fromisoformat(msg['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or msg_time > latest_datetime:
+                    latest_datetime, latest_type, latest_direction = msg_time, 'Message', msg['direction']
 
         # Fetch calls
         data = rate_limited_request(calls_url, headers, params)
         if data:
             for call in data.get('data', []):
-                call_time = datetime.fromisoformat(call.get('createdAt').replace('Z', '+00:00'))
-                if latest_datetime is None or call_time > latest_datetime:
-                    latest_datetime = call_time
-                    latest_type = 'Call'
-                    latest_direction = call.get('direction')
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime, latest_type, latest_direction = call_time, 'Call', call['direction']
 
-    if latest_datetime is None:
+    if not latest_datetime:
         return "No Communications", None
 
     status = (
@@ -189,106 +162,55 @@ def get_last_communication_info(phone_number, headers):
         else "Made Call" if latest_direction in ['outgoing', 'outbound']
         else "Received Call"
     )
-
-    last_date = latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
-    return status, last_date
-
+    return status, latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
 
 def format_phone_number(phone):
     """
     Format phone number to match the required pattern: +1XXXXXXXXXX
-    Returns None if the number is invalid
     """
-    if pd.isna(phone) or phone == "":
-        st.write("Empty phone number detected")
+    if pd.isna(phone) or not str(phone).strip():
         return None
-
     digits = ''.join(filter(str.isdigit, str(phone)))
-    st.write(f"Cleaned digits: {digits}")
-
     if len(digits) == 10:
-        formatted = f"+1{digits}"
-        st.write(f"Formatted 10-digit number: {formatted}")
-        return formatted
+        return f"+1{digits}"
     elif len(digits) == 11 and digits.startswith('1'):
-        formatted = f"+{digits}"
-        st.write(f"Formatted 11-digit number: {formatted}")
-        return formatted
-    elif len(digits) == 12 and digits.startswith('91'):
-        formatted = f"+{digits[2:]}"
-        st.write(f"Formatted 12-digit number: {formatted}")
-        return formatted
-    else:
-        st.write(f"Invalid number format: {digits}")
-        return None
-
+        return f"+{digits}"
+    return None
 
 @st.cache_data(show_spinner=False)
 def fetch_communication_info_cached(phone_number, headers):
     """
     Cached version of getting communication info for a single phone number
     """
-    if phone_number is None:
-        st.write("Skipping invalid number")
+    if not phone_number:
         return "Invalid Number", None
-
     try:
-        st.write(f"Fetching info for: {phone_number}")
-        status, date = get_last_communication_info(phone_number, headers)
-        st.write(f"Result: Status={status}, Date={date}")
-        return status, date
+        return get_last_communication_info(phone_number, headers)
     except Exception as e:
         st.error(f"Error fetching communication info: {str(e)}")
         return "Error", None
 
-
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the dataframe.
-    Returns two lists: statuses and dates with the same length as the input DataFrame.
     """
-    statuses = ["No Status"] * len(guest_df)
-    dates = [None] * len(guest_df)
+    if 'Phone_Number' not in guest_df.columns:
+        st.error("The column 'Phone_Number' is missing in the DataFrame.")
+        return ["No Status"] * len(guest_df), [None] * len(guest_df)
 
-    # Debugging: Inspect the DataFrame
-    st.write("Raw phone numbers from DataFrame:")
-    st.write(guest_df['Phone_Number'].tolist())  # Replace 'Phone_Number' with actual column name
+    statuses, dates = ["No Status"] * len(guest_df), [None] * len(guest_df)
+    valid_rows = [(i, row) for i, row in enumerate(guest_df.itertuples()) if row.Phone_Number]
 
-    valid_rows = [
-        (i, row) for i, row in enumerate(guest_df.itertuples(), start=0)
-        if hasattr(row, 'Phone_Number') and not pd.isna(row.Phone_Number) and str(row.Phone_Number).strip()
-    ]
     if not valid_rows:
-        st.warning("No valid phone numbers to process")
+        st.warning("No valid phone numbers to process.")
         return statuses, dates
 
-    st.write("Starting to process phone numbers...")
-    st.write(f"Total rows to process: {len(valid_rows)}")
-
-    for current, (idx, row) in enumerate(valid_rows, start=1):
-        try:
-            raw_phone_number = row.Phone_Number
-            formatted_phone_number = format_phone_number(raw_phone_number)
-            st.write(f"Processing row {current} of {len(valid_rows)}")
-            st.write(f"Formatted phone number: {formatted_phone_number}")
-
-            if formatted_phone_number:
-                status, date = fetch_communication_info_cached(formatted_phone_number, headers)
-            else:
-                st.warning(f"Invalid phone number: {raw_phone_number}")
-                status, date = "Invalid Number", None
-
-            statuses[idx] = status
-            dates[idx] = date
-
-            completion_percentage = (current / len(valid_rows)) * 100
-            st.write(f"Completed {current}/{len(valid_rows)} ({completion_percentage:.1f}%)")
-        except Exception as e:
-            st.error(f"Error processing row {current}: {str(e)}")
-            statuses[idx] = "Error"
-            dates[idx] = None
-
+    for idx, row in valid_rows:
+        phone = format_phone_number(row.Phone_Number)
+        if phone:
+            statuses[idx], dates[idx] = fetch_communication_info_cached(phone, headers)
     return statuses, dates
+
 
 ############################################
 # Create Tabs
