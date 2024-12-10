@@ -8,7 +8,6 @@ import math
 import requests
 import time
 
-
 # Set page configuration
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
@@ -99,7 +98,6 @@ from datetime import datetime
 import pandas as pd
 
 
-
 def rate_limited_request(url, headers, params, request_type="get"):
     """
     Make an API request while respecting rate limits.
@@ -125,6 +123,7 @@ def rate_limited_request(url, headers, params, request_type="get"):
         st.warning(f"Exception during request: {str(e)}")
     return None
 
+
 def get_all_phone_number_ids(headers):
     """
     Retrieve all phoneNumberIds associated with your OpenPhone account.
@@ -134,6 +133,7 @@ def get_all_phone_number_ids(headers):
     return (
         [pn.get("id") for pn in response_data.get("data", [])] if response_data else []
     )
+
 
 def get_last_communication_info(phone_number, headers):
     """
@@ -189,89 +189,49 @@ def get_last_communication_info(phone_number, headers):
         "%Y-%m-%d %H:%M:%S"
     )
 
-def fetch_selected_communication_info(guest_df, headers, selected_indices=None):
+
+def fetch_communication_info(guest_df, headers):
     """
-    Fetch communication statuses and dates for selected guests in the DataFrame.
-    If no indices are provided, process all rows.
+    Fetch communication statuses and dates for all guests in the DataFrame.
     """
+    # Check if "Phone Number" column exists
     if "Phone Number" not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
-        return guest_df
+        st.write("Available columns:", guest_df.columns.tolist())
+        return ["No Status"] * len(guest_df), [None] * len(guest_df)
 
-    # Create a copy of the DataFrame to avoid modifying the original
-    result_df = guest_df.copy()
-    
-    # Initialize status columns if they don't exist
-    if 'Communication Status' not in result_df.columns:
-        result_df['Communication Status'] = "Not Checked"
-    if 'Last Communication Date' not in result_df.columns:
-        result_df['Last Communication Date'] = None
+    # Clean and validate phone numbers
+    guest_df["Phone Number"] = guest_df["Phone Number"].astype(str).str.strip()
+    guest_df["Phone Number"] = guest_df["Phone Number"].apply(format_phone_number)
+    st.write("Cleaned phone numbers:", guest_df["Phone Number"].tolist())
 
-    # Determine which rows to process
-    rows_to_process = selected_indices if selected_indices is not None else result_df.index
+    # Initialize results lists
+    statuses = ["No Status"] * len(guest_df)
+    dates = [None] * len(guest_df)
 
-    # Clean and validate phone numbers for selected rows
-    result_df.loc[rows_to_process, "Phone Number"] = result_df.loc[rows_to_process, "Phone Number"].astype(str).str.strip()
-    result_df.loc[rows_to_process, "Phone Number"] = result_df.loc[rows_to_process, "Phone Number"].apply(format_phone_number)
+    # Use enumerate for positional indexing
+    for pos_idx, (idx, row) in enumerate(guest_df.iterrows()):
+        phone = row["Phone Number"]
+        st.write(f"Processing phone number: {phone}")
 
-    with st.spinner('Fetching communication statuses...'):
-        for idx in rows_to_process:
-            phone = result_df.loc[idx, 'Phone Number']
-            st.write(f"Processing phone number: {phone}")
+        if pd.notna(phone) and phone:  # Ensure phone number is valid
+            try:
+                # Fetch communication info
+                status, last_date = get_last_communication_info(phone, headers)
+                statuses[pos_idx] = status  # Use positional index
+                dates[pos_idx] = last_date
+            except Exception as e:
+                st.error(f"Error fetching communication info for {phone}: {str(e)}")
+                statuses[pos_idx] = "Error"
+                dates[pos_idx] = None
+        else:
+            statuses[pos_idx] = "Invalid Number"
+            dates[pos_idx] = None
 
-            if pd.notna(phone) and phone:
-                try:
-                    status, last_date = get_last_communication_info(phone, headers)
-                    result_df.loc[idx, 'Communication Status'] = status
-                    result_df.loc[idx, 'Last Communication Date'] = last_date
-                except Exception as e:
-                    st.error(f"Error fetching communication info for {phone}: {str(e)}")
-                    result_df.loc[idx, 'Communication Status'] = "Error"
-                    result_df.loc[idx, 'Last Communication Date'] = None
-            else:
-                result_df.loc[idx, 'Communication Status'] = "Invalid Number"
-                result_df.loc[idx, 'Last Communication Date'] = None
-
-    return result_df
-
-def display_communication_interface(guest_df, headers):
-    """
-    Display the interface for loading communication statuses.
-    """
-    st.subheader("Communication Status Controls")
-    
-    # Create columns for buttons
-    col1, col2 = st.columns(2)
-    
-    # Button to load all statuses
-    if col1.button("Load All Communication Statuses"):
-        return fetch_selected_communication_info(guest_df, headers)
-    
-    # Multi-select for individual numbers
-    if not guest_df.empty:
-        selected_rows = st.multiselect(
-            "Select specific phone numbers to check:",
-            options=guest_df.index,
-            format_func=lambda x: f"{guest_df.loc[x, 'Phone Number']} - {guest_df.loc[x, 'Name'] if 'Name' in guest_df.columns else 'Unknown'}"
-        )
-        
-        # Button to load selected statuses
-        if col2.button("Load Selected Communication Statuses") and selected_rows:
-            return fetch_selected_communication_info(guest_df, headers, selected_rows)
-    
-    return guest_df
-# In your main app
-if 'current_df' not in st.session_state:
-    st.session_state.current_df = guest_df.copy()
-
-# Display the communication interface and update the DataFrame
-st.session_state.current_df = display_communication_interface(
-    st.session_state.current_df, 
-    headers
-)
-
-# Display the current state of the DataFrame
-st.dataframe(st.session_state.current_df)
+    # Output results for debugging
+    st.write("Statuses:", statuses)
+    st.write("Dates:", dates)
+    return statuses, dates
 
 
 ############################################
