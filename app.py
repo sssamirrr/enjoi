@@ -182,25 +182,22 @@ def fetch_communication_info(guest_df, headers):
     statuses = ["No Status"] * len(guest_df)
     dates = [None] * len(guest_df)
 
-    valid_rows = [
-        (i, row) for i, row in enumerate(guest_df.itertuples())
-        if row.Phone_Number is not None
-    ]
-
-    if not valid_rows:
-        st.warning("No valid phone numbers to process.")
-        return statuses, dates
-
-    for idx, row in valid_rows:
-        phone = row.Phone_Number  # Access cleaned phone number
+    # Iterate through DataFrame using index
+    for idx, row in guest_df.iterrows():
+        phone = row['Phone Number']  # Use the original column name
         st.write(f"Processing phone number: {phone}")
-        try:
-            status, last_date = get_last_communication_info(phone, headers)
-            statuses[idx] = status
-            dates[idx] = last_date
-        except Exception as e:
-            st.error(f"Error fetching communication info for {phone}: {str(e)}")
-            statuses[idx] = "Error"
+        
+        if pd.notna(phone) and phone:  # Check if phone number is valid
+            try:
+                status, last_date = get_last_communication_info(phone, headers)
+                statuses[idx] = status
+                dates[idx] = last_date
+            except Exception as e:
+                st.error(f"Error fetching communication info for {phone}: {str(e)}")
+                statuses[idx] = "Error"
+                dates[idx] = None
+        else:
+            statuses[idx] = "Invalid Number"
             dates[idx] = None
 
     st.write("Statuses:", statuses)
