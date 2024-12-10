@@ -459,8 +459,9 @@ with tab2:
 
     # Handle empty DataFrame
     if filtered_df.empty:
-        st.warning("No guests found for the selected filters.")
-        display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date'])
+    st.warning("No guests found for the selected filters.")
+    display_df = pd.DataFrame(columns=['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration', 'Agent Phone Number'])  # Added 'Select'
+
     else:
         # Prepare display DataFrame
         display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
