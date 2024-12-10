@@ -120,10 +120,56 @@ def get_all_phone_number_ids(headers):
     response_data = rate_limited_request(phone_numbers_url, headers, {})
     return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
+def get_last_communication_info(phone_number, headers):
+    """
+    For a given phone number, retrieve the last communication status (message or call)
+    and the date of that communication across all OpenPhone numbers.
+    """
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        st.error("No OpenPhone numbers found in the account.")
+        return "No Communications", None
+
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
+
+    for phone_number_id in phone_number_ids:
+        # Fetch messages
+        params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
+        messages_response = rate_limited_request(messages_url, headers, params)
+        if messages_response and 'data' in messages_response:
+            for message in messages_response['data']:
+                msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or msg_time > latest_datetime:
+                    latest_datetime = msg_time
+                    latest_type = "Message"
+                    latest_direction = message.get("direction", "unknown")
+
+        # Fetch calls
+        calls_response = rate_limited_request(calls_url, headers, params)
+        if calls_response and 'data' in calls_response:
+            for call in calls_response['data']:
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
+                    latest_type = "Call"
+                    latest_direction = call.get("direction", "unknown")
+
+    if not latest_datetime:
+        return "No Communications", None
+
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the DataFrame.
     """
+    # Check if "Phone Number" column exists
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
         st.write("Available columns:", guest_df.columns.tolist())
@@ -134,89 +180,34 @@ def fetch_communication_info(guest_df, headers):
     guest_df['Phone Number'] = guest_df['Phone Number'].apply(format_phone_number)
     st.write("Cleaned phone numbers:", guest_df['Phone Number'].tolist())
 
+    # Initialize results lists
     statuses = ["No Status"] * len(guest_df)
     dates = [None] * len(guest_df)
 
-    # Initialize progress bar
-    progress_bar = st.progress(0)
-    total_rows = len(guest_df)
-    progress_step = 100 / total_rows  # Increment step for each row
-
-    for idx, row in guest_df.iterrows():
+    # Use enumerate for positional indexing
+    for pos_idx, (idx, row) in enumerate(guest_df.iterrows()):
         phone = row['Phone Number']
         st.write(f"Processing phone number: {phone}")
 
-        if pd.notna(phone) and phone:  # Check if phone number is valid
+        if pd.notna(phone) and phone:  # Ensure phone number is valid
             try:
+                # Fetch communication info
                 status, last_date = get_last_communication_info(phone, headers)
-                statuses[idx] = statdef fetch_communication_info(guest_df, headers):
-    """
-    Fetch communication statuses and dates for all guests in the DataFrame.
-    """
-    if 'Phone Number' not in guest_df.columns:
-        st.error("The column 'Phone Number' is missing in the DataFrame.")
-        st.write("Available columns:", guest_df.columns.tolist())
-        return ["No Status"] * len(guest_df), [None] * len(guest_df)
-
-    # Clean and validate phone numbers
-    guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
-    guest_df['Phone Number'] = guest_df['Phone Number'].apply(format_phone_number)
-    st.write("Cleaned phone numbers:", guest_df['Phone Number'].tolist())
-
-    statuses = ["No Status"] * len(guest_df)
-    dates = [None] * len(guest_df)
-
-    # Initialize progress bar
-    progress_bar = st.progress(0)
-    total_rows = len(guest_df)
-    progress_step = 100 / total_rows  # Increment step for each row
-
-    for idx, row in guest_df.iterrows():
-        phone = row['Phone Number']
-        st.write(f"Processing phone number: {phone}")
-
-        if pd.notna(phone) and phone:  # Check if phone number is valid
-            try:
-                status, last_date = get_last_communication_info(phone, headers)
-                statuses[idx] = status
-                dates[idx] = last_date
+                statuses[pos_idx] = status  # Use positional index
+                dates[pos_idx] = last_date
             except Exception as e:
                 st.error(f"Error fetching communication info for {phone}: {str(e)}")
-                statuses[idx] = "Error"
-                dates[idx] = None
+                statuses[pos_idx] = "Error"
+                dates[pos_idx] = None
         else:
-            statuses[idx] = "Invalid Number"
-            dates[idx] = None
+            statuses[pos_idx] = "Invalid Number"
+            dates[pos_idx] = None
 
-        # Update progress bar
-        progress_bar.progress(int((idx + 1) * progress_step))
-
-        # Optionally, add a small delay for better UX in case of fast processes
-        time.sleep(0.1)
-
-    progress_bar.empty()  # Clear the progress bar when done
-    st.write("Statuses:", statuses)
-    st.write("Dates:", dates)
-    return statuses, datesus
-                dates[idx] = last_date
-            except Exception as e:
-                st.error(f"Error fetching communication info for {phone}: {str(e)}")
-                statuses[idx] = "Error"
-                dates[idx] = None
-        else:
-            statuses[idx] = "Invalid Number"
-            dates[idx] = None
-
-        # Update progress bar
-        progress_bar.progress(int((idx + 1) * progress_step))
-
-        # Optionally, add a small delay for better UX in case of fast processes
-        time.sleep(0.1)
-
-    progress_bar.empty()  # Clear the progress bar when done
+    # Output results for debugging
     st.write("Statuses:", statuses)
     st.write("Dates:", dates)
     return statuses, dates
+
 
 ############################################
 # Create Tabs
