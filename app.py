@@ -190,95 +190,48 @@ def get_last_communication_info(phone_number, headers):
     )
 
 
-def fetch_communication_info(guest_df, headers, all_numbers=False):
+def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the DataFrame.
-    If all_numbers is True, fetch for all; otherwise, fetch only for individual selection.
     """
+    # Check if "Phone Number" column exists
     if "Phone Number" not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
         st.write("Available columns:", guest_df.columns.tolist())
         return ["No Status"] * len(guest_df), [None] * len(guest_df)
 
+    # Clean and validate phone numbers
     guest_df["Phone Number"] = guest_df["Phone Number"].astype(str).str.strip()
     guest_df["Phone Number"] = guest_df["Phone Number"].apply(format_phone_number)
     st.write("Cleaned phone numbers:", guest_df["Phone Number"].tolist())
 
-    statuses = [None] * len(guest_df)
+    # Initialize results lists
+    statuses = ["No Status"] * len(guest_df)
     dates = [None] * len(guest_df)
 
-    if "communication_statuses" not in st.session_state:
-        st.session_state["communication_statuses"] = {}
-
+    # Use enumerate for positional indexing
     for pos_idx, (idx, row) in enumerate(guest_df.iterrows()):
         phone = row["Phone Number"]
         st.write(f"Processing phone number: {phone}")
 
-        if pd.notna(phone) and phone:
-            if all_numbers or idx in selected_rows:
-                if phone in st.session_state["communication_statuses"]:
-                    status, last_date = st.session_state["communication_statuses"][phone]
-                else:
-                    try:
-                        status, last_date = get_last_communication_info(phone, headers)
-                        st.session_state["communication_statuses"][phone] = (
-                            status,
-                            last_date,
-                        )
-                    except Exception as e:
-                        st.error(f"Error fetching communication info for {phone}: {str(e)}")
-                        status, last_date = "Error", None
-
-                statuses[pos_idx] = status
+        if pd.notna(phone) and phone:  # Ensure phone number is valid
+            try:
+                # Fetch communication info
+                status, last_date = get_last_communication_info(phone, headers)
+                statuses[pos_idx] = status  # Use positional index
                 dates[pos_idx] = last_date
+            except Exception as e:
+                st.error(f"Error fetching communication info for {phone}: {str(e)}")
+                statuses[pos_idx] = "Error"
+                dates[pos_idx] = None
         else:
             statuses[pos_idx] = "Invalid Number"
             dates[pos_idx] = None
 
+    # Output results for debugging
     st.write("Statuses:", statuses)
     st.write("Dates:", dates)
-    guest_df.loc[:, "Communication Status"] = statuses
-    guest_df.loc[:, "Last Communication Date"] = dates
-
-
-def format_phone_number(phone):
-    """
-    Format the phone number according to your application's need.
-    """
-    return phone
-
-
-# Streamlit App Logic
-
-st.title("Communication Status Checker")
-
-# Example DataFrame (replace with your actual DataFrame)
-data = {
-    "Guest Name": ["Alice", "Bob", "Charlie"],
-    "Phone Number": ["+15555555555", "+16666666666", "+17777777777"],
-}
-guest_df = pd.DataFrame(data)
-
-headers = {
-    "Authorization": "Bearer YOUR_API_KEY"
-}
-
-# Initialize session state for selection
-if "selected_ids" not in st.session_state:
-    st.session_state["selected_ids"] = set()
-
-# Display table with interactive elements
-st.write("Select numbers to check individual status:")
-selected_rows = st.multiselect("Select phone numbers", guest_df.index, format_func=lambda i: guest_df.at[i, "Phone Number"])
-
-if st.button("Load Communication Status for All Numbers"):
-    fetch_communication_info(guest_df, headers, all_numbers=True)
-
-if selected_rows and st.button("Load Communication Status for Selected Numbers"):
-    fetch_communication_info(guest_df, headers, all_numbers=False)
-
-st.write(guest_df)
-
+    return statuses, dates
 
 
 ############################################
