@@ -531,12 +531,22 @@ with tab2:
             else:
                 return phone  # Return as is if it doesn't match expected patterns
 
+        # Add checkboxes for status loading
+        st.button("Load Status for All Numbers", on_click=lambda: fetch_communication_info(display_df, headers))
+
         # Apply phone number formatting
         display_df["Phone Number"] = display_df["Phone Number"].apply(
             format_phone_number
         )
         display_df["Communication Status"] = "Checking..."
         display_df["Last Communication Date"] = None  # Initialize the new column
+
+        # Allow individual status loading
+        for idx in range(len(display_df)):
+            if st.button(f"Load Status for {display_df.loc[idx, 'Guest Name']}"):
+                status, last_date = get_last_communication_info(display_df.loc[idx, 'Phone Number'], headers)
+                display_df.loc[idx, 'Communication Status'] = status
+                display_df.loc[idx, 'Last Communication Date'] = last_date
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
@@ -675,7 +685,6 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
-
 
 ############################################
 # Tour Prediction Tab
