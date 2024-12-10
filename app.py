@@ -123,8 +123,8 @@ def get_all_phone_number_ids(headers):
 def get_last_communication_info(phone_number, headers):
     """
     Retrieve the last communication status (message or call),
-    the date of that communication, the call duration (if applicable),
-    and the agent's name who made the call or sent the message.
+    the date of that communication, the call duration in minutes and seconds,
+    and the phone number of the agent who made the call or sent the message.
     """
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
@@ -138,7 +138,7 @@ def get_last_communication_info(phone_number, headers):
     latest_type = None
     latest_direction = None
     call_duration = None
-    agent_name = None  # New variable to store the agent's name
+    agent_phone_number = None
 
     for phone_number_id in phone_number_ids:
         # Fetch messages
@@ -151,7 +151,7 @@ def get_last_communication_info(phone_number, headers):
                     latest_datetime = msg_time
                     latest_type = "Message"
                     latest_direction = message.get("direction", "unknown")
-                    agent_name = message.get("user", {}).get("name", "Unknown Agent")  # Extract agent name
+                    agent_phone_number = message.get("from", {}).get("phoneNumber", "Unknown Number")
 
         # Fetch calls
         calls_response = rate_limited_request(calls_url, headers, params)
@@ -162,47 +162,53 @@ def get_last_communication_info(phone_number, headers):
                     latest_datetime = call_time
                     latest_type = "Call"
                     latest_direction = call.get("direction", "unknown")
-                    call_duration = call.get("duration")
-                    agent_name = call.get("user", {}).get("name", "Unknown Agent")  # Extract agent name
+                    duration_seconds = call.get("duration", 0)
+                    minutes = duration_seconds // 60
+                    seconds = duration_seconds % 60
+                    call_duration = f"{minutes}m {seconds}s"
+                    agent_phone_number = call.get("from", {}).get("phoneNumber", "Unknown Number")
 
     if not latest_datetime:
         return "No Communications", None, None, None
 
-    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_name
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_phone_number
+
 
 
 def fetch_communication_info(guest_df, headers):
     """
-    Fetch communication statuses, dates, durations, and agent names for all guests in the DataFrame.
+    Fetch communication statuses, dates, durations (formatted as minutes and seconds),
+    and agent phone numbers for all guests in the DataFrame.
     """
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
         return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
 
     guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
-    statuses, dates, durations, agent_names = [], [], [], []
+    statuses, dates, durations, agent_phone_numbers = [], [], [], []
 
     for _, row in guest_df.iterrows():
         phone = row['Phone Number']
         if phone:
             try:
-                status, last_date, duration, agent_name = get_last_communication_info(phone, headers)
+                status, last_date, duration, agent_phone_number = get_last_communication_info(phone, headers)
                 statuses.append(status)
                 dates.append(last_date)
                 durations.append(duration)
-                agent_names.append(agent_name)
+                agent_phone_numbers.append(agent_phone_number)
             except Exception as e:
                 statuses.append("Error")
                 dates.append(None)
                 durations.append(None)
-                agent_names.append("Unknown")
+                agent_phone_numbers.append("Unknown")
         else:
             statuses.append("Invalid Number")
             dates.append(None)
             durations.append(None)
-            agent_names.append("Unknown")
+            agent_phone_numbers.append("Unknown")
 
-    return statuses, dates, durations, agent_names
+    return statuses, dates, durations, agent_phone_numbers
+
 
 
     # Output results for debugging
@@ -490,12 +496,13 @@ with tab2:
         display_df['Communication Status'] = statuses
         display_df['Last Communication Date'] = dates
         display_df['Call Duration (seconds)'] = durations
-        display_df['Agent Name'] = agent_names
+        display_df['Agent Phone Number'] = agent_phone_numbers
+
 
 
 
         # Reorder columns to have "Select" as the leftmost column
-        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
+        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration', 'Agent Phone Number']]
 
         # Interactive data editor
         edited_df = st.data_editor(
