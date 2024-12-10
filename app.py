@@ -44,7 +44,7 @@ st.markdown("""
 ############################################
 
 # Replace with your actual OpenPhone API key and number
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+ = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 OPENPHONE_NUMBER = "+18438972426"
 
 ############################################
@@ -192,25 +192,43 @@ def fetch_communication_info_cached(phone_number, headers):
 
 def fetch_communication_info(guest_df, headers):
     """
-    Fetch communication statuses and dates for all guests in the dataframe.
+    Fetch communication statuses and dates for all guests in the DataFrame.
     """
+    # Check for the Phone_Number column
     if 'Phone_Number' not in guest_df.columns:
         st.error("The column 'Phone_Number' is missing in the DataFrame.")
-        st.write("Available columns in the DataFrame:", guest_df.columns.tolist())
+        st.write("Available columns:", guest_df.columns.tolist())
         return ["No Status"] * len(guest_df), [None] * len(guest_df)
 
-    statuses, dates = ["No Status"] * len(guest_df), [None] * len(guest_df)
-    valid_rows = [(i, row) for i, row in enumerate(guest_df.itertuples()) if row.Phone_Number]
+    # Clean and validate phone numbers
+    guest_df['Phone_Number'] = guest_df['Phone_Number'].astype(str).str.strip()
+    guest_df['Phone_Number'] = guest_df['Phone_Number'].apply(clean_phone_number)
+    st.write("Cleaned phone numbers:", guest_df['Phone_Number'].tolist())
+
+    statuses = ["No Status"] * len(guest_df)
+    dates = [None] * len(guest_df)
+
+    valid_rows = [
+        (i, row) for i, row in enumerate(guest_df.itertuples()) if row.Phone_Number
+    ]
 
     if not valid_rows:
         st.warning("No valid phone numbers to process.")
         return statuses, dates
 
     for idx, row in valid_rows:
-        phone = format_phone_number(row.Phone_Number)
+        phone = row.Phone_Number
+        st.write(f"Processing phone number: {phone}")
         if phone:
             statuses[idx], dates[idx] = fetch_communication_info_cached(phone, headers)
+        else:
+            statuses[idx] = "Invalid Number"
+            dates[idx] = None
+
+    st.write("Statuses:", statuses)
+    st.write("Dates:", dates)
     return statuses, dates
+
 
 ############################################
 # Create Tabs
