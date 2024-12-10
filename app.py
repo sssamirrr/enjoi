@@ -85,7 +85,7 @@ if df is None:
 # OpenPhone API Functions
 ############################################
 
-import time
+iimport time
 import requests
 import streamlit as st
 from datetime import datetime
@@ -196,6 +196,7 @@ def fetch_communication_info(guest_df, headers):
     """
     if 'Phone_Number' not in guest_df.columns:
         st.error("The column 'Phone_Number' is missing in the DataFrame.")
+        st.write("Available columns in the DataFrame:", guest_df.columns.tolist())
         return ["No Status"] * len(guest_df), [None] * len(guest_df)
 
     statuses, dates = ["No Status"] * len(guest_df), [None] * len(guest_df)
@@ -210,7 +211,6 @@ def fetch_communication_info(guest_df, headers):
         if phone:
             statuses[idx], dates[idx] = fetch_communication_info_cached(phone, headers)
     return statuses, dates
-
 
 ############################################
 # Create Tabs
