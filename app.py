@@ -509,9 +509,9 @@ with tab2:
 
         # Apply phone number formatting
         display_df["Phone Number"] = display_df["Phone Number"].apply(format_phone_number)
-        
+
         # Initialize communication status columns
-        display_df["Communication Status"] = "Checking..."
+        display_df["Communication Status"] = None
         display_df["Last Communication Date"] = None  # Initialize the new column
 
         # Button to load statuses for all guests
@@ -521,36 +521,47 @@ with tab2:
         }
 
         if st.button("Load Status for All Numbers"):
-            # Fetch communication statuses and dates only once instead of multiple
+            # Fetch communication statuses and dates all at once
             statuses, dates = fetch_communication_info(display_df, headers)
             display_df["Communication Status"] = statuses
             display_df["Last Communication Date"] = dates
+
+        # Create a list to store selected guest's statuses
+        selected_statuses = {}
         
-        if not display_df.empty:
-            # Loop over each guest to create individual load status buttons
-            for idx in range(len(display_df)):
-                guest_name = display_df.iloc[idx]['Guest Name'] if 'Guest Name' in display_df.columns else "Unknown Guest"
-                # Create a unique key for each button using the index
-                button_id = f"load_status_{idx}"  # Ensure uniqueness
-                if st.button(f"Load Status for {guest_name}", key=button_id):
-                    phone_number = display_df.iloc[idx]['Phone Number']
-                    # Fetch communication info for the individual phone number
+        # Create interactive table with status check links
+        for idx in range(len(display_df)):
+            guest_name = display_df.iloc[idx]['Guest Name']
+            phone_number = display_df.iloc[idx]['Phone Number']
+
+            # Checkbox for selecting the guest
+            selected = st.checkbox(f"Select {guest_name}", key=f"select_{idx}")
+
+            # Link to check status
+            if st.button(f"Check Status for {guest_name}", key=f"check_status_{idx}"):
+                # Fetch communication info for the individual phone number if not already fetched
+                if phone_number not in selected_statuses:
                     status, last_date = get_last_communication_info(phone_number, headers)
-                    display_df.loc[idx, 'Communication Status'] = status
-                    display_df.loc[idx, 'Last Communication Date'] = last_date
+                    selected_statuses[phone_number] = (status, last_date)
+                else:
+                    status, last_date = selected_statuses[phone_number]
+
+                display_df.at[idx, 'Communication Status'] = status
+                display_df.at[idx, 'Last Communication Date'] = last_date
+
+            # Display current status if selected
+            if selected:
+                current_status = display_df.at[idx, 'Communication Status']
+                st.write(f"Status for {guest_name}: {current_status}")
 
     # Add more content as needed...
-
-    # Add "Select All" checkbox
-    select_all = st.checkbox("Select All")
-    display_df["Select"] = select_all
 
     # Prepare the interactive data editor
     edited_df = st.data_editor(
         display_df,
         column_config={
             "Select": st.column_config.CheckboxColumn(
-                "Select", help="Select or deselect this guest", default=select_all
+                "Select", help="Select or deselect this guest"
             ),
             "Guest Name": st.column_config.TextColumn(
                 "Guest Name", help="Guest's full name"
@@ -650,6 +661,7 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
+
 
 ############################################
 # Tour Prediction Tab
