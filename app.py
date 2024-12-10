@@ -177,7 +177,7 @@ with tab2:
         display_df = resort_df[['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
-        headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}"}
+        headers = {"Authorization": OPENPHONE_API_KEY"}
         phone_number_id = get_all_phone_number_ids(headers)[0]
 
         enriched_df = fetch_communication_info_batch(display_df, headers, phone_number_id)
