@@ -194,22 +194,22 @@ def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses and dates for all guests in the DataFrame.
     """
-    # Check for the Phone_Number column
-    if 'Phone_Number' not in guest_df.columns:
-        st.error("The column 'Phone_Number' is missing in the DataFrame.")
+    # Check for the "Phone Number" column
+    if 'Phone Number' not in guest_df.columns:
+        st.error("The column 'Phone Number' is missing in the DataFrame.")
         st.write("Available columns:", guest_df.columns.tolist())
         return ["No Status"] * len(guest_df), [None] * len(guest_df)
 
     # Clean and validate phone numbers
-    guest_df['Phone_Number'] = guest_df['Phone_Number'].astype(str).str.strip()
-    guest_df['Phone_Number'] = guest_df['Phone_Number'].apply(clean_phone_number)
-    st.write("Cleaned phone numbers:", guest_df['Phone_Number'].tolist())
+    guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
+    guest_df['Phone Number'] = guest_df['Phone Number'].apply(clean_phone_number)
+    st.write("Cleaned phone numbers:", guest_df['Phone Number'].tolist())
 
     statuses = ["No Status"] * len(guest_df)
     dates = [None] * len(guest_df)
 
     valid_rows = [
-        (i, row) for i, row in enumerate(guest_df.itertuples()) if row.Phone_Number
+        (i, row) for i, row in enumerate(guest_df.itertuples()) if row._asdict().get('Phone Number')
     ]
 
     if not valid_rows:
@@ -217,7 +217,7 @@ def fetch_communication_info(guest_df, headers):
         return statuses, dates
 
     for idx, row in valid_rows:
-        phone = row.Phone_Number
+        phone = row._asdict().get('Phone Number')
         st.write(f"Processing phone number: {phone}")
         if phone:
             statuses[idx], dates[idx] = fetch_communication_info_cached(phone, headers)
