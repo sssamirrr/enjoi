@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -355,44 +354,6 @@ import json
 ############################################
 # Marketing Tab
 ############################################
-
-def format_phone_number(phone):
-    """
-    Format phone numbers to E.164 format.
-    Remove invalid characters and handle multiple phone numbers.
-    """
-    # Extract only digits
-    phone = ''.join(filter(str.isdigit, str(phone)))
-
-    # Handle multiple numbers (e.g., separated by /)
-    if '/' in phone:
-        phone = phone.split('/')[0]  # Use the first number
-
-    # Ensure the phone number is in E.164 format
-    if len(phone) == 10:  # Assuming the number is US-based
-        return f"+1{phone}"
-    elif len(phone) > 10 and phone.startswith('1'):
-        return f"+{phone}"
-    elif len(phone) > 10 and not phone.startswith('+'):
-        return f"+{phone}"
-    else:
-        return None  # Invalid number
-
-
-def reset_filters():
-    # Clear the session state for dates
-    for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
-        if key in st.session_state:
-            del st.session_state[key]
-    
-    # Reset to default dates from the session state
-    if 'default_dates' in st.session_state:
-        st.session_state.update(st.session_state['default_dates'])
-    
-    # Force rerun to update the UI
-    st.rerun()
-
-
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -428,6 +389,23 @@ with tab2:
             'check_out_end': max_check_out,
         }
 
+        # Function to reset filters (move this definition outside the if block)
+        def reset_filters():
+            # Retrieve default dates from session state
+            default_dates = st.session_state['default_dates']
+            
+            # Clear the date input widgets by removing their keys from session state
+            keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
+            for key in keys_to_remove:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Reset to default dates
+            st.session_state.update(default_dates)
+            
+            # Force a rerun of the app
+            st.rerun()
+
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
@@ -457,7 +435,7 @@ with tab2:
         )
 
     with col3:
-        if st.button("Reset Dates", key="reset_button"):
+        if st.button("Reset Dates"):
             reset_filters()
 
     # Apply filters to the dataset
@@ -482,224 +460,83 @@ with tab2:
         display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
+        # Function to format phone numbers
+        def format_phone_number(phone):
+            phone = ''.join(filter(str.isdigit, str(phone)))
+            if len(phone) == 10:
+                return f"+1{phone}"
+            elif len(phone) == 11 and phone.startswith('1'):
+                return f"+{phone}"
+            else:
+                return phone  # Return as is if it doesn't match expected patterns
+
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
+        display_df['Communication Status'] = 'Checking...'
+        display_df['Last Communication Date'] = None  # Initialize the new column
 
-        # Filter out rows with invalid phone numbers
-        display_df = display_df[display_df['Phone Number'].notnull()]
+        # Add "Select All" checkbox
+        select_all = st.checkbox("Select All")
+        display_df['Select'] = select_all
 
-        if display_df.empty:
-            st.warning("No valid phone numbers available after formatting.")
-        else:
-            display_df['Communication Status'] = 'Not Fetched'
-            display_df['Last Communication Date'] = None
+        ## Prepare headers for API calls
+        headers = {
+            "Authorization": OPENPHONE_API_KEY,
+            "Content-Type": "application/json"
+        }
 
-            # Add "Select All" checkbox
-            select_all = st.checkbox("Select All")
-            display_df['Select'] = select_all
-
-            # Button to fetch communication info
-            if st.button("Fetch Communication Info"):
-                headers = {
-                    "Authorization": OPENPHONE_API_KEY,
-                    "Content-Type": "application/json"
-                }
-                statuses, dates, durations, agent_names = fetch_communication_info(resort_df, headers)
-                st.session_state['communication_statuses'] = statuses
-                st.session_state['communication_dates'] = dates
-                st.session_state['communication_durations'] = durations
-                st.session_state['communication_agent_names'] = agent_names
-                st.success("Communication information fetched successfully!")
-
-            # Update display_df with fetched data
-            if 'communication_statuses' in st.session_state:
-                display_df['Communication Status'] = st.session_state['communication_statuses']
-                display_df['Last Communication Date'] = st.session_state['communication_dates']
-                display_df['Call Duration (seconds)'] = st.session_state['communication_durations']
-                display_df['Agent Name'] = st.session_state['communication_agent_names']
-            else:
-                display_df['Communication Status'] = "Not Fetched"
-                display_df['Last Communication Date'] = None
-                display_df['Call Duration (seconds)'] = None
-                display_df['Agent Name'] = "Unknown"
-
-            # Reorder columns
-            display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
-
-            # Interactive data editor
-            edited_df = st.data_editor(
-                display_df,
-                column_config={
-                    "Select": st.column_config.CheckboxColumn(
-                        "Select",
-                        help="Select or deselect this guest",
-                        default=select_all
-                    ),
-                    "Guest Name": st.column_config.TextColumn(
-                        "Guest Name",
-                        help="Guest's full name"
-                    ),
-                    "Check In": st.column_config.DateColumn(
-                        "Check In",
-                        help="Check-in date"
-                    ),
-                    "Check Out": st.column_config.DateColumn(
-                        "Check Out",
-                        help="Check-out date"
-                    ),
-                    "Phone Number": st.column_config.TextColumn(
-                        "Phone Number",
-                        help="Guest's phone number"
-                    ),
-                    "Communication Status": st.column_config.TextColumn(
-                        "Communication Status",
-                        help="Last communication status with the guest",
-                        disabled=True
-                    ),
-                    "Last Communication Date": st.column_config.TextColumn(
-                        "Last Communication Date",
-                        help="Date and time of the last communication with the guest",
-                        disabled=True
-                    ),
-                },
-                hide_index=True,
-                use_container_width=True,
-                key="guest_editor"
-            )
-
-
-    ############################################
-    # Message Templates Section
-    ############################################
-    st.markdown("---")
-    st.subheader("Message Templates")
-
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
-    }
-
-    selected_template = st.selectbox(
-        "Choose a Message Template",
-        options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-    ############################################
-    # Send SMS to Selected Guests
-    ############################################
-    if 'edited_df' in locals() and not edited_df.empty:
-        selected_guests = edited_df[edited_df['Select']]
-        num_selected = len(selected_guests)
-        if not selected_guests.empty:
-            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-            if st.button(button_label):
-                openphone_url = "https://api.openphone.com/v1/messages"
-                headers_sms = {
-                    "Authorization": OPENPHONE_API_KEY,
-                    "Content-Type": "application/json"
-                }
-                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
-
-                for idx, row in selected_guests.iterrows():
-                    recipient_phone = row['Phone Number']  # Use actual guest's phone number
-                    payload = {
-                        "content": message_preview,
-                        "from": sender_phone_number,
-                        "to": [recipient_phone]
-                    }
-
-                    try:
-                        response = requests.post(openphone_url, json=payload, headers=headers_sms)
-                        if response.status_code == 202:
-                            st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
-                        else:
-                            st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-                            st.write("Response Status Code:", response.status_code)
-                            try:
-                                st.write("Response Body:", response.json())
-                            except:
-                                st.write("Response Body:", response.text)
-                    except Exception as e:
-                        st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
-
-                    time.sleep(0.2)  # Respect rate limits
-        else:
-            st.info("No guests selected to send SMS.")
-    else:
-        st.info("No guest data available to send SMS.")
+        # Fetch communication statuses and dates
+        statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+        display_df['Communication Status'] = statuses
+        display_df['Last Communication Date'] = dates
+        display_df['Call Duration (seconds)'] = durations
+        display_df['Agent Name'] = agent_names
 
 
 
+        # Reorder columns to have "Select" as the leftmost column
+        display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
 
-
-    ############################################
-    # Message Templates Section
-    ############################################
-    st.markdown("---")
-    st.subheader("Message Templates")
-
-    message_templates = {
-        "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
-        "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
-        "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
-    }
-
-    selected_template = st.selectbox(
-        "Choose a Message Template",
-        options=list(message_templates.keys())
-    )
-
-    message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
-
-    ############################################
-    # Send SMS to Selected Guests
-    ############################################
-    if 'edited_df' in locals() and not edited_df.empty:
-        selected_guests = edited_df[edited_df['Select']]
-        num_selected = len(selected_guests)
-        if not selected_guests.empty:
-            button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-            if st.button(button_label):
-                openphone_url = "https://api.openphone.com/v1/messages"
-                headers_sms = {
-                    "Authorization": OPENPHONE_API_KEY,
-                    "Content-Type": "application/json"
-                }
-                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
-
-                for idx, row in selected_guests.iterrows():
-                    recipient_phone = row['Phone Number']  # Use actual guest's phone number
-                    payload = {
-                        "content": message_preview,
-                        "from": sender_phone_number,
-                        "to": [recipient_phone]
-                    }
-
-                    try:
-                        response = requests.post(openphone_url, json=payload, headers=headers_sms)
-                        if response.status_code == 202:
-                            st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
-                        else:
-                            st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
-                            st.write("Response Status Code:", response.status_code)
-                            try:
-                                st.write("Response Body:", response.json())
-                            except:
-                                st.write("Response Body:", response.text)
-                    except Exception as e:
-                        st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
-
-                    time.sleep(0.2)  # Respect rate limits
-        else:
-            st.info("No guests selected to send SMS.")
-    else:
-        st.info("No guest data available to send SMS.")
-
+        # Interactive data editor
+        edited_df = st.data_editor(
+            display_df,
+            column_config={
+                "Select": st.column_config.CheckboxColumn(
+                    "Select",
+                    help="Select or deselect this guest",
+                    default=select_all
+                ),
+                "Guest Name": st.column_config.TextColumn(
+                    "Guest Name",
+                    help="Guest's full name"
+                ),
+                "Check In": st.column_config.DateColumn(
+                    "Check In",
+                    help="Check-in date"
+                ),
+                "Check Out": st.column_config.DateColumn(
+                    "Check Out",
+                    help="Check-out date"
+                ),
+                "Phone Number": st.column_config.TextColumn(
+                    "Phone Number",
+                    help="Guest's phone number"
+                ),
+                "Communication Status": st.column_config.TextColumn(
+                    "Communication Status",
+                    help="Last communication status with the guest",
+                    disabled=True
+                ),
+                "Last Communication Date": st.column_config.TextColumn(
+                    "Last Communication Date",
+                    help="Date and time of the last communication with the guest",
+                    disabled=True
+                ),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="guest_editor"
+        )
 
     ############################################
     # Message Templates Section
