@@ -24,12 +24,6 @@ st.markdown(
     div[data-baseweb="input"] {
         width: 100%;
     }
-    .stDateInput > div {
-        width: 100%;
-    }
-    div[data-baseweb="input"] > div {
-        width: 100%;
-    }
     .stDataFrame {
         width: 100%;
     }
@@ -53,7 +47,6 @@ OPENPHONE_NUMBER = "+18438972426"
 ############################################
 # Connect to Google Sheets
 ############################################
-
 
 @st.cache_resource
 def get_google_sheet_data():
@@ -90,13 +83,6 @@ if df is None:
 ############################################
 # OpenPhone API Functions
 ############################################
-
-import time
-import requests
-import streamlit as st
-from datetime import datetime
-import pandas as pd
-
 
 def rate_limited_request(url, headers, params, request_type="get"):
     """
