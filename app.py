@@ -457,15 +457,29 @@ with tab2:
         display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
         display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
 
+       
         # Function to format phone numbers
         def format_phone_number(phone):
+            # Remove any non-digit characters
             phone = ''.join(filter(str.isdigit, str(phone)))
+            
+            # If phone is empty or None, return empty string
+            if not phone:
+                return ""
+                
+            # Remove leading 1 if present and length is 11
+            if len(phone) == 11 and phone.startswith('1'):
+                phone = phone[1:]
+            
+            # If we have 10 digits, format with +1
             if len(phone) == 10:
                 return f"+1{phone}"
-            elif len(phone) == 11 and phone.startswith('1'):
+            # If we have 11+ digits and it starts with a valid country code
+            elif len(phone) >= 11:
                 return f"+{phone}"
             else:
-                return phone
+                return f"+1{phone}"  # Default to +1 if format is unclear
+
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
