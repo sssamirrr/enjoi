@@ -178,17 +178,6 @@ def format_phone_number(phone):
     return None
 
 @st.cache_data(show_spinner=False)
-def fetch_communication_info_cached(phone_number, headers):
-    """
-    Cached version of getting communication info for a single phone number
-    """
-    if not phone_number:
-        return "Invalid Number", None
-    try:
-        return get_last_communication_info(phone_number, headers)
-    except Exception as e:
-        st.error(f"Error fetching communication info: {str(e)}")
-        return "Error", None
 
 def fetch_communication_info(guest_df, headers):
     """
