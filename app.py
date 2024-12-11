@@ -948,7 +948,6 @@ with tab2:
         st.write("No data available for the selected resort and date range.")
 
 
-
 ############################################
 # Message Templates Section
 ############################################
