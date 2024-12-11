@@ -408,72 +408,54 @@ with tab2:
             st.rerun()
 
    # Date filters
-    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-    with col1:
-        st.session_state['check_in_start'] = st.date_input(
-            "Check In Date (Start)",
-            value=st.session_state.get('check_in_start', min_check_in),
-            key='check_in_start'
-        )
-
-        st.session_state['check_in_end'] = st.date_input(
-            "Check In Date (End)",
-            value=st.session_state.get('check_in_end', max_check_out),
-            key='check_in_end'
-        )
-
-    with col2:
-        st.session_state['check_out_start'] = st.date_input(
-            "Check Out Date (Start)",
-            value=st.session_state.get('check_out_start', min_check_in),
-            key='check_out_start'
-        )
-
-        st.session_state['check_out_end'] = st.date_input(
-            "Check Out Date (End)",
-            value=st.session_state.get('check_out_end', max_check_out),
-            key='check_out_end'
-        )
-
-    with col3:
-        if st.button("Reset Dates"):
-            if 'default_dates' in st.session_state:
-                defaults = st.session_state['default_dates']
-                st.session_state['check_in_start'] = defaults['check_in_start']
-                st.session_state['check_in_end'] = defaults['check_in_end']
-                st.session_state['check_out_start'] = defaults['check_out_start']
-                st.session_state['check_out_end'] = defaults['check_out_end']
-                
-            else:
-                st.warning("Default dates are not available.")
-
-    # Apply filters to the dataset
-    resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
-    resort_df['Check Out'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').dt.date
-    resort_df = resort_df.dropna(subset=['Check In', 'Check Out'])
-
-    mask = (
-        (resort_df['Check In'] >= st.session_state['check_in_start']) &
-        (resort_df['Check In'] <= st.session_state['check_in_end']) &
-        (resort_df['Check Out'] >= st.session_state['check_out_start']) &
-        (resort_df['Check Out'] <= st.session_state['check_out_end'])
+col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+with col1:
+    check_in_start = st.date_input(
+        "Check In Date (Start)",
+        value=st.session_state.get('check_in_start', min_check_in),
+        key='check_in_start_input'
     )
-    filtered_df = resort_df[mask]
+    # Synchronize session state
+    st.session_state['check_in_start'] = check_in_start
 
-    # Handle empty DataFrame
-    if filtered_df.empty:
-        st.warning("No guests found for the selected filters.")
-        # Initialize display_df with all required columns
-        display_df = pd.DataFrame(columns=[
-            'Select', 'Guest Name', 'Check In', 'Check Out', 
-            'Phone Number', 'Communication Status', 
-            'Last Communication Date', 'Call Duration (seconds)', 
-            'Agent Name'
-        ])
-    else:
-        # Prepare display DataFrame
-        display_df = filtered_df[['Name', 'Check In', 'Check Out', 'Phone Number']].copy()
-        display_df.columns = ['Guest Name', 'Check In', 'Check Out', 'Phone Number']
+    check_in_end = st.date_input(
+        "Check In Date (End)",
+        value=st.session_state.get('check_in_end', max_check_out),
+        key='check_in_end_input'
+    )
+    # Synchronize session state
+    st.session_state['check_in_end'] = check_in_end
+
+with col2:
+    check_out_start = st.date_input(
+        "Check Out Date (Start)",
+        value=st.session_state.get('check_out_start', min_check_in),
+        key='check_out_start_input'
+    )
+    # Synchronize session state
+    st.session_state['check_out_start'] = check_out_start
+
+    check_out_end = st.date_input(
+        "Check Out Date (End)",
+        value=st.session_state.get('check_out_end', max_check_out),
+        key='check_out_end_input'
+    )
+    # Synchronize session state
+    st.session_state['check_out_end'] = check_out_end
+
+with col3:
+    if st.button("Reset Dates"):
+        # Ensure default dates exist in session state
+        if 'default_dates' in st.session_state:
+            defaults = st.session_state['default_dates']
+            st.session_state['check_in_start'] = defaults['check_in_start']
+            st.session_state['check_in_end'] = defaults['check_in_end']
+            st.session_state['check_out_start'] = defaults['check_out_start']
+            st.session_state['check_out_end'] = defaults['check_out_end']
+            st.experimental_set_query_params(reset=True)  # Add a parameter to reset state
+        else:
+            st.warning("Default dates are not available.")
+
 
         # Function to format phone numbers
         def format_phone_number(phone):
