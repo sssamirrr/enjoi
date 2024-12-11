@@ -50,7 +50,6 @@ st.markdown("""
 # Replace with your actual OpenPhone API key and number
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 OPENPHONE_NUMBER = "+18438972426"
-
 ############################################
 # Connect to Google Sheets
 ############################################
@@ -464,13 +463,19 @@ with tab2:
 
     # Proceed only if resort_df is not empty
     if not resort_df.empty:
+        # Ensure 'Arrival Date Short' and 'Departure Date Short' exist
+        for date_col in ['Arrival Date Short', 'Departure Date Short']:
+            if date_col not in resort_df.columns:
+                st.warning(f"'{date_col}' column is missing. Filling with NaT.")
+                resort_df[date_col] = pd.NaT
+
         # Convert date columns to datetime using .loc to avoid chained assignments
-        resort_df.loc[:, 'Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-        resort_df.loc[:, 'Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+        for date_col in ['Arrival Date Short', 'Departure Date Short']:
+            resort_df.loc[:, date_col] = pd.to_datetime(resort_df[date_col], errors='coerce')
 
         # Verify that 'Arrival Date Short' is datetime
         if not pd.api.types.is_datetime64_any_dtype(resort_df['Arrival Date Short']):
-            st.error("'Arrival Date Short' column is not in datetime format.")
+            st.error("'Arrival Date Short' column is not in datetime format after conversion.")
             st.stop()
 
         # Filter the DataFrame based on the selected date ranges
@@ -663,7 +668,7 @@ if 'edited_df' in locals() and not edited_df.empty:
 
             for idx, row in selected_guests.iterrows():
                 recipient_phone = row['Phone Number']  # Use actual guest's phone number
-                if recipient_phone in ['No Data', 'Invalid Number']:
+                if recipient_phone in ['Invalid Number']:
                     st.error(f"Invalid phone number for {row['Guest Name']}. Skipping SMS.")
                     continue
                 payload = {
