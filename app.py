@@ -407,54 +407,58 @@ with tab2:
             # Force a rerun of the app
             st.rerun()
 
-   # Date filters
+  # Date filters
 col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+
+# Define date input widgets and synchronize with session state
 with col1:
+    # Check In Date (Start)
     check_in_start = st.date_input(
         "Check In Date (Start)",
         value=st.session_state.get('check_in_start', min_check_in),
         key='check_in_start_input'
     )
-    # Synchronize session state
     st.session_state['check_in_start'] = check_in_start
 
+    # Check In Date (End)
     check_in_end = st.date_input(
         "Check In Date (End)",
         value=st.session_state.get('check_in_end', max_check_out),
         key='check_in_end_input'
     )
-    # Synchronize session state
     st.session_state['check_in_end'] = check_in_end
 
 with col2:
+    # Check Out Date (Start)
     check_out_start = st.date_input(
         "Check Out Date (Start)",
         value=st.session_state.get('check_out_start', min_check_in),
         key='check_out_start_input'
     )
-    # Synchronize session state
     st.session_state['check_out_start'] = check_out_start
 
+    # Check Out Date (End)
     check_out_end = st.date_input(
         "Check Out Date (End)",
         value=st.session_state.get('check_out_end', max_check_out),
         key='check_out_end_input'
     )
-    # Synchronize session state
     st.session_state['check_out_end'] = check_out_end
 
+# Reset Button
 with col3:
     if st.button("Reset Dates"):
-        # Ensure default dates exist in session state
         if 'default_dates' in st.session_state:
             defaults = st.session_state['default_dates']
+            # Update session state with default values
             st.session_state['check_in_start'] = defaults['check_in_start']
             st.session_state['check_in_end'] = defaults['check_in_end']
             st.session_state['check_out_start'] = defaults['check_out_start']
             st.session_state['check_out_end'] = defaults['check_out_end']
-            st.experimental_set_query_params(reset=True)  # Add a parameter to reset state
+            st.rerun()  # Trigger app rerun to refresh the filters
         else:
             st.warning("Default dates are not available.")
+
 
 
         # Function to format phone numbers
