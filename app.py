@@ -348,6 +348,15 @@ def reset_filters():
     else:
         st.warning("Default dates are not available.")
 
+def format_phone_number(phone):
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    else:
+        return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
+
 with tab2:
     st.title("🏖️ Marketing Information by Resort")
 
