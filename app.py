@@ -359,6 +359,10 @@ import json
 # Marketing Tab
 ############################################
 
+############################################
+# Marketing Tab
+############################################
+
 import streamlit as st
 import pandas as pd
 
@@ -405,11 +409,17 @@ with tab2:
         options=sorted(df['Market'].unique())
     )
 
+    # Initialize or check session state variables
+    if 'communication_data' not in st.session_state:
+        st.session_state['communication_data'] = {}
+
+    if selected_resort not in st.session_state['communication_data']:
+        st.session_state['communication_data'][selected_resort] = None
+
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Initialize or check session state variables
     if 'default_dates' not in st.session_state:
         st.session_state['default_dates'] = {}
 
@@ -477,7 +487,7 @@ with tab2:
         if st.button("Reset Dates"):
             if 'default_dates' in st.session_state:
                 reset_filters()
-                st.session_state.pop('communication_data', None)
+                st.session_state['communication_data'][selected_resort] = None
             else:
                 st.warning("Default dates are not available.")
 
@@ -507,13 +517,14 @@ with tab2:
         display_df = filtered_df[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
 
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        display_df['Communication Status'] = 'Not Checked'
-        display_df['Last Communication Date'] = None
-        display_df['Call Duration (seconds)'] = None
-        display_df['Agent Name'] = None
 
-        if 'communication_data' in st.session_state:
-            display_df = st.session_state['communication_data']
+        if st.session_state['communication_data'][selected_resort] is not None:
+            display_df = st.session_state['communication_data'][selected_resort]
+        else:
+            display_df['Communication Status'] = 'Not Checked'
+            display_df['Last Communication Date'] = None
+            display_df['Call Duration (seconds)'] = None
+            display_df['Agent Name'] = None
 
         select_all = st.checkbox("Select All")
         display_df['Select'] = select_all
@@ -530,7 +541,7 @@ with tab2:
             display_df['Call Duration (seconds)'] = durations
             display_df['Agent Name'] = agent_names
 
-            st.session_state['communication_data'] = display_df.copy()
+            st.session_state['communication_data'][selected_resort] = display_df.copy()
 
         required_columns = [
             'Select', 'Guest Name', 'Check In', 'Check Out', 
@@ -585,7 +596,7 @@ with tab2:
             key="guest_editor"
         )
 
-        st.session_state['communication_data'] = edited_df.copy()
+        st.session_state['communication_data'][selected_resort] = edited_df.copy()
     else:
         st.write("No data available for the selected resort and date range.")
 
