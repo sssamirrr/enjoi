@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -354,7 +355,6 @@ import json
 ############################################
 # Marketing Tab
 ############################################
-
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -366,6 +366,8 @@ with tab2:
 
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
+if resort_df.empty:
+    st.warning("Selected resort data is unavailable. Please choose another resort.")
     st.subheader(f"Guest Information for {selected_resort}")
 
     # Initialize or check session state variables
@@ -397,9 +399,7 @@ with tab2:
             
             # Clear the date input widgets by removing their keys from session state
             keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
-            for key in keys_to_remove:
-                if key in st.session_state:
-                    del st.session_state[key]
+            st.session_state = {k: v for k, v in st.session_state.items() if k not in keys_to_remove}
             
             # Reset to default dates
             st.session_state.update(default_dates)
@@ -485,7 +485,13 @@ with tab2:
         display_df['Agent Name'] = None
 
     # Add "Select All" checkbox
-    select_all = st.checkbox("Select All")
+    def handle_select_all(display_df, key):
+    if st.checkbox("Select All", key=key):
+        display_df['Select'] = True
+    else:
+        display_df['Select'] = False
+
+handle_select_all(display_df, "select_all_checkbox")
     display_df['Select'] = select_all
 
     # Create a button to trigger fetching communication info
@@ -516,10 +522,18 @@ with tab2:
             display_df[col] = None
 
     # Reorder columns to have "Select" as the leftmost column
+    if not all(col in display_df.columns for col in required_columns):
+    missing_cols = [col for col in required_columns if col not in display_df.columns]
+    st.warning(f"Missing columns: {missing_cols}. Initializing them with default values.")
+    for col in missing_cols:
+        display_df[col] = None
+
     display_df = display_df[required_columns]
 
     # Interactive data editor
-    edited_df = st.data_editor(
+    edited_df = persisted_df = st.session_state.get('persisted_display_df', display_df)
+edited_df = st.data_editor(
+persisted_df,
         display_df,
         column_config={
             "Select": st.column_config.CheckboxColumn(
@@ -558,7 +572,6 @@ with tab2:
         use_container_width=True,
         key="guest_editor"
     )
-
 
     ############################################
     # Message Templates Section
