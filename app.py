@@ -358,6 +358,10 @@ import json
 # Marketing Tab
 ############################################
 
+############################################
+# Marketing Tab
+############################################
+
 import streamlit as st
 import pandas as pd
 
@@ -395,17 +399,21 @@ if 'display_df' not in st.session_state:
     st.session_state['display_df'] = None
 
 with tab2:
-    st.title ("Marketing Information by Resort")
+    st.title("Marketing Information by Resort")
 
     # Resort selection
-    selected_resort = st.selectbox(
-        "Select Resort",
-        options=sorted(df['Market'].unique())
-    )
+    if 'Market' in df.columns:
+        selected_resort = st.selectbox(
+            "Select Resort",
+            options=sorted(df['Market'].unique())
+        )
+        # Filter for selected resort
+        resort_df = df[df['Market'] == selected_resort].copy()
+    else:
+        st.error("The column 'Market' is missing in the DataFrame.")
+        resort_df = pd.DataFrame()  # Empty DataFrame as a fallback
 
-    # Filter for selected resort
-    resort_df = df[df['Market'] == selected_resort].copy()
-    st.subheader(f"Guest Information for {selected_resort}")
+    st.subheader(f"Guest Information for {selected_resort if 'selected_resort' in locals() else 'Unknown'}")
 
     # Initialize or check session state variables
     if 'default_dates' not in st.session_state:
