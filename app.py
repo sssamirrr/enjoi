@@ -478,11 +478,19 @@ with tab2:
 
             # Apply phone number formatting
             display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
+
+            # Ensure persisted data exists
             if 'persisted_data' not in st.session_state:
                 st.session_state['persisted_data'] = display_df.copy()
             else:
                 for column in ['Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']:
-                    display_df[column] = st.session_state['persisted_data'].get(column, display_df[column])
+                    if column not in display_df.columns:
+                        display_df[column] = None
+                    if column in st.session_state['persisted_data']:
+                        display_df[column] = st.session_state['persisted_data'][column]
+
+        # Save updated data back to session state
+        st.session_state['persisted_data'] = display_df
 
         # Add "Select All" checkbox
         def handle_select_all(display_df, key):
@@ -492,6 +500,47 @@ with tab2:
                 display_df['Select'] = False
 
         handle_select_all(display_df, "select_all_checkbox")
+
+        # Interactive data editor
+        edited_df = st.data_editor(
+            display_df,
+            column_config={
+                "Select": st.column_config.CheckboxColumn(
+                    "Select",
+                    help="Select or deselect this guest",
+                    default=False
+                ),
+                "Guest Name": st.column_config.TextColumn(
+                    "Guest Name",
+                    help="Guest's full name"
+                ),
+                "Check In": st.column_config.DateColumn(
+                    "Check In",
+                    help="Check-in date"
+                ),
+                "Check Out": st.column_config.DateColumn(
+                    "Check Out",
+                    help="Check-out date"
+                ),
+                "Phone Number": st.column_config.TextColumn(
+                    "Phone Number",
+                    help="Guest's phone number"
+                ),
+                "Communication Status": st.column_config.TextColumn(
+                    "Communication Status",
+                    help="Last communication status with the guest",
+                    disabled=True
+                ),
+                "Last Communication Date": st.column_config.TextColumn(
+                    "Last Communication Date",
+                    help="Date and time of the last communication with the guest",
+                    disabled=True
+                ),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="guest_editor"
+        )
 
 
 
