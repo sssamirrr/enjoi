@@ -43,9 +43,12 @@ st.markdown("""
 # Hard-coded OpenPhone Credentials
 ############################################
 
-# Replace with your actual OpenPhone API key and number
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
-OPENPHONE_NUMBER = "+18438972426"
+# **IMPORTANT:** For security reasons, **do not** hard-code your API keys in the script.
+# Instead, use Streamlit's [Secrets Management](https://docs.streamlit.io/en/stable/secrets.html).
+# Below is a placeholder. Replace with st.secrets.
+
+OPENPHONE_API_KEY = st.secrets["OPENPHONE_API_KEY"]
+OPENPHONE_NUMBER = st.secrets["OPENPHONE_NUMBER"]
 
 ############################################
 # Connect to Google Sheets
@@ -102,7 +105,7 @@ def rate_limited_request(url, headers, params, request_type='get'):
         elapsed_time = response.elapsed.total_seconds()
         st.write(f"API call to {url} completed in {elapsed_time:.2f} seconds with status code {response.status_code}")
 
-        if response.status_code == 200 or response.status_code == 202:
+        if response.status_code in [200, 202]:
             return response.json()
         else:
             st.warning(f"API Error: {response.status_code}")
@@ -213,6 +216,36 @@ if 'communication_info' not in st.session_state:
     st.session_state['communication_info'] = {}
 
 ############################################
+# Define Helper Functions
+############################################
+
+def reset_filters():
+    """
+    Reset the date filters to their default values.
+    """
+    default_dates = st.session_state.get('default_dates', {})
+    if default_dates:
+        st.session_state['check_in_start_input_marketing'] = default_dates.get('check_in_start', datetime.today().date())
+        st.session_state['check_in_end_input_marketing'] = default_dates.get('check_in_end', datetime.today().date())
+        st.session_state['check_out_start_input_marketing'] = default_dates.get('check_out_start', datetime.today().date())
+        st.session_state['check_out_end_input_marketing'] = default_dates.get('check_out_end', datetime.today().date())
+        st.rerun()
+    else:
+        st.warning("Default dates are not available.")
+
+def format_phone_number(phone):
+    """
+    Format phone numbers to the E.164 format.
+    """
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    else:
+        return 'Invalid Number'  # Changed from 'No Data' to 'Invalid Number' for clarity
+
+############################################
 # Create Tabs
 ############################################
 tab1, tab2, tab3 = st.tabs(["Dashboard", "Marketing", "Tour Prediction"])
@@ -235,8 +268,8 @@ with tab1:
         )
 
     with col2:
-        min_date = pd.to_datetime(df['Arrival Date Short']).min().date()
-        max_date = pd.to_datetime(df['Arrival Date Short']).max().date()
+        min_date = pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date()
+        max_date = pd.to_datetime(df['Arrival Date Short'], errors='coerce').max().date()
         date_range = st.date_input(
             "Select Date Range",
             value=(min_date, max_date),
@@ -260,8 +293,8 @@ with tab1:
     
     if isinstance(date_range, tuple) and len(date_range) == 2:
         filtered_df = filtered_df[
-            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date >= date_range[0]) &
-            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date <= date_range[1])
+            (pd.to_datetime(filtered_df['Arrival Date Short'], errors='coerce').dt.date >= date_range[0]) &
+            (pd.to_datetime(filtered_df['Arrival Date Short'], errors='coerce').dt.date <= date_range[1])
         ]
     
     if selected_rate_codes:
@@ -341,20 +374,6 @@ with tab1:
 ############################################
 # Marketing Tab
 ############################################
-
-def reset_filters():
-    """
-    Reset the date filters to their default values.
-    """
-    default_dates = st.session_state.get('default_dates', {})
-    if default_dates:
-        st.session_state['check_in_start_input_marketing'] = default_dates.get('check_in_start', datetime.today().date())
-        st.session_state['check_in_end_input_marketing'] = default_dates.get('check_in_end', datetime.today().date())
-        st.session_state['check_out_start_input_marketing'] = default_dates.get('check_out_start', datetime.today().date())
-        st.session_state['check_out_end_input_marketing'] = default_dates.get('check_out_end', datetime.today().date())
-        st.rerun()
-    else:
-        st.warning("Default dates are not available.")
 
 with tab2:
     st.title("🏖️ Marketing Information by Resort")
@@ -444,9 +463,14 @@ with tab2:
 
     # Proceed only if resort_df is not empty
     if not resort_df.empty:
-        # Convert date columns to datetime
+        # Convert date columns to datetime using .loc to avoid chained assignments
         resort_df.loc[:, 'Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         resort_df.loc[:, 'Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        # Verify that 'Arrival Date Short' is datetime
+        if not pd.api.types.is_datetime64_any_dtype(resort_df['Arrival Date Short']):
+            st.error("'Arrival Date Short' column is not in datetime format.")
+            st.stop()
 
         # Filter the DataFrame based on the selected date ranges
         filtered_df = resort_df[
@@ -512,7 +536,7 @@ with tab2:
         if st.button("Fetch Communication Info", key="fetch_comm_info_marketing"):
             ## Prepare headers for API calls
             headers = {
-                "Authorization": OPENPHONE_API_KEY,  # Replace with your API key
+                "Authorization": OPENPHONE_API_KEY,  # Ensure this is securely stored
                 "Content-Type": "application/json"
             }
 
@@ -676,13 +700,13 @@ with tab3:
     with col1:
         start_date = st.date_input(
             "Start Date for Tour Prediction", 
-            value=pd.to_datetime(df['Arrival Date Short']).min().date(),
+            value=pd.to_datetime(df['Arrival Date Short'], errors='coerce').min().date(),
             key="tour_start_date"
         )
     with col2:
         end_date = st.date_input(
             "End Date for Tour Prediction", 
-            value=pd.to_datetime(df['Arrival Date Short']).max().date(),
+            value=pd.to_datetime(df['Arrival Date Short'], errors='coerce').max().date(),
             key="tour_end_date"
         )
 
