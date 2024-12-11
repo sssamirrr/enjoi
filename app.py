@@ -327,6 +327,9 @@ with tab1:
 # Marketing Tab
 ############################################
 
+import streamlit as st
+import pandas as pd
+
 # Function to reset filters
 def reset_filters():
     # Retrieve default dates from session state
@@ -347,7 +350,7 @@ def reset_filters():
     # st.session_state['communication_info'] = {}
     
     # Rerun the app to apply changes
-    st.experimental_rerun()
+    st.rerun()
 
 # Function to format phone numbers
 def format_phone_number(phone):
@@ -364,7 +367,7 @@ if 'communication_info' not in st.session_state:
     st.session_state['communication_info'] = {}
 
 with tab2:
-    st.title ("🏖️ Marketing Information by Resort")
+    st.title("🏖️ Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -534,7 +537,7 @@ with tab2:
                 st.session_state['communication_info'][phone]['Agent Name'] = agent
 
             # After updating session state, rerun to reflect changes
-            st.experimental_rerun()
+            st.rerun()
 
         # Ensure all required columns exist before reordering
         required_columns = [
@@ -632,7 +635,7 @@ if 'edited_df' in locals() and not edited_df.empty:
     selected_guests = edited_df[edited_df['Select']]
     num_selected = len(selected_guests)
     if not selected_guests.empty:
-        button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected!= 1 else ''}"
+        button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
         if st.button(button_label, key="send_sms_button"):
             openphone_url = "https://api.openphone.com/v1/messages"
             headers_sms = {
@@ -668,7 +671,6 @@ if 'edited_df' in locals() and not edited_df.empty:
         st.info("No guests selected to send SMS.")
 else:
     st.info("No guest data available to send SMS.")
-
 
 ############################################
 # Tour Prediction Tab
