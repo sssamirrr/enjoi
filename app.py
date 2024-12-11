@@ -354,6 +354,7 @@ import json
 ############################################
 # Marketing Tab
 ############################################
+
 with tab2:
     st.title("📊 Marketing Information by Resort")
 
@@ -557,6 +558,7 @@ with tab2:
         use_container_width=True,
         key="guest_editor"
     )
+
 
     ############################################
     # Message Templates Section
