@@ -91,18 +91,26 @@ def rate_limited_request(url, headers, params, request_type='get'):
     """
     time.sleep(1 / 5)  # 5 requests per second max
     try:
-        response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
-        if response:
-            elapsed_time = response.elapsed.total_seconds()
-            st.write(f"API call to {url} completed in {elapsed_time:.2f} seconds with status code {response.status_code}")
-            if response.status_code == 200:
-                return response.json()
-            else:
-                st.warning(f"API Error: {response.status_code}")
-                st.warning(f"Response: {response.text}")
-        return None
+        if request_type == 'get':
+            response = requests.get(url, headers=headers, params=params)
+        elif request_type == 'post':
+            response = requests.post(url, headers=headers, json=params)
+        else:
+            st.warning(f"Unsupported request type: {request_type}")
+            return None
+
+        elapsed_time = response.elapsed.total_seconds()
+        st.write(f"API call to {url} completed in {elapsed_time:.2f} seconds with status code {response.status_code}")
+
+        if response.status_code == 200 or response.status_code == 202:
+            return response.json()
+        else:
+            st.warning(f"API Error: {response.status_code}")
+            st.warning(f"Response: {response.text}")
+            return None
+
     except Exception as e:
-        st.warning(f"Exception during request: {str(e)}")
+        st.warning(f"Exception during request to {url}: {str(e)}")
         return None
 
 def get_all_phone_number_ids(headers):
@@ -110,7 +118,7 @@ def get_all_phone_number_ids(headers):
     Retrieve all phoneNumberIds associated with your OpenPhone account.
     """
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    response_data = rate_limited_request(phone_numbers_url, headers, {}, 'get')
     return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
 def get_last_communication_info(phone_number, headers):
@@ -136,7 +144,7 @@ def get_last_communication_info(phone_number, headers):
     for phone_number_id in phone_number_ids:
         # Fetch messages
         params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
-        messages_response = rate_limited_request(messages_url, headers, params)
+        messages_response = rate_limited_request(messages_url, headers, params, 'get')
         if messages_response and 'data' in messages_response:
             for message in messages_response['data']:
                 msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
@@ -147,7 +155,7 @@ def get_last_communication_info(phone_number, headers):
                     agent_name = message.get("user", {}).get("name", "Unknown Agent")  # Extract agent name
 
         # Fetch calls
-        calls_response = rate_limited_request(calls_url, headers, params)
+        calls_response = rate_limited_request(calls_url, headers, params, 'get')
         if calls_response and 'data' in calls_response:
             for call in calls_response['data']:
                 call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
@@ -348,15 +356,6 @@ def reset_filters():
     else:
         st.warning("Default dates are not available.")
 
-def format_phone_number(phone):
-    phone = ''.join(filter(str.isdigit, str(phone)))
-    if len(phone) == 10:
-        return f"+1{phone}"
-    elif len(phone) == 11 and phone.startswith('1'):
-        return f"+{phone}"
-    else:
-        return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
-
 with tab2:
     st.title("🏖️ Marketing Information by Resort")
 
@@ -446,8 +445,8 @@ with tab2:
     # Proceed only if resort_df is not empty
     if not resort_df.empty:
         # Convert date columns to datetime
-        resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-        resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+        resort_df.loc[:, 'Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        resort_df.loc[:, 'Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
         # Filter the DataFrame based on the selected date ranges
         filtered_df = resort_df[
@@ -461,7 +460,7 @@ with tab2:
         columns_needed = ['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']
         for col in columns_needed:
             if col not in filtered_df.columns:
-                filtered_df[col] = 'No Data'
+                filtered_df.loc[:, col] = 'No Data'
 
         # Prepare display DataFrame
         filtered_df = filtered_df.rename(columns={
@@ -473,11 +472,13 @@ with tab2:
         display_df = filtered_df[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
 
         # Apply phone number formatting
-        display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        display_df['Communication Status'] = 'Not Checked'
-        display_df['Last Communication Date'] = None  # Initialize the new column
-        display_df['Call Duration (seconds)'] = None
-        display_df['Agent Name'] = None
+        display_df.loc[:, 'Phone Number'] = display_df['Phone Number'].apply(format_phone_number).astype(str)
+
+        # Initialize communication columns
+        display_df.loc[:, 'Communication Status'] = 'Not Checked'
+        display_df.loc[:, 'Last Communication Date'] = None  # Initialize the new column
+        display_df.loc[:, 'Call Duration (seconds)'] = None
+        display_df.loc[:, 'Agent Name'] = None
 
         # Populate communication info from session state
         communication_status = []
@@ -498,14 +499,14 @@ with tab2:
                 call_duration.append(None)
                 agent_name_list.append(None)
 
-        display_df['Communication Status'] = communication_status
-        display_df['Last Communication Date'] = last_comm_date
-        display_df['Call Duration (seconds)'] = call_duration
-        display_df['Agent Name'] = agent_name_list
+        display_df.loc[:, 'Communication Status'] = communication_status
+        display_df.loc[:, 'Last Communication Date'] = last_comm_date
+        display_df.loc[:, 'Call Duration (seconds)'] = call_duration
+        display_df.loc[:, 'Agent Name'] = agent_name_list
 
         # Add "Select All" checkbox with a unique key
         select_all = st.checkbox("Select All", key="select_all_checkbox_marketing")
-        display_df['Select'] = select_all
+        display_df.loc[:, 'Select'] = select_all
 
         # Create a button to trigger fetching communication info with a unique key
         if st.button("Fetch Communication Info", key="fetch_comm_info_marketing"):
@@ -540,7 +541,7 @@ with tab2:
 
         for col in required_columns:
             if col not in display_df.columns:
-                display_df[col] = None
+                display_df.loc[:, col] = None
 
         # Reorder columns to have "Select" as the leftmost column
         display_df = display_df[required_columns]
