@@ -220,7 +220,7 @@ tab1, tab2, tab3 = st.tabs(["Dashboard", "Marketing", "Tour Prediction"])
 # Dashboard Tab
 ############################################
 with tab1:
-    st.title(" Hotel Reservations Dashboard")
+    st.title("🏨 Hotel Reservations Dashboard")
     st.markdown("Real-time analysis of hotel reservations")
 
     # Filters
@@ -354,9 +354,8 @@ import json
 ############################################
 # Marketing Tab
 ############################################
-
 with tab2:
-    st.title("\ud83d\udcca Marketing Information by Resort")
+    st.title("📊 Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -366,6 +365,8 @@ with tab2:
 
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
+if resort_df.empty:
+    st.warning("Selected resort data is unavailable. Please choose another resort.")
     st.subheader(f"Guest Information for {selected_resort}")
 
     # Initialize or check session state variables
@@ -390,47 +391,46 @@ with tab2:
             'check_out_end': max_check_out,
         }
 
-    # Function to reset filters
-    def reset_filters():
-        default_dates = st.session_state['default_dates']
-
-        # Clear the date input widgets by removing their keys from session state
-        keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
-        for key in keys_to_remove:
-            if key in st.session_state:
-                del st.session_state[key]
-
-        # Reset to default dates
-        st.session_state.update(default_dates)
-
-        # Force a rerun of the app
-        st.experimental_rerun()
+        # Function to reset filters (move this definition outside the if block)
+        def reset_filters():
+            # Retrieve default dates from session state
+            default_dates = st.session_state['default_dates']
+            
+            # Clear the date input widgets by removing their keys from session state
+            keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
+            st.session_state = {k: v for k, v in st.session_state.items() if k not in keys_to_remove}
+            
+            # Reset to default dates
+            st.session_state.update(default_dates)
+            
+            # Force a rerun of the app
+            st.rerun()
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state.get('check_in_start', st.session_state['default_dates']['check_in_start']),
+            value=st.session_state.get('check_in_start', min_check_in),
             key='check_in_start'
         )
 
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state.get('check_in_end', st.session_state['default_dates']['check_in_end']),
+            value=st.session_state.get('check_in_end', max_check_out),
             key='check_in_end'
         )
 
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state.get('check_out_start', st.session_state['default_dates']['check_out_start']),
+            value=st.session_state.get('check_out_start', min_check_in),
             key='check_out_start'
         )
 
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state.get('check_out_end', st.session_state['default_dates']['check_out_end']),
+            value=st.session_state.get('check_out_end', max_check_out),
             key='check_out_end'
         )
 
@@ -484,8 +484,14 @@ with tab2:
         display_df['Agent Name'] = None
 
     # Add "Select All" checkbox
-    select_all = st.checkbox("Select All")
-    display_df['Select'] = select_all
+    def handle_select_all(display_df, key):
+        if st.checkbox("Select All", key=key):
+            display_df['Select'] = True
+        else:
+            display_df['Select'] = False
+    
+    handle_select_all(display_df, "select_all_checkbox")
+        display_df['Select'] = select_all
 
     # Create a button to trigger fetching communication info
     if st.button("Fetch Communication Info"):
@@ -515,10 +521,18 @@ with tab2:
             display_df[col] = None
 
     # Reorder columns to have "Select" as the leftmost column
+    if not all(col in display_df.columns for col in required_columns):
+    missing_cols = [col for col in required_columns if col not in display_df.columns]
+    st.warning(f"Missing columns: {missing_cols}. Initializing them with default values.")
+    for col in missing_cols:
+        display_df[col] = None
+
     display_df = display_df[required_columns]
 
     # Interactive data editor
-    edited_df = st.data_editor(
+    edited_df = persisted_df = st.session_state.get('persisted_display_df', display_df)
+edited_df = st.data_editor(
+persisted_df,
         display_df,
         column_config={
             "Select": st.column_config.CheckboxColumn(
