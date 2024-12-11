@@ -357,22 +357,25 @@ import json
 ############################################
 # Marketing Tab
 ############################################
+############################################
+# Marketing Tab
+############################################
 
 import streamlit as st
 import pandas as pd
 
+# Move function definitions outside conditional blocks
 def reset_filters():
+    # Retrieve default dates from session state
     default_dates = st.session_state['default_dates']
-    
+
+    # Reset the date inputs to default values by updating their session state
     st.session_state['check_in_start_input'] = default_dates['check_in_start']
     st.session_state['check_in_end_input'] = default_dates['check_in_end']
     st.session_state['check_out_start_input'] = default_dates['check_out_start']
     st.session_state['check_out_end_input'] = default_dates['check_out_end']
 
-    for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
-        if key in st.session_state:
-            del st.session_state[key]
-    
+    # Rerun the app to apply changes
     st.rerun()
 
 # Function to format phone numbers
@@ -383,10 +386,20 @@ def format_phone_number(phone):
     elif len(phone) == 11 and phone.startswith('1'):
         return f"+{phone}"
     else:
-        return 'No Data'
+        return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
 
-# Assuming df is your main DataFrame loaded earlier
-# df = pd.read_csv('your_data.csv')
+# Fetch communication info (mock function for demonstration)
+def fetch_communication_info(df, headers):
+    # Mock data for demonstration purposes
+    statuses = ['Checked'] * len(df)
+    dates = ['2024-12-01'] * len(df)
+    durations = [120] * len(df)
+    agent_names = ['Agent A'] * len(df)
+    return statuses, dates, durations, agent_names
+
+# Main application logic
+if 'display_df' not in st.session_state:
+    st.session_state['display_df'] = None
 
 with tab2:
     st.title("Marketing Information by Resort")
@@ -404,11 +417,8 @@ with tab2:
     # Initialize or check session state variables
     if 'default_dates' not in st.session_state:
         st.session_state['default_dates'] = {}
-        st.session_state['display_df'] = pd.DataFrame()  # Initialize this to store current data
-        st.session_state['selected_resort'] = selected_resort
-        st.session_state['select_all'] = False
 
-    # Set default dates
+    # Set default dates to the earliest check-in and latest check-out
     if not resort_df.empty:
         arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
@@ -426,6 +436,7 @@ with tab2:
             'check_out_end': max_check_out,
         }
     else:
+        # If resort_df is empty, set default dates to today's date
         min_check_in = pd.to_datetime('today').date()
         max_check_out = pd.to_datetime('today').date()
         st.session_state['default_dates'] = {
@@ -435,7 +446,7 @@ with tab2:
             'check_out_end': max_check_out,
         }
 
-    # Date filters with session state synchronization
+    # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
@@ -471,13 +482,11 @@ with tab2:
         if st.button("Reset Dates"):
             reset_filters()
 
-    # Process data if resort_df has data
+    # Proceed only if resort_df is not empty
     if not resort_df.empty:
-        # Ensure dates are datetime
         resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
 
-        # Filter data based on selected dates
         filtered_df = resort_df[
             (resort_df['Arrival Date Short'].dt.date >= st.session_state['check_in_start']) &
             (resort_df['Arrival Date Short'].dt.date <= st.session_state['check_in_end']) &
@@ -485,13 +494,11 @@ with tab2:
             (resort_df['Departure Date Short'].dt.date <= st.session_state['check_out_end'])
         ].copy()
 
-        # Ensure required columns exist
-        col_needed = ['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']
-        for col in col_needed:
+        columns_needed = ['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']
+        for col in columns_needed:
             if col not in filtered_df.columns:
                 filtered_df[col] = 'No Data'
 
-        # Prepare display DataFrame
         filtered_df = filtered_df.rename(columns={
             'Name': 'Guest Name',
             'Arrival Date Short': 'Check In',
@@ -499,39 +506,31 @@ with tab2:
         })
 
         display_df = filtered_df[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
-
-        # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        
-        # Retrieve or initialize communication info from session state
-        if selected_resort != st.session_state['selected_resort'] or 'display_df' not in st.session_state or st.session_state['display_df'].empty:
-            display_df['Communication Status'] = 'Not Checked'
-            st.session_state['selected_resort'] = selected_resort
+
+        # Check if display_df exists in session state
+        if st.session_state['display_df'] is not None:
+            display_df = st.session_state['display_df']
         else:
-            display_df['Communication Status'] = st.session_state['display_df']['Communication Status']
-            display_df['Last Communication Date'] = st.session_state['display_df']['Last Communication Date']
-            display_df['Call Duration (seconds)'] = st.session_state['display_df']['Call Duration (seconds)']
-            display_df['Agent Name'] = st.session_state['display_df']['Agent Name']
+            display_df['Communication Status'] = 'Not Checked'
+            display_df['Last Communication Date'] = None
+            display_df['Call Duration (seconds)'] = None
+            display_df['Agent Name'] = None
 
-        display_df['Select'] = st.session_state['select_all']
+        select_all = st.checkbox("Select All")
+        display_df['Select'] = select_all
 
-        # Fetch communication info if button is clicked
         if st.button("Fetch Communication Info"):
-            headers = {
-                "Authorization": OPENPHONE_API_KEY,
-                "Content-Type": "application/json"
-            }
-
+            headers = {"Authorization": "OPENPHONE_API_KEY", "Content-Type": "application/json"}
             statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
             display_df['Communication Status'] = statuses
             display_df['Last Communication Date'] = dates
             display_df['Call Duration (seconds)'] = durations
             display_df['Agent Name'] = agent_names
 
-            # Update the session state
+            # Save the updated DataFrame to session state
             st.session_state['display_df'] = display_df
 
-        # Ensure all columns exist
         required_columns = [
             'Select', 'Guest Name', 'Check In', 'Check Out', 
             'Phone Number', 'Communication Status', 
@@ -543,31 +542,29 @@ with tab2:
             if col not in display_df.columns:
                 display_df[col] = None
 
-        # Reorder columns
         display_df = display_df[required_columns]
 
-        # Interactive data editor
         edited_df = st.data_editor(
             display_df,
             column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Select or deselect this guest",
-                    default=st.session_state['select_all']
-                ),
-                # ... (Rest of your column configurations)
+                "Select": st.column_config.CheckboxColumn("Select", help="Select or deselect this guest", default=select_all),
+                "Guest Name": st.column_config.TextColumn("Guest Name", help="Guest's full name"),
+                "Check In": st.column_config.DateColumn("Check In", help="Check-in date"),
+                "Check Out": st.column_config.DateColumn("Check Out", help="Check-out date"),
+                "Phone Number": st.column_config.TextColumn("Phone Number", help="Guest's phone number"),
+                "Communication Status": st.column_config.TextColumn("Communication Status", help="Last communication status with the guest", disabled=True),
+                "Last Communication Date": st.column_config.TextColumn("Last Communication Date", help="Date and time of the last communication with the guest", disabled=True),
             },
             hide_index=True,
             use_container_width=True,
             key="guest_editor"
         )
 
-        # Update session state when user interacts with the table
-        if edited_df is not None:
-            st.session_state['display_df'] = edited_df
-            st.session_state['select_all'] = edited_df['Select'].any()
+        # Save edited DataFrame back to session state
+        st.session_state['display_df'] = edited_df
     else:
         st.write("No data available for the selected resort and date range.")
+
 
 ############################################
 # Message Templates Section
