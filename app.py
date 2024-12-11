@@ -354,6 +354,9 @@ import json
 ############################################
 # Marketing Tab with Communication Status Persistence
 ############################################
+# Initialize communication_info in session state if it doesn't exist
+if 'communication_info' not in st.session_state:
+    st.session_state['communication_info'] = {}
 
 with tab2:
     st.title("  Marketing Information by Resort")
@@ -475,20 +478,11 @@ with tab2:
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        
-        # Populate Communication Info from session_state
-        display_df['Communication Status'] = display_df['Phone Number'].apply(
-            lambda x: st.session_state['communication_info'].get(x, {}).get('Communication Status', 'Not Checked')
-        )
-        display_df['Last Communication Date'] = display_df['Phone Number'].apply(
-            lambda x: st.session_state['communication_info'].get(x, {}).get('Last Communication Date', None)
-        )
-        display_df['Call Duration (seconds)'] = display_df['Phone Number'].apply(
-            lambda x: st.session_state['communication_info'].get(x, {}).get('Call Duration (seconds)', None)
-        )
-        display_df['Agent Name'] = display_df['Phone Number'].apply(
-            lambda x: st.session_state['communication_info'].get(x, {}).get('Agent Name', 'Unknown')
-        )
+        display_df['Communication Status'] = 'Not Checked'
+        display_df['Last Communication Date'] = None
+        display_df['Call Duration (seconds)'] = None
+        display_df['Agent Name'] = None
+
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
