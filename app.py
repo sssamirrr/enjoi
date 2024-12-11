@@ -220,7 +220,7 @@ tab1, tab2, tab3 = st.tabs(["Dashboard", "Marketing", "Tour Prediction"])
 # Dashboard Tab
 ############################################
 with tab1:
-    st.title("🏨 Hotel Reservations Dashboard")
+    st.title(" Hotel Reservations Dashboard")
     st.markdown("Real-time analysis of hotel reservations")
 
     # Filters
