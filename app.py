@@ -356,7 +356,7 @@ import json
 ############################################
 
 with tab2:
-    st.title("📊 Marketing Information by Resort")
+    st.title("\ud83d\udcca Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -392,46 +392,45 @@ with tab2:
 
     # Function to reset filters
     def reset_filters():
-        # Retrieve default dates from session state
         default_dates = st.session_state['default_dates']
-        
+
         # Clear the date input widgets by removing their keys from session state
         keys_to_remove = ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
-        
+
         # Reset to default dates
         st.session_state.update(default_dates)
-        
+
         # Force a rerun of the app
-        st.rerun()
+        st.experimental_rerun()
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state.get('check_in_start', min_check_in),
+            value=st.session_state.get('check_in_start', st.session_state['default_dates']['check_in_start']),
             key='check_in_start'
         )
 
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state.get('check_in_end', max_check_out),
+            value=st.session_state.get('check_in_end', st.session_state['default_dates']['check_in_end']),
             key='check_in_end'
         )
 
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state.get('check_out_start', min_check_in),
+            value=st.session_state.get('check_out_start', st.session_state['default_dates']['check_out_start']),
             key='check_out_start'
         )
 
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state.get('check_out_end', max_check_out),
+            value=st.session_state.get('check_out_end', st.session_state['default_dates']['check_out_end']),
             key='check_out_end'
         )
 
@@ -558,7 +557,6 @@ with tab2:
         use_container_width=True,
         key="guest_editor"
     )
-
 
     ############################################
     # Message Templates Section
