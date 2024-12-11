@@ -354,6 +354,9 @@ import json
 ############################################
 # Marketing Tab
 ############################################
+############################################
+# Marketing Tab
+############################################
 
 import streamlit as st
 import pandas as pd
@@ -387,13 +390,12 @@ def format_phone_number(phone):
     else:
         return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
 
-# Assuming df is your main DataFrame loaded earlier
-# df should be defined before this code block
-# For example:
-# df = pd.read_csv('your_data.csv')
+# Initialize session state for DataFrame if not already initialized
+if 'display_df' not in st.session_state:
+    st.session_state['display_df'] = None
 
 with tab2:
-    st.title ("🏖️ Marketing Information by Resort")
+    st.title ("\ud83c\udfd6\ufe0f Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -512,10 +514,18 @@ with tab2:
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        display_df['Communication Status'] = 'Not Checked'
-        display_df['Last Communication Date'] = None  # Initialize the new column
-        display_df['Call Duration (seconds)'] = None
-        display_df['Agent Name'] = None
+
+        # Persist updates in session state
+        if st.session_state['display_df'] is not None:
+            previous_display_df = pd.DataFrame(st.session_state['display_df'])
+            for col in display_df.columns:
+                if col in previous_display_df.columns:
+                    display_df[col] = previous_display_df[col]
+
+        display_df['Communication Status'] = display_df.get('Communication Status', 'Not Checked')
+        display_df['Last Communication Date'] = display_df.get('Last Communication Date', None)
+        display_df['Call Duration (seconds)'] = display_df.get('Call Duration (seconds)', None)
+        display_df['Agent Name'] = display_df.get('Agent Name', None)
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
@@ -550,6 +560,9 @@ with tab2:
 
         # Reorder columns to have "Select" as the leftmost column
         display_df = display_df[required_columns]
+
+        # Update session state
+        st.session_state['display_df'] = display_df
 
         # Interactive data editor
         edited_df = st.data_editor(
@@ -593,7 +606,6 @@ with tab2:
         )
     else:
         st.write("No data available for the selected resort and date range.")
-
 
 ############################################
 # Message Templates Section
