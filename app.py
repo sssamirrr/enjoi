@@ -746,7 +746,7 @@ def format_phone_number(phone):
 # df = pd.read_csv('your_data.csv')
 
 with tab2:
-    st.title("   Marketing Information by Resort")
+    st.title("�� Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -946,6 +946,7 @@ with tab2:
         )
     else:
         st.write("No data available for the selected resort and date range.")
+
 
 
 ############################################
