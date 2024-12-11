@@ -407,7 +407,7 @@ with tab2:
             # Force a rerun of the app
             st.rerun()
 
-  # Date filters
+ # Date filters
 col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
 
 # Define date input widgets and synchronize with session state
@@ -550,7 +550,6 @@ edited_df = st.data_editor(
     use_container_width=True,
     key="guest_editor"
 )
-
 
 
     ############################################
