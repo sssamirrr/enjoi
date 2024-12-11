@@ -91,20 +91,19 @@ def rate_limited_request(url, headers, params, request_type='get'):
     """
     time.sleep(1 / 5)  # 5 requests per second max
     try:
-        st.write(f"Making API call to {url} with params: {params}")
-        start_time = time.time()
         response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
-        elapsed_time = time.time() - start_time
-        st.write(f"API call completed in {elapsed_time:.2f} seconds")
-
-        if response and response.status_code == 200:
-            return response.json()
-        else:
-            st.warning(f"API Error: {response.status_code}")
-            st.warning(f"Response: {response.text}")
+        if response:
+            elapsed_time = response.elapsed.total_seconds()
+            st.write(f"API call to {url} completed in {elapsed_time:.2f} seconds with status code {response.status_code}")
+            if response.status_code == 200:
+                return response.json()
+            else:
+                st.warning(f"API Error: {response.status_code}")
+                st.warning(f"Response: {response.text}")
+        return None
     except Exception as e:
         st.warning(f"Exception during request: {str(e)}")
-    return None
+        return None
 
 def get_all_phone_number_ids(headers):
     """
@@ -132,7 +131,7 @@ def get_last_communication_info(phone_number, headers):
     latest_type = None
     latest_direction = None
     call_duration = None
-    agent_name = None  # New variable to store the agent's name
+    agent_name = None  # Variable to store the agent's name
 
     for phone_number_id in phone_number_ids:
         # Fetch messages
@@ -196,6 +195,14 @@ def fetch_communication_info(guest_df, headers):
             agent_names.append("Unknown")
 
     return statuses, dates, durations, agent_names
+
+############################################
+# Initialize Session State
+############################################
+
+# Initialize communication_info in session state if not already present
+if 'communication_info' not in st.session_state:
+    st.session_state['communication_info'] = {}
 
 ############################################
 # Create Tabs
@@ -327,23 +334,19 @@ with tab1:
 # Marketing Tab
 ############################################
 
-# Function to reset filters to defaults
 def reset_filters():
-    default_dates = st.session_state['default_dates']
-    for key, value in default_dates.items():
-        if key in st.session_state:
-            del st.session_state[key]  # Delete the existing key to allow widget reinitialization
-    st.session_state.update(default_dates)  # Update with the default values
-
-# Function to format phone numbers
-def format_phone_number(phone):
-    phone = ''.join(filter(str.isdigit, str(phone)))
-    if len(phone) == 10:
-        return f"+1{phone}"
-    elif len(phone) == 11 and phone.startswith('1'):
-        return f"+{phone}"
+    """
+    Reset the date filters to their default values.
+    """
+    default_dates = st.session_state.get('default_dates', {})
+    if default_dates:
+        st.session_state['check_in_start_input_marketing'] = default_dates.get('check_in_start', datetime.today().date())
+        st.session_state['check_in_end_input_marketing'] = default_dates.get('check_in_end', datetime.today().date())
+        st.session_state['check_out_start_input_marketing'] = default_dates.get('check_out_start', datetime.today().date())
+        st.session_state['check_out_end_input_marketing'] = default_dates.get('check_out_end', datetime.today().date())
+        st.rerun()
     else:
-        return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
+        st.warning("Default dates are not available.")
 
 with tab2:
     st.title("🏖️ Marketing Information by Resort")
@@ -371,8 +374,8 @@ with tab2:
         arrival_dates = arrival_dates.dropna()
         departure_dates = departure_dates.dropna()
 
-        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
-        max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
+        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else datetime.today().date()
+        max_check_out = departure_dates.max().date() if not departure_dates.empty else datetime.today().date()
 
         st.session_state['default_dates'] = {
             'check_in_start': min_check_in,
@@ -382,8 +385,8 @@ with tab2:
         }
     else:
         # If resort_df is empty, set default dates to today's date
-        min_check_in = pd.to_datetime('today').date()
-        max_check_out = pd.to_datetime('today').date()
+        min_check_in = datetime.today().date()
+        max_check_out = datetime.today().date()
         st.session_state['default_dates'] = {
             'check_in_start': min_check_in,
             'check_in_end': max_check_out,
@@ -429,11 +432,7 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates", key="reset_dates_marketing"):
-            # Ensure default dates exist in session state
-            if 'default_dates' in st.session_state:
-                reset_filters()
-            else:
-                st.warning("Default dates are not available.")
+            reset_filters()
 
     # Proceed only if resort_df is not empty
     if not resort_df.empty:
@@ -466,9 +465,10 @@ with tab2:
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-
-        # Debug: Display formatted phone numbers
-        st.write("Formatted Phone Numbers:", display_df['Phone Number'].unique())
+        display_df['Communication Status'] = 'Not Checked'
+        display_df['Last Communication Date'] = None  # Initialize the new column
+        display_df['Call Duration (seconds)'] = None
+        display_df['Agent Name'] = None
 
         # Populate communication info from session state
         communication_status = []
@@ -494,9 +494,6 @@ with tab2:
         display_df['Call Duration (seconds)'] = call_duration
         display_df['Agent Name'] = agent_name_list
 
-        # Debug: Display communication_status
-        st.write("Communication Statuses:", display_df['Communication Status'].unique())
-
         # Add "Select All" checkbox with a unique key
         select_all = st.checkbox("Select All", key="select_all_checkbox_marketing")
         display_df['Select'] = select_all
@@ -512,12 +509,6 @@ with tab2:
             # Fetch communication statuses and dates
             statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
 
-            # Debug: Display fetched data
-            st.write("Fetched Statuses:", statuses)
-            st.write("Fetched Dates:", dates)
-            st.write("Fetched Durations:", durations)
-            st.write("Fetched Agent Names:", agent_names)
-
             # Update session state with fetched communication info
             for phone, status, date, duration, agent in zip(display_df['Phone Number'], statuses, dates, durations, agent_names):
                 if phone not in st.session_state['communication_info']:
@@ -526,9 +517,6 @@ with tab2:
                 st.session_state['communication_info'][phone]['Last Communication Date'] = date
                 st.session_state['communication_info'][phone]['Call Duration (seconds)'] = duration
                 st.session_state['communication_info'][phone]['Agent Name'] = agent
-
-            # Debug: Display updated communication_info
-            st.write("Updated Communication Info:", st.session_state['communication_info'])
 
             # After updating session state, rerun to reflect changes
             st.rerun()
@@ -640,7 +628,7 @@ if 'edited_df' in locals() and not edited_df.empty:
 
             for idx, row in selected_guests.iterrows():
                 recipient_phone = row['Phone Number']  # Use actual guest's phone number
-                if recipient_phone == 'No Data' or recipient_phone == 'Invalid Number':
+                if recipient_phone in ['No Data', 'Invalid Number']:
                     st.error(f"Invalid phone number for {row['Guest Name']}. Skipping SMS.")
                     continue
                 payload = {
