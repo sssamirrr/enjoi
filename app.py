@@ -354,13 +354,15 @@ import json
 ############################################
 # Marketing Tab
 ############################################
-
 ############################################
 # Marketing Tab
 ############################################
 
 import streamlit as st
 import pandas as pd
+import requests
+import time
+from datetime import datetime
 
 # Function to reset date filters
 def reset_filters():
@@ -378,7 +380,7 @@ def reset_filters():
         if key in st.session_state:
             del st.session_state[key]
     
-    # Optionally, remove communication data related to the current selection
+    # Remove communication data related to the current selection, if it exists
     current_key = st.session_state.get('current_selection_key')
     if current_key and 'communication_data' in st.session_state:
         st.session_state['communication_data'].pop(current_key, None)
@@ -533,6 +535,7 @@ with tab2:
         # Retrieve communication data from session_state if available
         comm_data = st.session_state['communication_data'].get(selection_identifier, {})
         if comm_data:
+            # Populate communication fields if data exists
             display_df['Communication Status'] = display_df['Phone Number'].apply(
                 lambda x: comm_data.get(x, 'Not Checked')
             )
