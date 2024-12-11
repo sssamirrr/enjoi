@@ -47,8 +47,9 @@ st.markdown("""
 # Instead, use Streamlit's [Secrets Management](https://docs.streamlit.io/en/stable/secrets.html).
 # Below is a placeholder. Replace with st.secrets.
 
-OPENPHONE_API_KEY = st.secrets["OPENPHONE_API_KEY"]
-OPENPHONE_NUMBER = st.secrets["OPENPHONE_NUMBER"]
+# Replace with your actual OpenPhone API key and number
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_NUMBER = "+18438972426"
 
 ############################################
 # Connect to Google Sheets
