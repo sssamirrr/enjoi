@@ -354,22 +354,11 @@ import json
 ############################################
 # Marketing Tab
 ############################################
-############################################
-# Marketing Tab
-############################################
-############################################
-# Marketing Tab
-############################################
-############################################
-# Marketing Tab
-############################################
 
 import streamlit as st
 import pandas as pd
-import requests
-import json
-from datetime import datetime
 
+# Move function definitions outside conditional blocks
 def reset_filters():
     # Retrieve default dates from session state
     default_dates = st.session_state['default_dates']
@@ -385,10 +374,6 @@ def reset_filters():
         if key in st.session_state:
             del st.session_state[key]
     
-    # Clear communication info when resetting
-    if 'communication_info' in st.session_state:
-        del st.session_state['communication_info']
-    
     # Rerun the app to apply changes
     st.rerun()
 
@@ -402,61 +387,13 @@ def format_phone_number(phone):
     else:
         return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
 
-def fetch_communication_info(display_df, headers):
-    # Initialize lists to store results
-    statuses = []
-    dates = []
-    durations = []
-    agent_names = []
-
-    # Iterate through phone numbers and fetch communication info
-    for phone in display_df['Phone Number']:
-        try:
-            # Construct API endpoint (replace with your actual OpenPhone API endpoint)
-            url = f"https://api.openphone.com/v1/communications?phone_number={phone}"
-            
-            # Make API request
-            response = requests.get(url, headers=headers)
-            
-            # Check if request was successful
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Extract communication details (adjust based on actual API response structure)
-                if data.get('communications'):
-                    latest_comm = data['communications'][0]
-                    statuses.append(latest_comm.get('status', 'Unknown'))
-                    dates.append(latest_comm.get('timestamp', None))
-                    durations.append(latest_comm.get('duration', None))
-                    agent_names.append(latest_comm.get('agent', {}).get('name', 'Unknown'))
-                else:
-                    statuses.append('No Communication')
-                    dates.append(None)
-                    durations.append(None)
-                    agent_names.append(None)
-            else:
-                # Handle API error
-                statuses.append('API Error')
-                dates.append(None)
-                durations.append(None)
-                agent_names.append(None)
-        
-        except Exception as e:
-            # Handle any exceptions during API call
-            statuses.append('Error')
-            dates.append(None)
-            durations.append(None)
-            agent_names.append(None)
-            st.error(f"Error fetching communication info for {phone}: {str(e)}")
-
-    return statuses, dates, durations, agent_names
+# Assuming df is your main DataFrame loaded earlier
+# df should be defined before this code block
+# For example:
+# df = pd.read_csv('your_data.csv')
 
 with tab2:
-    st.title("Marketing Information by Resort")
-
-    # Initialize session state for communication info if not exists
-    if 'communication_info' not in st.session_state:
-        st.session_state['communication_info'] = None
+    st.title ("🏖️ Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -575,15 +512,10 @@ with tab2:
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        
-        # Initialize display DataFrame with communication info from session state or default values
-        if st.session_state['communication_info'] is not None:
-            display_df = st.session_state['communication_info'].copy()
-        else:
-            display_df['Communication Status'] = 'Not Checked'
-            display_df['Last Communication Date'] = None
-            display_df['Call Duration (seconds)'] = None
-            display_df['Agent Name'] = None
+        display_df['Communication Status'] = 'Not Checked'
+        display_df['Last Communication Date'] = None  # Initialize the new column
+        display_df['Call Duration (seconds)'] = None
+        display_df['Agent Name'] = None
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
@@ -591,8 +523,9 @@ with tab2:
 
         # Create a button to trigger fetching communication info
         if st.button("Fetch Communication Info"):
+            ## Prepare headers for API calls
             headers = {
-                "Authorization": OPENPHONE_API_KEY,
+                "Authorization": OPENPHONE_API_KEY,  # Replace with your API key
                 "Content-Type": "application/json"
             }
 
@@ -602,9 +535,6 @@ with tab2:
             display_df['Last Communication Date'] = dates
             display_df['Call Duration (seconds)'] = durations
             display_df['Agent Name'] = agent_names
-
-            # Store communication info in session state
-            st.session_state['communication_info'] = display_df
 
         # Ensure all required columns exist before reordering
         required_columns = [
@@ -661,12 +591,9 @@ with tab2:
             use_container_width=True,
             key="guest_editor"
         )
-
-        # Update the session state with any changes made in the data editor
-        st.session_state['communication_info'] = edited_df
-
     else:
         st.write("No data available for the selected resort and date range.")
+
 
 ############################################
 # Message Templates Section
