@@ -177,7 +177,7 @@ def fetch_communication_info(guest_df, headers):
 
     for _, row in guest_df.iterrows():
         phone = row['Phone Number']
-        if phone:
+        if phone and phone != 'No Data' and phone != 'Invalid Number':
             try:
                 status, last_date, duration, agent_name = get_last_communication_info(phone, headers)
                 statuses.append(status)
@@ -220,13 +220,14 @@ with tab1:
         )
 
     with col2:
-        min_date = pd.to_datetime(df['Arrival Date Short']).min()
-        max_date = pd.to_datetime(df['Arrival Date Short']).max()
+        min_date = pd.to_datetime(df['Arrival Date Short']).min().date()
+        max_date = pd.to_datetime(df['Arrival Date Short']).max().date()
         date_range = st.date_input(
             "Select Date Range",
             value=(min_date, max_date),
             min_value=min_date,
-            max_value=max_date
+            max_value=max_date,
+            key="dashboard_date_range"
         )
 
     with col3:
@@ -322,39 +323,17 @@ with tab1:
             )
             st.plotly_chart(fig_arrivals, use_container_width=True)
 
-
 ############################################
 # Marketing Tab
 ############################################
 
-############################################
-# Marketing Tab
-############################################
-
-import streamlit as st
-import pandas as pd
-
-# Function to reset filters
+# Function to reset filters to defaults
 def reset_filters():
-    # Retrieve default dates from session state
     default_dates = st.session_state['default_dates']
-    
-    # Reset the date inputs to default values by updating their session state
-    st.session_state['check_in_start_input'] = default_dates['check_in_start']
-    st.session_state['check_in_end_input'] = default_dates['check_in_end']
-    st.session_state['check_out_start_input'] = default_dates['check_out_start']
-    st.session_state['check_out_end_input'] = default_dates['check_out_end']
-    
-    # Remove the individual date values from session state to ensure they reset
-    for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
+    for key, value in default_dates.items():
         if key in st.session_state:
-            del st.session_state[key]
-    
-    # Optionally, clear communication_info if you want to reset communication statuses
-    # st.session_state['communication_info'] = {}
-    
-    # Rerun the app to apply changes
-    st.rerun()
+            del st.session_state[key]  # Delete the existing key to allow widget reinitialization
+    st.session_state.update(default_dates)  # Update with the default values
 
 # Function to format phone numbers
 def format_phone_number(phone):
@@ -366,10 +345,6 @@ def format_phone_number(phone):
     else:
         return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
 
-# Initialize communication_info in session state if not already present
-if 'communication_info' not in st.session_state:
-    st.session_state['communication_info'] = {}
-
 with tab2:
     st.title("🏖️ Marketing Information by Resort")
 
@@ -377,7 +352,7 @@ with tab2:
     selected_resort = st.selectbox(
         "Select Resort",
         options=sorted(df['Market'].unique()),
-        key="select_resort"
+        key="select_resort_marketing"
     )
 
     # Filter for selected resort
@@ -421,16 +396,16 @@ with tab2:
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state.get('check_in_start_input', st.session_state['default_dates']['check_in_start']),
-            key='check_in_start_input'
+            value=st.session_state.get('check_in_start_input_marketing', st.session_state['default_dates']['check_in_start']),
+            key='check_in_start_input_marketing'
         )
         # Synchronize session state
         st.session_state['check_in_start'] = check_in_start
 
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state.get('check_in_end_input', st.session_state['default_dates']['check_in_end']),
-            key='check_in_end_input'
+            value=st.session_state.get('check_in_end_input_marketing', st.session_state['default_dates']['check_in_end']),
+            key='check_in_end_input_marketing'
         )
         # Synchronize session state
         st.session_state['check_in_end'] = check_in_end
@@ -438,22 +413,22 @@ with tab2:
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state.get('check_out_start_input', st.session_state['default_dates']['check_out_start']),
-            key='check_out_start_input'
+            value=st.session_state.get('check_out_start_input_marketing', st.session_state['default_dates']['check_out_start']),
+            key='check_out_start_input_marketing'
         )
         # Synchronize session state
         st.session_state['check_out_start'] = check_out_start
 
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state.get('check_out_end_input', st.session_state['default_dates']['check_out_end']),
-            key='check_out_end_input'
+            value=st.session_state.get('check_out_end_input_marketing', st.session_state['default_dates']['check_out_end']),
+            key='check_out_end_input_marketing'
         )
         # Synchronize session state
         st.session_state['check_out_end'] = check_out_end
 
     with col3:
-        if st.button("Reset Dates", key="reset_dates_button"):
+        if st.button("Reset Dates", key="reset_dates_marketing"):
             # Ensure default dates exist in session state
             if 'default_dates' in st.session_state:
                 reset_filters()
@@ -523,11 +498,11 @@ with tab2:
         st.write("Communication Statuses:", display_df['Communication Status'].unique())
 
         # Add "Select All" checkbox with a unique key
-        select_all = st.checkbox("Select All", key="select_all_checkbox")
+        select_all = st.checkbox("Select All", key="select_all_checkbox_marketing")
         display_df['Select'] = select_all
 
         # Create a button to trigger fetching communication info with a unique key
-        if st.button("Fetch Communication Info", key="fetch_comm_info_button"):
+        if st.button("Fetch Communication Info", key="fetch_comm_info_marketing"):
             ## Prepare headers for API calls
             headers = {
                 "Authorization": OPENPHONE_API_KEY,  # Replace with your API key
@@ -621,7 +596,7 @@ with tab2:
             },
             hide_index=True,
             use_container_width=True,
-            key="guest_editor"
+            key="guest_editor_marketing"
         )
     else:
         st.write("No data available for the selected resort and date range.")
@@ -655,7 +630,7 @@ if 'edited_df' in locals() and not edited_df.empty:
     num_selected = len(selected_guests)
     if not selected_guests.empty:
         button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-        if st.button(button_label, key="send_sms_button"):
+        if st.button(button_label, key="send_sms_button_marketing"):
             openphone_url = "https://api.openphone.com/v1/messages"
             headers_sms = {
                 "Authorization": OPENPHONE_API_KEY,
@@ -665,6 +640,9 @@ if 'edited_df' in locals() and not edited_df.empty:
 
             for idx, row in selected_guests.iterrows():
                 recipient_phone = row['Phone Number']  # Use actual guest's phone number
+                if recipient_phone == 'No Data' or recipient_phone == 'Invalid Number':
+                    st.error(f"Invalid phone number for {row['Guest Name']}. Skipping SMS.")
+                    continue
                 payload = {
                     "content": message_preview,
                     "from": sender_phone_number,
