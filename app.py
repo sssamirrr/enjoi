@@ -362,6 +362,9 @@ import json
 ############################################
 # Marketing Tab
 ############################################
+############################################
+# Marketing Tab
+############################################
 
 import streamlit as st
 import pandas as pd
@@ -554,49 +557,51 @@ with tab2:
             if col not in display_df.columns:
                 display_df[col] = None
 
-        display_df = display_df[required_columns]
+        # Ensure display_df is a valid DataFrame
+        if isinstance(display_df, pd.DataFrame):
+            display_df = display_df[required_columns]
 
-        edited_df = st.data_editor(
-            display_df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Select or deselect this guest",
-                    default=select_all
-                ),
-                "Guest Name": st.column_config.TextColumn(
-                    "Guest Name",
-                    help="Guest's full name"
-                ),
-                "Check In": st.column_config.DateColumn(
-                    "Check In",
-                    help="Check-in date"
-                ),
-                "Check Out": st.column_config.DateColumn(
-                    "Check Out",
-                    help="Check-out date"
-                ),
-                "Phone Number": st.column_config.TextColumn(
-                    "Phone Number",
-                    help="Guest's phone number"
-                ),
-                "Communication Status": st.column_config.TextColumn(
-                    "Communication Status",
-                    help="Last communication status with the guest",
-                    disabled=True
-                ),
-                "Last Communication Date": st.column_config.TextColumn(
-                    "Last Communication Date",
-                    help="Date and time of the last communication with the guest",
-                    disabled=True
-                ),
-            },
-            hide_index=True,
-            use_container_width=True,
-            key="guest_editor"
-        )
+            edited_df = st.data_editor(
+                display_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select or deselect this guest",
+                        default=select_all
+                    ),
+                    "Guest Name": st.column_config.TextColumn(
+                        "Guest Name",
+                        help="Guest's full name"
+                    ),
+                    "Check In": st.column_config.DateColumn(
+                        "Check In",
+                        help="Check-in date"
+                    ),
+                    "Check Out": st.column_config.DateColumn(
+                        "Check Out",
+                        help="Check-out date"
+                    ),
+                    "Phone Number": st.column_config.TextColumn(
+                        "Phone Number",
+                        help="Guest's phone number"
+                    ),
+                    "Communication Status": st.column_config.TextColumn(
+                        "Communication Status",
+                        help="Last communication status with the guest",
+                        disabled=True
+                    ),
+                    "Last Communication Date": st.column_config.TextColumn(
+                        "Last Communication Date",
+                        help="Date and time of the last communication with the guest",
+                        disabled=True
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="guest_editor"
+            )
 
-        st.session_state['communication_data'][selected_resort] = edited_df.copy()
+            st.session_state['communication_data'][selected_resort] = edited_df.copy()
     else:
         st.write("No data available for the selected resort and date range.")
 
