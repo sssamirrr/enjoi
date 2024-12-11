@@ -407,29 +407,29 @@ with tab2:
             # Force a rerun of the app
             st.rerun()
 
-    # Date filters
+   # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
-        check_in_start = st.date_input(
+        st.session_state['check_in_start'] = st.date_input(
             "Check In Date (Start)",
             value=st.session_state.get('check_in_start', min_check_in),
             key='check_in_start'
         )
 
-        check_in_end = st.date_input(
+        st.session_state['check_in_end'] = st.date_input(
             "Check In Date (End)",
             value=st.session_state.get('check_in_end', max_check_out),
             key='check_in_end'
         )
 
     with col2:
-        check_out_start = st.date_input(
+        st.session_state['check_out_start'] = st.date_input(
             "Check Out Date (Start)",
             value=st.session_state.get('check_out_start', min_check_in),
             key='check_out_start'
         )
 
-        check_out_end = st.date_input(
+        st.session_state['check_out_end'] = st.date_input(
             "Check Out Date (End)",
             value=st.session_state.get('check_out_end', max_check_out),
             key='check_out_end'
@@ -437,7 +437,15 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            reset_filters()
+            if 'default_dates' in st.session_state:
+                defaults = st.session_state['default_dates']
+                st.session_state['check_in_start'] = defaults['check_in_start']
+                st.session_state['check_in_end'] = defaults['check_in_end']
+                st.session_state['check_out_start'] = defaults['check_out_start']
+                st.session_state['check_out_end'] = defaults['check_out_end']
+                st.experimental_rerun()  # Trigger app rerun to refresh the filters
+            else:
+                st.warning("Default dates are not available.")
 
     # Apply filters to the dataset
     resort_df['Check In'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dt.date
