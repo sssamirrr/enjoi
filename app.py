@@ -485,13 +485,13 @@ if resort_df.empty:
 
     # Add "Select All" checkbox
     def handle_select_all(display_df, key):
-        if st.checkbox("Select All", key=key):
-            display_df['Select'] = True
-        else:
-            display_df['Select'] = False
-    
-    handle_select_all(display_df, "select_all_checkbox")
-        display_df['Select'] = select_all
+    if st.checkbox("Select All", key=key):
+        display_df['Select'] = True
+    else:
+        display_df['Select'] = False
+
+handle_select_all(display_df, "select_all_checkbox")
+    display_df['Select'] = select_all
 
     # Create a button to trigger fetching communication info
     if st.button("Fetch Communication Info"):
