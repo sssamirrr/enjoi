@@ -327,6 +327,10 @@ with tab1:
 # Marketing Tab
 ############################################
 
+############################################
+# Marketing Tab
+############################################
+
 import streamlit as st
 import pandas as pd
 
@@ -488,6 +492,9 @@ with tab2:
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
 
+        # Debug: Display formatted phone numbers
+        st.write("Formatted Phone Numbers:", display_df['Phone Number'].unique())
+
         # Populate communication info from session state
         communication_status = []
         last_comm_date = []
@@ -512,6 +519,9 @@ with tab2:
         display_df['Call Duration (seconds)'] = call_duration
         display_df['Agent Name'] = agent_name_list
 
+        # Debug: Display communication_status
+        st.write("Communication Statuses:", display_df['Communication Status'].unique())
+
         # Add "Select All" checkbox with a unique key
         select_all = st.checkbox("Select All", key="select_all_checkbox")
         display_df['Select'] = select_all
@@ -526,7 +536,13 @@ with tab2:
 
             # Fetch communication statuses and dates
             statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
-            
+
+            # Debug: Display fetched data
+            st.write("Fetched Statuses:", statuses)
+            st.write("Fetched Dates:", dates)
+            st.write("Fetched Durations:", durations)
+            st.write("Fetched Agent Names:", agent_names)
+
             # Update session state with fetched communication info
             for phone, status, date, duration, agent in zip(display_df['Phone Number'], statuses, dates, durations, agent_names):
                 if phone not in st.session_state['communication_info']:
@@ -535,6 +551,9 @@ with tab2:
                 st.session_state['communication_info'][phone]['Last Communication Date'] = date
                 st.session_state['communication_info'][phone]['Call Duration (seconds)'] = duration
                 st.session_state['communication_info'][phone]['Agent Name'] = agent
+
+            # Debug: Display updated communication_info
+            st.write("Updated Communication Info:", st.session_state['communication_info'])
 
             # After updating session state, rerun to reflect changes
             st.rerun()
