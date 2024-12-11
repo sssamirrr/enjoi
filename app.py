@@ -85,12 +85,6 @@ if df is None:
 # OpenPhone API Functions
 ############################################
 
-import time
-import requests
-import streamlit as st
-from datetime import datetime
-import pandas as pd
-
 def rate_limited_request(url, headers, params, request_type='get'):
     """
     Make an API request while respecting rate limits.
@@ -170,7 +164,6 @@ def get_last_communication_info(phone_number, headers):
 
     return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_name
 
-
 def fetch_communication_info(guest_df, headers):
     """
     Fetch communication statuses, dates, durations, and agent names for all guests in the DataFrame.
@@ -203,13 +196,6 @@ def fetch_communication_info(guest_df, headers):
             agent_names.append("Unknown")
 
     return statuses, dates, durations, agent_names
-
-
-    # Output results for debugging
-    st.write("Statuses:", statuses)
-    st.write("Dates:", dates)
-    return statuses, dates
-
 
 ############################################
 # Create Tabs
@@ -337,136 +323,9 @@ with tab1:
             st.plotly_chart(fig_arrivals, use_container_width=True)
 
 
-# Function to reset filters to defaults
-def reset_filters():
-    default_dates = st.session_state['default_dates']
-    for key, value in default_dates.items():
-        if key in st.session_state:
-            del st.session_state[key]  # Delete the existing key to allow widget reinitialization
-    st.session_state.update(default_dates)  # Update with the default values
-
-
-import pandas as pd
-import requests
-import time
-import json
-
 ############################################
 # Marketing Tab
 ############################################
-
-import streamlit as st
-import pandas as pd
-
-# Move function definitions outside conditional blocks
-def reset_filters():
-    # Retrieve default dates from session state
-    default_dates = st.session_state['default_dates']
-    
-    # Reset the date inputs to default values by updating their session state
-    st.session_state['check_in_start_input'] = default_dates['check_in_start']
-    st.session_state['check_in_end_input'] = default_dates['check_in_end']
-    st.session_state['check_out_start_input'] = default_dates['check_out_start']
-    st.session_state['check_out_end_input'] = default_dates['check_out_end']
-    
-    # Remove the individual date values from session state to ensure they reset
-    for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
-        if key in st.session_state:
-            del st.session_state[key]
-    
-    # Rerun the app to apply changes
-    st.rerun()
-
-# Function to format phone numbers
-def format_phone_number(phone):
-    phone = ''.join(filter(str.isdigit, str(phone)))
-    if len(phone) == 10:
-        return f"+1{phone}"
-    elif len(phone) == 11 and phone.startswith('1'):
-        return f"+{phone}"
-    else:
-        return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
-
-# Assuming df is your main DataFrame loaded earlier
-# df should be defined before this code block
-# For example:
-# df = pd.read_csv('your_data.csv')
-
-with tab2:
-    st.title ("🏖️ Marketing Information by Resort")
-
-    # Resort selection
-    selected_resort = st.selectbox(
-        "Select Resort",
-        options=sorted(df['Market'].unique())
-    )
-
-    # Filter for selected resort
-    resort_df = df[df['Market'] == selected_resort].copy()
-    st.subheader(f"Guest Information for {selected_resort}")
-
-    # Initialize or check session state variables
-    if 'default_dates' not in st.session_state:
-        st.session_state['default_dates'] = {}
-
-    # Set default dates to the earliest check-in and latest check-out
-    if not resort_df.empty:
-        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
-
-        arrival_dates = arrival_dates.dropna()
-        departure_dates = departure_dates.dropna()
-
-        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
-        max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
-
-        st.session_state['default_dates'] = {
-            'check_in_start': min_check_in,
-            'check_in_end': max_check_out,
-            'check_out_start': min_check_in,
-            'check_out_end': max_check_out,
-        }
-    else:
-        # If resort_df is empty, set default dates to today's date
-        min_check_in = pd.to_datetime('today').date()
-        max_check_out = pd.to_datetime('today').date()
-        st.session_state['default_dates'] = {
-            'check_in_start': min_check_in,
-            'check_in_end': max_check_out,
-            'check_out_start': min_check_in,
-            'check_out_end': max_check_out,
-        }
-
-    # Date filters
-    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
-    with col1:
-        check_in_start = st.date_input(
-            "Check In Date (Start)",
-            value=st.session_state.get('check_in_start_input', st.session_state['default_dates']['check_in_start']),
-            key='check_in_start_input'
-        )
-        # Synchronize session state
-        st.session_state['check_in_start'] = check_in_start
-
-        check_in_end = st.date_input(
-            "Check In Date (End)",
-            value=st.session_state.get('check_in_end_input', st.session_state['default_dates']['check_in_end']),
-            key='check_in_end_input'
-        )
-        # Synchronize session state
-        st.session_state['check_in_end'] = check_in_end
-
-    with col2:
-        check_out_start = st.date_input(
-            "Check Out Date (Start)",
-            value=st.session_state.get('check_out_start_input', st.session_state['default_dates']['check_out_start']),
-            key='check_out_start_input'
-        )############################################
-# Marketing Tab
-############################################
-
-import streamlit as st
-import pandas as pd
 
 # Function to reset filters
 def reset_filters():
@@ -510,7 +369,8 @@ with tab2:
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
-        options=sorted(df['Market'].unique())
+        options=sorted(df['Market'].unique()),
+        key="select_resort"
     )
 
     # Filter for selected resort
@@ -586,7 +446,7 @@ with tab2:
         st.session_state['check_out_end'] = check_out_end
 
     with col3:
-        if st.button("Reset Dates"):
+        if st.button("Reset Dates", key="reset_dates_button"):
             # Ensure default dates exist in session state
             if 'default_dates' in st.session_state:
                 reset_filters()
@@ -649,12 +509,12 @@ with tab2:
         display_df['Call Duration (seconds)'] = call_duration
         display_df['Agent Name'] = agent_name_list
 
-        # Add "Select All" checkbox
-        select_all = st.checkbox("Select All")
+        # Add "Select All" checkbox with a unique key
+        select_all = st.checkbox("Select All", key="select_all_checkbox")
         display_df['Select'] = select_all
 
-        # Create a button to trigger fetching communication info
-        if st.button("Fetch Communication Info"):
+        # Create a button to trigger fetching communication info with a unique key
+        if st.button("Fetch Communication Info", key="fetch_comm_info_button"):
             ## Prepare headers for API calls
             headers = {
                 "Authorization": OPENPHONE_API_KEY,  # Replace with your API key
@@ -691,7 +551,7 @@ with tab2:
         # Reorder columns to have "Select" as the leftmost column
         display_df = display_df[required_columns]
 
-        # Interactive data editor
+        # Interactive data editor with unique key
         edited_df = st.data_editor(
             display_df,
             column_config={
@@ -758,7 +618,8 @@ message_templates = {
 
 selected_template = st.selectbox(
     "Choose a Message Template",
-    options=list(message_templates.keys())
+    options=list(message_templates.keys()),
+    key="message_template_selectbox"
 )
 
 message_preview = message_templates[selected_template]
@@ -771,8 +632,8 @@ if 'edited_df' in locals() and not edited_df.empty:
     selected_guests = edited_df[edited_df['Select']]
     num_selected = len(selected_guests)
     if not selected_guests.empty:
-        button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-        if st.button(button_label):
+        button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected!= 1 else ''}"
+        if st.button(button_label, key="send_sms_button"):
             openphone_url = "https://api.openphone.com/v1/messages"
             headers_sms = {
                 "Authorization": OPENPHONE_API_KEY,
@@ -818,12 +679,14 @@ with tab3:
     with col1:
         start_date = st.date_input(
             "Start Date for Tour Prediction", 
-            value=pd.to_datetime(df['Arrival Date Short']).min().date()
+            value=pd.to_datetime(df['Arrival Date Short']).min().date(),
+            key="tour_start_date"
         )
     with col2:
         end_date = st.date_input(
             "End Date for Tour Prediction", 
-            value=pd.to_datetime(df['Arrival Date Short']).max().date()
+            value=pd.to_datetime(df['Arrival Date Short']).max().date(),
+            key="tour_end_date"
         )
 
     # Validate date range
