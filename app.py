@@ -472,27 +472,27 @@ with tab2:
 
         # Apply phone number formatting
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
-        display_df['Communication Status'] = 'Checking...'
+        display_df['Communication Status'] = 'Not Checked'
         display_df['Last Communication Date'] = None  # Initialize the new column
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
         display_df['Select'] = select_all
 
-        ## Prepare headers for API calls
-        headers = {
-            "Authorization": OPENPHONE_API_KEY,
-            "Content-Type": "application/json"
-        }
+        # Create a button to trigger fetching communication info
+        if st.button("Fetch Communication Info"):
+            ## Prepare headers for API calls
+            headers = {
+                "Authorization": OPENPHONE_API_KEY,
+                "Content-Type": "application/json"
+            }
 
-        # Fetch communication statuses and dates
-        statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
-        display_df['Communication Status'] = statuses
-        display_df['Last Communication Date'] = dates
-        display_df['Call Duration (seconds)'] = durations
-        display_df['Agent Name'] = agent_names
-
-
+            # Fetch communication statuses and dates
+            statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+            display_df['Communication Status'] = statuses
+            display_df['Last Communication Date'] = dates
+            display_df['Call Duration (seconds)'] = durations
+            display_df['Agent Name'] = agent_names
 
         # Reorder columns to have "Select" as the leftmost column
         display_df = display_df[['Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name']]
@@ -537,6 +537,7 @@ with tab2:
             use_container_width=True,
             key="guest_editor"
         )
+
 
     ############################################
     # Message Templates Section
