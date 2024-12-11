@@ -443,7 +443,7 @@ with tab2:
                 st.session_state['check_in_end'] = defaults['check_in_end']
                 st.session_state['check_out_start'] = defaults['check_out_start']
                 st.session_state['check_out_end'] = defaults['check_out_end']
-                st.experimental_rerun()  # Trigger app rerun to refresh the filters
+                
             else:
                 st.warning("Default dates are not available.")
 
