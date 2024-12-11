@@ -395,7 +395,7 @@ if 'display_df' not in st.session_state:
     st.session_state['display_df'] = None
 
 with tab2:
-    st.title ("\ud83c\udfd6\ufe0f Marketing Information by Resort")
+    st.title ("Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
