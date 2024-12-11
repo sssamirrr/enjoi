@@ -8,6 +8,26 @@ import math
 import requests
 import time
 
+def format_phone_number(phone):
+    """
+    Format phone numbers to a consistent format.
+    Converts phone numbers to +1XXXXXXXXXX format.
+    """
+    # Convert to string and remove any non-digit characters
+    if pd.isna(phone):
+        return 'No Data'
+    
+    phone = str(phone)
+    phone = ''.join(filter(str.isdigit, phone))
+    
+    # Format based on length
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    else:
+        return 'No Data'  # Return 'No Data' if it doesn't match expected patterns
+
 # Set page configuration
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
