@@ -556,36 +556,17 @@ with tab2:
                 resort_df = df[df['Market'] == selected_resort].copy()
                 
                 if not resort_df.empty:
-                    # Convert dates
-                    resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'])
-                    resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'])
+                    # Get min and max dates for this resort
+                    min_arrival = pd.to_datetime(resort_df['Arrival Date Short']).min()
+                    max_departure = pd.to_datetime(resort_df['Departure Date Short']).max()
                     
-                    # Get the full date range
-                    min_arrival = resort_df['Arrival Date Short'].min()
-                    max_departure = resort_df['Departure Date Short'].max()
-                    
-                    # Clear all date-related session state
-                    keys_to_clear = [
-                        'check_in_start_input',
-                        'check_in_end_input',
-                        'check_out_start_input',
-                        'check_out_end_input',
-                        'check_in_start',
-                        'check_in_end',
-                        'check_out_start',
-                        'check_out_end'
-                    ]
-                    
-                    for key in keys_to_clear:
+                    # Clear existing date inputs from session state
+                    for key in ['check_in_start_input', 'check_in_end_input', 
+                               'check_out_start_input', 'check_out_end_input']:
                         if key in st.session_state:
                             del st.session_state[key]
                     
-                    # Set new values directly in session state
-                    st.session_state['check_in_start_input'] = min_arrival.date()
-                    st.session_state['check_in_end_input'] = max_departure.date()
-                    st.session_state['check_out_start_input'] = min_arrival.date()
-                    st.session_state['check_out_end_input'] = max_departure.date()
-                    
+                    # Update default dates
                     st.session_state['default_dates'] = {
                         'check_in_start': min_arrival.date(),
                         'check_in_end': max_departure.date(),
@@ -593,7 +574,7 @@ with tab2:
                         'check_out_end': max_departure.date()
                     }
                     
-                    # Force refresh
+                    # Force a rerun to update the UI
                     st.rerun()
                 else:
                     st.warning("No data available for the selected resort.")
