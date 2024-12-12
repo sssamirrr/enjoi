@@ -617,16 +617,59 @@ with tab2:
             # Format phone numbers
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
 
+            # Add Select All checkbox
+            select_all = st.checkbox("Select All Guests", key=f'select_all_{selected_resort}')
+            display_df['Select'] = select_all
+
+            # Fetch Communication Info Button
+            if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
+                headers = {
+                    "Authorization": OPENPHONE_API_KEY,
+                    "Content-Type": "application/json"
+                }
+            
+                with st.spinner('Fetching communication information...'):
+                    # Clean up phone numbers first
+                    display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
+                    
+                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+                    
+                    # Update session state and display DataFrame
+                    for phone, status, date, duration, agent in zip(
+                        display_df['Phone Number'], statuses, dates, durations, agent_names):
+                        st.session_state['communication_data'][phone] = {
+                            'status': status,
+                            'date': date,
+                            'duration': duration,
+                            'agent': agent
+                        }
+                        
+                    display_df['Communication Status'] = statuses
+                    display_df['Last Communication Date'] = dates
+                    display_df['Call Duration (seconds)'] = durations
+                    display_df['Agent Name'] = agent_names
+
+            # Reorder columns
+            display_df = display_df[[
+                'Select', 'Guest Name', 'Check In', 'Check Out', 
+                'Phone Number', 'Rate Code', 'Price', 
+                'Communication Status', 'Last Communication Date', 
+                'Call Duration (seconds)', 'Agent Name'
+            ]]
+
             # Display the interactive data editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
+                    "Select": st.column_config.CheckboxColumn("Select", help="Select or deselect this guest"),
                     "Guest Name": st.column_config.TextColumn("Guest Name"),
                     "Check In": st.column_config.DateColumn("Check In"),
                     "Check Out": st.column_config.DateColumn("Check Out"),
                     "Phone Number": st.column_config.TextColumn("Phone Number"),
                     "Rate Code": st.column_config.TextColumn("Rate Code"),
                     "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                    "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
+                    "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
                 },
                 hide_index=True,
                 use_container_width=True,
@@ -636,6 +679,7 @@ with tab2:
             st.warning("No data available for the selected filters.")
     else:
         st.warning("No data available for the selected resort.")
+
 
 ############################################
 # Message Templates Section
