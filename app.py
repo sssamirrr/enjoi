@@ -901,19 +901,10 @@ with tab3:
             st.info("No tour data available for the selected date range.")
 
 with tab4:
-    st.header("Owner Marketing")
-    # Placeholder for Owner Marketing functionality
-    st.info("Owner Marketing functionality coming soon...")
-    
-    # You can add some basic structure for future development
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Owner Statistics")
-        # Placeholder for owner stats
-        
-    with col2:
-        st.subheader("Marketing Campaigns")
-        # Placeholder for marketing campaigns
+# Pass the owner DataFrame to the Owner Marketing module
+owner_marketing.run_owner_marketing_tab(owner_df=owner_marketing.get_owner_sheet_data())
+# Ensure that `get_owner_sheet_data` is properly defined in owner_marketing.py
+# Alternatively, pass `owner_df` from the main app if it's already loaded
 
 with tab5:
     st.header("Overnight Misses")
