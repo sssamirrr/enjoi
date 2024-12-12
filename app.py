@@ -8,8 +8,19 @@ import math
 import requests
 import time
 
+# Initialize session state variables
 if 'communication_data' not in st.session_state:
-    st.session_state.communication_data = {}
+    st.session_state['communication_data'] = {}
+
+def init_session_state():
+    if 'default_dates' not in st.session_state:
+        st.session_state['default_dates'] = {}
+    if 'communication_data' not in st.session_state:
+        st.session_state['communication_data'] = {}
+
+# Call the initialization function
+init_session_state()
+
 
 # Set page configuration
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
@@ -465,9 +476,7 @@ def fetch_communication_info(guest_df, headers):
 
 # Main Tab2 Content
 with tab2:
-    # Initialize session state for communication data
-    if 'communication_data' not in st.session_state:
-        st.session_state.communication_data = {}
+    
 
     st.title("🏖️ Marketing Information by Resort")
 
@@ -584,15 +593,17 @@ with tab2:
             display_df['Agent Name'] = 'Unknown'
             
             # Update values from session state
-            if st.session_state.communication_data:
+            # Update values from session state
+            if st.session_state['communication_data']:  # Changed from st.session_state.communication_data
                 for idx, row in display_df.iterrows():
                     phone = row['Phone Number']
-                    if phone in st.session_state.communication_data:
-                        comm_data = st.session_state.communication_data[phone]
+                    if phone in st.session_state['communication_data']:  # Changed from st.session_state.communication_data
+                        comm_data = st.session_state['communication_data'][phone]  # Changed from st.session_state.communication_data
                         display_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
                         display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
                         display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
                         display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
+
 
 
 
