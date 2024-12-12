@@ -32,7 +32,7 @@ def get_owner_sheet_data():
 
         gc = gspread.authorize(credentials)
         # Replace with your owner data sheet key
-        spreadsheet = gc.open_by_key(st.secrets["sheets"]["owner_sheet_key"])
+        spreadsheet = gc.open_by_key(st.secrets["owner_sheets"]["sheet_key"])
         worksheet = spreadsheet.get_worksheet(0)  # Adjust worksheet index as needed
         data = worksheet.get_all_records()
         return pd.DataFrame(data)
