@@ -8,6 +8,8 @@ import math
 import requests
 import time
 
+
+
 # Initialize session state variables
 if 'communication_data' not in st.session_state:
     st.session_state['communication_data'] = {}
@@ -52,6 +54,15 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+# Define all tabs
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "Dashboard", 
+    "Marketing", 
+    "Tour Prediction",
+    "Owner Marketing",
+    "Overnight Misses",
+    "OpenPhone Stats"
+])
 
 ############################################
 # Hard-coded OpenPhone Credentials
