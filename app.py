@@ -10,11 +10,7 @@ import time
 
 
 
-# Initialize session state variables
-if 'communication_data' not in st.session_state:
-    st.session_state['communication_data'] = {}
-if selected_resort not in st.session_state['communication_data']:
-    st.session_state['communication_data'][selected_resort] = {}
+
 
 
 def init_session_state():
