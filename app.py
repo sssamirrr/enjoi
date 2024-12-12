@@ -412,9 +412,19 @@ def cleanup_phone_number(phone):
     return 'No Data'
 
 def reset_filters():
-    if 'communication_data' in st.session_state and selected_resort in st.session_state['communication_data']:
-        st.session_state['communication_data'][selected_resort] = {}
-    st.rerun()
+    # Reset only filter-related session state variables
+    if f'check_in_start_input_{selected_resort}' in st.session_state:
+        st.session_state[f'check_in_start_input_{selected_resort}'] = min_check_in
+    if f'check_in_end_input_{selected_resort}' in st.session_state:
+        st.session_state[f'check_in_end_input_{selected_resort}'] = max_check_out
+    if f'check_out_start_input_{selected_resort}' in st.session_state:
+        st.session_state[f'check_out_start_input_{selected_resort}'] = min_check_in
+    if f'check_out_end_input_{selected_resort}' in st.session_state:
+        st.session_state[f'check_out_end_input_{selected_resort}'] = max_check_out
+    if f'total_price_slider_{selected_resort}' in st.session_state:
+        st.session_state[f'total_price_slider_{selected_resort}'] = (float(total_price_min), float(total_price_max))
+    if f'rate_code_filter_{selected_resort}' in st.session_state:
+        st.session_state[f'rate_code_filter_{selected_resort}'] = "All"
 
 def rate_limited_request(url, headers, params, request_type='get'):
     time.sleep(1 / 5)  # 5 requests per second max
