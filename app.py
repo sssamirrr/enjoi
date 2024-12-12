@@ -594,7 +594,8 @@ with tab2:
             
             # Update values from session state
             # Update values from session state
-            if st.session_state['communication_data']:  # Changed from st.session_state.communication_data
+            # Update values from session state
+            if len(st.session_state['communication_data']) > 0:  # Check if dictionary is not empty
                 for idx, row in display_df.iterrows():
                     phone = row['Phone Number']
                     if phone in st.session_state['communication_data']:  # Changed from st.session_state.communication_data
