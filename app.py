@@ -411,20 +411,26 @@ def cleanup_phone_number(phone):
         return f"+{phone}"
     return 'No Data'
 
-def reset_filters():
-    # Reset only filter-related session state variables
-    if f'check_in_start_input_{selected_resort}' in st.session_state:
-        st.session_state[f'check_in_start_input_{selected_resort}'] = min_check_in
-    if f'check_in_end_input_{selected_resort}' in st.session_state:
-        st.session_state[f'check_in_end_input_{selected_resort}'] = max_check_out
-    if f'check_out_start_input_{selected_resort}' in st.session_state:
-        st.session_state[f'check_out_start_input_{selected_resort}'] = min_check_in
-    if f'check_out_end_input_{selected_resort}' in st.session_state:
-        st.session_state[f'check_out_end_input_{selected_resort}'] = max_check_out
-    if f'total_price_slider_{selected_resort}' in st.session_state:
-        st.session_state[f'total_price_slider_{selected_resort}'] = (float(total_price_min), float(total_price_max))
-    if f'rate_code_filter_{selected_resort}' in st.session_state:
-        st.session_state[f'rate_code_filter_{selected_resort}'] = "All"
+def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max):
+    """
+    Reset filter-related session state variables based on the provided resort and date range.
+    """
+    try:
+        if f'check_in_start_input_{selected_resort}' in st.session_state:
+            st.session_state[f'check_in_start_input_{selected_resort}'] = min_check_in
+        if f'check_in_end_input_{selected_resort}' in st.session_state:
+            st.session_state[f'check_in_end_input_{selected_resort}'] = max_check_out
+        if f'check_out_start_input_{selected_resort}' in st.session_state:
+            st.session_state[f'check_out_start_input_{selected_resort}'] = min_check_in
+        if f'check_out_end_input_{selected_resort}' in st.session_state:
+            st.session_state[f'check_out_end_input_{selected_resort}'] = max_check_out
+        if f'total_price_slider_{selected_resort}' in st.session_state:
+            st.session_state[f'total_price_slider_{selected_resort}'] = (float(total_price_min), float(total_price_max))
+        if f'rate_code_filter_{selected_resort}' in st.session_state:
+            st.session_state[f'rate_code_filter_{selected_resort}'] = "All"
+    except Exception as e:
+        st.error(f"Error resetting filters: {e}")
+
 
 def rate_limited_request(url, headers, params, request_type='get'):
     time.sleep(1 / 5)  # 5 requests per second max
@@ -601,7 +607,8 @@ with tab2:
 
     with st.container():
         if st.button("Reset Filters"):
-            reset_filters()
+            reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
+
 
     # Process and display data
     if not resort_df.empty:
