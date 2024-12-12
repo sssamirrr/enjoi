@@ -488,24 +488,29 @@ with tab2:
 
         # Dropdown for Rate Code
         rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
+        if default_rate_code not in (["All"] + rate_code_options):
+            default_rate_code_index = 0
+        else:
+            default_rate_code_index = (["All"] + rate_code_options).index(default_rate_code)
+
         selected_rate_code = st.selectbox(
             "Select Rate Code",
             options=["All"] + rate_code_options,
-            index=(["All"] + rate_code_options).index(default_rate_code) if default_rate_code in (["All"] + rate_code_options) else 0,
+            index=default_rate_code_index,
             key=f'rate_code_filter_{selected_resort}'
         )
 
+    # Function to reset filters
+    def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max):
+        st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
+        st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
+        st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
+        st.session_state[f'default_check_out_end_{selected_resort}'] = max_check_out
+        st.session_state[f'default_total_price_{selected_resort}'] = (float(total_price_min), float(total_price_max))
+        st.session_state[f'default_rate_code_{selected_resort}'] = "All"
+
     # Reset Filters Button
     if st.button("Reset Filters"):
-        # Function to reset filters
-        def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max):
-            st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
-            st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
-            st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
-            st.session_state[f'default_check_out_end_{selected_resort}'] = max_check_out
-            st.session_state[f'default_total_price_{selected_resort}'] = (float(total_price_min), float(total_price_max))
-            st.session_state[f'default_rate_code_{selected_resort}'] = "All"
-
         reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
         st.rerun()
 
@@ -691,6 +696,7 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
+
 
 ############################################
 # Message Templates Section
