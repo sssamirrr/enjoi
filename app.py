@@ -15,11 +15,27 @@ if 'communication_data' not in st.session_state:
 def init_session_state():
     if 'default_dates' not in st.session_state:
         st.session_state['default_dates'] = {}
-    if 'communication_data' not in st.session_state:
-        st.session_state['communication_data'] = {}
+    
+    # Initialize date input keys for all resorts
+    for resort in df['Market'].unique():
+        sanitized_resort = sanitize_key(resort)
+        check_in_start_key = f'check_in_start_input_{sanitized_resort}'
+        check_in_end_key = f'check_in_end_input_{sanitized_resort}'
+        check_out_start_key = f'check_out_start_input_{sanitized_resort}'
+        check_out_end_key = f'check_out_end_input_{sanitized_resort}'
+        
+        if check_in_start_key not in st.session_state:
+            st.session_state[check_in_start_key] = pd.to_datetime('today').date()
+        if check_in_end_key not in st.session_state:
+            st.session_state[check_in_end_key] = pd.to_datetime('today').date()
+        if check_out_start_key not in st.session_state:
+            st.session_state[check_out_start_key] = pd.to_datetime('today').date()
+        if check_out_end_key not in st.session_state:
+            st.session_state[check_out_end_key] = pd.to_datetime('today').date()
 
 # Call the initialization function
 init_session_state()
+
 
 
 # Set page configuration
@@ -584,14 +600,20 @@ with tab2:
             )
 
         with col3:
-            reset_button = st.button("Reset Dates", key=f'reset_button_{sanitized_resort}')
-            if reset_button:
-                # Reset the date inputs to min_check_in and max_check_out
-                st.session_state[check_in_start_key] = min_check_in
-                st.session_state[check_in_end_key] = max_check_out
-                st.session_state[check_out_start_key] = min_check_in
-                st.session_state[check_out_end_key] = max_check_out
-                st.success("Date filters have been reset to the default maximum range.")
+            if st.button("Reset Dates", key=f'reset_button_{sanitized_resort}'):
+                # Create a rerun flag
+                st.session_state[f'reset_dates_{sanitized_resort}'] = True
+                st.rerun()
+        
+        # Handle reset logic after button press (place this right after the button code)
+        if f'reset_dates_{sanitized_resort}' in st.session_state and st.session_state[f'reset_dates_{sanitized_resort}']:
+            st.session_state[check_in_start_key] = min_check_in
+            st.session_state[check_in_end_key] = max_check_out
+            st.session_state[check_out_start_key] = min_check_in
+            st.session_state[check_out_end_key] = max_check_out
+            # Clear the reset flag
+            del st.session_state[f'reset_dates_{sanitized_resort}']
+            st.success("Date filters have been reset to the default maximum range.")
 
         # Filter the DataFrame based on the selected dates
         if not resort_df.empty:
