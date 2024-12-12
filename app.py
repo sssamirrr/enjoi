@@ -368,56 +368,22 @@ def cleanup_phone_number(phone):
     """Clean up phone number format"""
     if pd.isna(phone):
         return 'No Data'
-    try:
-        # Convert to string and remove all non-numeric characters
-        phone = str(phone)
-        clean_phone = ''.join(filter(str.isdigit, phone))
-        
-        # Check length and format accordingly
-        if len(clean_phone) == 10:
-            return f"+1{clean_phone}"
-        elif len(clean_phone) == 11 and clean_phone.startswith('1'):
-            return f"+{clean_phone}"
-        else:
-            return 'No Data'
-    except:
-        return 'No Data'
-
+    # Remove spaces and non-numeric characters
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    return 'No Data'
 
 def reset_filters():
-    # Get the current selected resort
-    selected_resort = st.session_state.get('selected_resort')
-    
-    if selected_resort:
-        # Filter data for the selected resort
-        resort_df = df[df['Market'] == selected_resort].copy()
-        
-        if not resort_df.empty:
-            # Get absolute min and max dates for this resort
-            min_arrival = pd.to_datetime(resort_df['Arrival Date Short']).min()
-            max_departure = pd.to_datetime(resort_df['Departure Date Short']).max()
-            
-            # Clear existing date inputs from session state
-            if 'check_in_start_input' in st.session_state:
-                del st.session_state['check_in_start_input']
-            if 'check_in_end_input' in st.session_state:
-                del st.session_state['check_in_end_input']
-            if 'check_out_start_input' in st.session_state:
-                del st.session_state['check_out_start_input']
-            if 'check_out_end_input' in st.session_state:
-                del st.session_state['check_out_end_input']
-            
-            # Set new default dates
-            st.session_state['default_dates'] = {
-                'check_in_start': min_arrival.date(),
-                'check_in_end': max_departure.date(),
-                'check_out_start': min_arrival.date(),
-                'check_out_end': max_departure.date()
-            }
-            
-            # Force streamlit to rerun
-            st.rerun()
-
+    default_dates = st.session_state['default_dates']
+    for key, value in default_dates.items():
+        if key in st.session_state:
+            del st.session_state[key]
+    st.session_state.update(default_dates)
+    st.session_state['communication_data'] = {}  # Changed from dot notation
+    st.rerun()
 
 
 def rate_limited_request(url, headers, params, request_type='get'):
@@ -515,10 +481,8 @@ with tab2:
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
-        options=sorted(df['Market'].unique()),
-        key='selected_resort'  # Add this key
+        options=sorted(df['Market'].unique())
     )
-
 
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
@@ -554,7 +518,7 @@ with tab2:
             'check_out_end': today,
         }
 
-        # Date filters
+    # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
@@ -587,38 +551,11 @@ with tab2:
         st.session_state['check_out_end'] = check_out_end
 
     with col3:
-        if st.button("Reset Dates", key="reset_dates_button"):
-            if selected_resort:
-                # Filter data for the selected resort
-                resort_df = df[df['Market'] == selected_resort].copy()
-                
-                if not resort_df.empty:
-                    # Get min and max dates for this resort
-                    min_arrival = pd.to_datetime(resort_df['Arrival Date Short']).min()
-                    max_departure = pd.to_datetime(resort_df['Departure Date Short']).max()
-                    
-                    # Clear existing date inputs from session state
-                    for key in ['check_in_start_input', 'check_in_end_input', 
-                               'check_out_start_input', 'check_out_end_input']:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    
-                    # Update default dates
-                    st.session_state['default_dates'] = {
-                        'check_in_start': min_arrival.date(),
-                        'check_in_end': max_departure.date(),
-                        'check_out_start': min_arrival.date(),
-                        'check_out_end': max_departure.date()
-                    }
-                    
-                    # Force a rerun to update the UI
-                    st.rerun()
-                else:
-                    st.warning("No data available for the selected resort.")
+        if st.button("Reset Dates"):
+            if 'default_dates' in st.session_state:
+                reset_filters()
             else:
-                st.warning("Please select a resort first.")
-
-
+                st.warning("Default dates are not available.")
 
     # Process and display data
     if not resort_df.empty:
