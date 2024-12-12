@@ -394,27 +394,30 @@ def reset_filters():
         resort_df = df[df['Market'] == selected_resort].copy()
         
         if not resort_df.empty:
-            # Get absolute min and max dates for this resort without any filtering
+            # Get absolute min and max dates for this resort
             min_arrival = pd.to_datetime(resort_df['Arrival Date Short']).min()
             max_departure = pd.to_datetime(resort_df['Departure Date Short']).max()
             
-            if pd.notnull(min_arrival) and pd.notnull(max_departure):
-                # Update both default_dates and input values
-                for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
-                    if key.endswith('start'):
-                        st.session_state[f'{key}_input'] = min_arrival.date()
-                    else:
-                        st.session_state[f'{key}_input'] = max_departure.date()
-                
-                # Also update default_dates dictionary
-                st.session_state['default_dates'] = {
-                    'check_in_start': min_arrival.date(),
-                    'check_in_end': max_departure.date(),
-                    'check_out_start': min_arrival.date(),
-                    'check_out_end': max_departure.date()
-                }
-                
-                st.rerun()
+            # Clear existing date inputs from session state
+            if 'check_in_start_input' in st.session_state:
+                del st.session_state['check_in_start_input']
+            if 'check_in_end_input' in st.session_state:
+                del st.session_state['check_in_end_input']
+            if 'check_out_start_input' in st.session_state:
+                del st.session_state['check_out_start_input']
+            if 'check_out_end_input' in st.session_state:
+                del st.session_state['check_out_end_input']
+            
+            # Set new default dates
+            st.session_state['default_dates'] = {
+                'check_in_start': min_arrival.date(),
+                'check_in_end': max_departure.date(),
+                'check_out_start': min_arrival.date(),
+                'check_out_end': max_departure.date()
+            }
+            
+            # Force streamlit to rerun
+            st.rerun()
 
 
 
