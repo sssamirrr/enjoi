@@ -377,13 +377,47 @@ def cleanup_phone_number(phone):
     return 'No Data'
 
 def reset_filters():
-    default_dates = st.session_state['default_dates']
-    for key, value in default_dates.items():
-        if key in st.session_state:
-            del st.session_state[key]
-    st.session_state.update(default_dates)
-    st.session_state['communication_data'] = {}  # Changed from dot notation
+    # Get the current selected resort
+    selected_resort = st.session_state.get('selected_resort')
+    
+    if selected_resort:
+        # Filter data for the selected resort
+        resort_df = df[df['Market'] == selected_resort].copy()
+        
+        if not resort_df.empty:
+            # Calculate date ranges for the selected resort
+            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+            arrival_dates = arrival_dates.dropna()
+            departure_dates = departure_dates.dropna()
+
+            min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
+            max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
+
+            # Update default dates
+            st.session_state['default_dates'] = {
+                'check_in_start': min_check_in,
+                'check_in_end': max_check_out,
+                'check_out_start': min_check_in,
+                'check_out_end': max_check_out,
+            }
+    
+    # Reset the input widget states
+    if 'check_in_start_input' in st.session_state:
+        del st.session_state['check_in_start_input']
+    if 'check_in_end_input' in st.session_state:
+        del st.session_state['check_in_end_input']
+    if 'check_out_start_input' in st.session_state:
+        del st.session_state['check_out_start_input']
+    if 'check_out_end_input' in st.session_state:
+        del st.session_state['check_out_end_input']
+    
+    # Reset communication data
+    st.session_state['communication_data'] = {}
+    
     st.rerun()
+
 
 
 def rate_limited_request(url, headers, params, request_type='get'):
@@ -481,8 +515,10 @@ with tab2:
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
-        options=sorted(df['Market'].unique())
+        options=sorted(df['Market'].unique()),
+        key='selected_resort'  # Add this key
     )
+
 
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
