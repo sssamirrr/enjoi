@@ -377,13 +377,17 @@ def cleanup_phone_number(phone):
     return 'No Data'
 
 def reset_filters():
+    # Load default dates from session state
     default_dates = st.session_state['default_dates']
-    for key, value in default_dates.items():
-        if key in st.session_state:
-            del st.session_state[key]
-    st.session_state.update(default_dates)
-    st.session_state['communication_data'] = {}  # Changed from dot notation
-    st.rerun()
+    
+    # Reset date inputs to default values
+    st.session_state['check_in_start_input'] = default_dates['check_in_start']
+    st.session_state['check_in_end_input'] = default_dates['check_in_end']
+    st.session_state['check_out_start_input'] = default_dates['check_out_start']
+    st.session_state['check_out_end_input'] = default_dates['check_out_end']
+    
+    # No need to reset communication data; it remains untouched.
+
 
 
 def rate_limited_request(url, headers, params, request_type='get'):
@@ -552,10 +556,8 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            if 'default_dates' in st.session_state:
-                reset_filters()
-            else:
-                st.warning("Default dates are not available.")
+            reset_filters()  # Call the updated reset_filters function
+
 
     # Process and display data
     if not resort_df.empty:
