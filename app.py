@@ -644,11 +644,11 @@ with tab2:
     
     with col3:
     # Dropdown for Rate Code
-    rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
-    selected_rate_code = st.selectbox(
-        "Select Rate Code",
-        options=["All"] + rate_code_options,
-        key=f'rate_code_filter_{selected_resort}'
+        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
+        selected_rate_code = st.selectbox(
+            "Select Rate Code",
+            options=["All"] + rate_code_options,
+            key=f'rate_code_filter_{selected_resort}'
     )
 
     
