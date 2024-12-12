@@ -6,123 +6,84 @@ def run_owner_marketing_tab(owner_df):
         st.warning("No owner data available.")
         return
 
-    # Create a copy of the dataframe to avoid modifying the original
-    df = owner_df.copy()
+    # Create Campaign Analysis section
+    st.subheader("Campaign Analysis")
+    if 'Campaign' in owner_df.columns:
+        campaign_metrics = st.tabs(["Campaign Overview", "Response Rates", "Conversion Analysis"])
+        
+        with campaign_metrics[0]:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Campaign distribution
+                campaign_dist = owner_df['Campaign'].value_counts()
+                st.metric("Campaign A Count", campaign_dist.get('A', 0))
+                st.metric("Campaign B Count", campaign_dist.get('B', 0))
+                
+            with col2:
+                # Average metrics by campaign
+                if 'Points' in owner_df.columns:
+                    avg_points = owner_df.groupby('Campaign')['Points'].mean()
+                    st.metric("Avg Points - Campaign A", f"{avg_points.get('A', 0):,.0f}")
+                    st.metric("Avg Points - Campaign B", f"{avg_points.get('B', 0):,.0f}")
 
-    # Convert date columns
-    date_columns = ['Sale Date', 'Maturity Date']
-    for col in date_columns:
-        if col in df.columns:
-            try:
-                df[col] = pd.to_datetime(df[col], errors='coerce')
-            except Exception as e:
-                st.warning(f"Could not convert {col} to date format: {str(e)}")
-
-    # Convert monetary columns
-    money_columns = ['Closing Costs', 'Equity']
-    for col in money_columns:
-        if col in df.columns:
-            try:
-                # First, ensure the column is string type
-                df[col] = df[col].astype(str)
-                # Remove currency symbols and commas
-                df[col] = df[col].replace('[\$,]', '', regex=True)
-                # Convert to float, replacing errors with NaN
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            except Exception as e:
-                st.warning(f"Could not convert {col} to numeric format: {str(e)}")
-
-    # Ensure Points column is numeric
-    if 'Points' in df.columns:
-        try:
-            df['Points'] = pd.to_numeric(df['Points'], errors='coerce')
-        except Exception as e:
-            st.warning(f"Could not convert Points to numeric format: {str(e)}")
-
-    # Ensure FICO score is numeric
-    if 'Primary FICO' in df.columns:
-        try:
-            df['Primary FICO'] = pd.to_numeric(df['Primary FICO'], errors='coerce')
-        except Exception as e:
-            st.warning(f"Could not convert Primary FICO to numeric format: {str(e)}")
+        with campaign_metrics[1]:
+            # Add response rate metrics here when implemented
+            st.info("Response rate tracking will be implemented based on message interaction data")
+            
+        with campaign_metrics[2]:
+            # Add conversion analysis here when implemented
+            st.info("Conversion analysis will be implemented based on sales/upgrade data")
 
     # Filters Section
     st.subheader("Filter Owners")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        # Unit Type Filter
-        if 'Unit' in df.columns:
-            unit_types = ['All'] + sorted(df['Unit'].unique().tolist())
+        if 'Unit' in owner_df.columns:
+            unit_types = ['All'] + sorted(owner_df['Unit'].unique().tolist())
             selected_unit = st.selectbox('Unit Type', unit_types)
         
-        # State Filter
-        if 'State' in df.columns:
-            states = ['All'] + sorted(df['State'].unique().tolist())
+        if 'State' in owner_df.columns:
+            states = ['All'] + sorted(owner_df['State'].unique().tolist())
             selected_state = st.selectbox('State', states)
 
     with col2:
-        # Date Range Filter
-        if 'Sale Date' in df.columns and df['Sale Date'].notna().any():
-            min_date = df['Sale Date'].min().date()
-            max_date = df['Sale Date'].max().date()
+        if 'Sale Date' in owner_df.columns:
             date_range = st.date_input(
                 'Sale Date Range',
-                value=(min_date, max_date),
-                min_value=min_date,
-                max_value=max_date
-            )
-
-        # FICO Score Range
-        if 'Primary FICO' in df.columns and df['Primary FICO'].notna().any():
-            min_fico = int(df['Primary FICO'].min())
-            max_fico = int(df['Primary FICO'].max())
-            fico_range = st.slider(
-                'FICO Score Range',
-                min_value=min_fico,
-                max_value=max_fico,
-                value=(min_fico, max_fico)
+                value=(
+                    owner_df['Sale Date'].min().date(),
+                    owner_df['Sale Date'].max().date()
+                )
             )
 
     with col3:
-        # Points Range
-        if 'Points' in df.columns and df['Points'].notna().any():
-            min_points = int(df['Points'].min())
-            max_points = int(df['Points'].max())
-            points_range = st.slider(
-                'Points Range',
-                min_value=min_points,
-                max_value=max_points,
-                value=(min_points, max_points)
+        if 'Primary FICO' in owner_df.columns:
+            fico_range = st.slider(
+                'FICO Score Range',
+                min_value=300,
+                max_value=850,
+                value=(500, 850)
             )
 
+    with col4:
+        if 'Campaign' in owner_df.columns:
+            campaigns = ['All'] + sorted(owner_df['Campaign'].unique().tolist())
+            selected_campaign = st.selectbox('Campaign', campaigns)
+
     # Apply filters
-    filtered_df = df.copy()
+    filtered_df = owner_df.copy()
     
-    if 'Unit' in df.columns and selected_unit != 'All':
+    if selected_unit != 'All':
         filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
     
-    if 'State' in df.columns and selected_state != 'All':
+    if selected_state != 'All':
         filtered_df = filtered_df[filtered_df['State'] == selected_state]
     
-    if 'Sale Date' in filtered_df.columns and 'date_range' in locals():
-        filtered_df = filtered_df[
-            (filtered_df['Sale Date'].dt.date >= date_range[0]) &
-            (filtered_df['Sale Date'].dt.date <= date_range[1])
-        ]
-    
-    if 'Primary FICO' in filtered_df.columns and 'fico_range' in locals():
-        filtered_df = filtered_df[
-            (filtered_df['Primary FICO'] >= fico_range[0]) &
-            (filtered_df['Primary FICO'] <= fico_range[1])
-        ]
-    
-    if 'Points' in filtered_df.columns and 'points_range' in locals():
-        filtered_df = filtered_df[
-            (filtered_df['Points'] >= points_range[0]) &
-            (filtered_df['Points'] <= points_range[1])
-        ]
+    if selected_campaign != 'All':
+        filtered_df = filtered_df[filtered_df['Campaign'] == selected_campaign]
 
     # Add Select column
     filtered_df.insert(0, 'Select', False)
@@ -132,6 +93,7 @@ def run_owner_marketing_tab(owner_df):
         filtered_df,
         column_config={
             "Select": st.column_config.CheckboxColumn("Select", help="Select owner for communication"),
+            "Campaign": st.column_config.TextColumn("Campaign", help="A/B Test Campaign"),
             "Account ID": st.column_config.TextColumn("Account ID"),
             "Last Name": st.column_config.TextColumn("Last Name"),
             "First Name": st.column_config.TextColumn("First Name"),
@@ -153,21 +115,74 @@ def run_owner_marketing_tab(owner_df):
         use_container_width=True
     )
 
-    # Summary Statistics
-    st.subheader("Summary Statistics")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Owners", len(filtered_df))
-    with col2:
-        if 'Points' in filtered_df.columns:
-            st.metric("Average Points", f"{filtered_df['Points'].mean():,.0f}")
-    with col3:
-        if 'Primary FICO' in filtered_df.columns:
-            st.metric("Average FICO", f"{filtered_df['Primary FICO'].mean():.0f}")
-    with col4:
-        st.metric("Selected Owners", len(filtered_df[filtered_df['Select']]))
+    # Campaign Performance Metrics
+    st.subheader("Campaign Performance Metrics")
+    if 'Campaign' in edited_df.columns:
+        metric_cols = st.columns(4)
+        
+        with metric_cols[0]:
+            total_selected = len(edited_df[edited_df['Select']])
+            st.metric("Total Selected", total_selected)
+            
+        with metric_cols[1]:
+            selected_a = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'A')])
+            st.metric("Selected Campaign A", selected_a)
+            
+        with metric_cols[2]:
+            selected_b = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'B')])
+            st.metric("Selected Campaign B", selected_b)
+            
+        with metric_cols[3]:
+            if total_selected > 0:
+                balance = abs(selected_a - selected_b)
+                st.metric("Campaign Balance", balance, 
+                         delta=f"{'Balanced' if balance == 0 else 'Unbalanced'}")
 
-    # Rest of your code...
+    # Message Templates Section with Campaign-specific messages
+    st.markdown("---")
+    st.subheader("Campaign Message Templates")
+
+    templates = {
+        "Campaign A - Welcome": "Welcome to our premium timeshare family! We're excited to have you with us.",
+        "Campaign A - Offer": "As a valued premium member, we have a special upgrade opportunity for you.",
+        "Campaign B - Welcome": "Welcome to our timeshare community! We're glad you're here.",
+        "Campaign B - Offer": "We'd like to present you with an exclusive upgrade opportunity.",
+        "Custom Message": ""
+    }
+
+    template_choice = st.selectbox("Select Message Template", list(templates.keys()))
+    message_text = st.text_area(
+        "Customize Your Message",
+        value=templates[template_choice],
+        height=100
+    )
+
+    # Send Messages Section with Campaign tracking
+    selected_owners = edited_df[edited_df['Select']]
+    if len(selected_owners) > 0:
+        st.write(f"Selected {len(selected_owners)} owners for communication")
+        campaign_breakdown = selected_owners['Campaign'].value_counts()
+        st.write(f"Campaign A: {campaign_breakdown.get('A', 0)}, Campaign B: {campaign_breakdown.get('B', 0)}")
+        
+        if st.button("Send Campaign Messages"):
+            with st.spinner("Sending messages..."):
+                for _, owner in selected_owners.iterrows():
+                    try:
+                        # Here you would implement your actual message sending logic
+                        # Make sure to use the appropriate template based on the campaign
+                        campaign_specific_message = message_text
+                        if owner['Campaign'] == 'A':
+                            # Modify message for Campaign A
+                            pass
+                        else:
+                            # Modify message for Campaign B
+                            pass
+                            
+                        st.success(f"Campaign {owner['Campaign']} message sent to {owner['First Name']} {owner['Last Name']}")
+                        time.sleep(0.5)
+                    except Exception as e:
+                        st.error(f"Failed to send message to {owner['First Name']} {owner['Last Name']}: {str(e)}")
+    else:
+        st.info("Please select owners to send campaign messages")
 
     return edited_df
