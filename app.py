@@ -899,61 +899,24 @@ with tab3:
         else:
             st.info("No tour data available for the selected date range.")
 
-############################################
-# Owner Marketing (Tab 4)
-############################################
+with tab4:
+    ######## owner marketing on top##
+    st.header("🏠 Owner Marketing Dashboard")
 
-######## owner marketing on top##
-import streamlit as st
-import pandas as pd
-import numpy as np
-import time
-import requests
-from datetime import datetime
-import math
+    owner_df = get_google_sheet_data()  # Assuming 'get_google_sheet_data()' fetches owner data
 
-# Replace these with your actual OpenPhone credentials
-OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
-OPENPHONE_NUMBER = "+1XXXXXXXXXX"
-
-@st.cache_resource
-def get_owner_sheet_data():
-    # Implement the logic to load your owner data from Google Sheets
-    # This should return a pd.DataFrame
-    # Example placeholder:
-    # return pd.DataFrame(...)
-    # In your actual code, you'll connect to the sheet and load data.
-    pass
-
-def cleanup_phone_number(phone):
-    if pd.isna(phone):
-        return 'No Data'
-    phone = ''.join(filter(str.isdigit, str(phone)))
-    if len(phone) == 10:
-        return f"+1{phone}"
-    elif len(phone) == 11 and phone.startswith('1'):
-        return f"+{phone}"
-    return 'No Data'
-
-def fetch_communication_info(df, headers):
-    # Implement your actual fetch_communication_info logic here
-    # Should return lists: statuses, dates, durations, agent_names
-    # For example:
-    # return ["No Comm"]*len(df), [None]*len(df), [None]*len(df), ["Unknown"]*len(df)
-    pass
-
-######## owner marketing on top##
-with st.tab("Owner Marketing"):
-    st.title("🏠 Owner Marketing Dashboard")
-
-    owner_df = get_owner_sheet_data()
-
-    if owner_df.empty:
+    if owner_df is None or owner_df.empty:
         st.warning("No owner data available.")
         st.stop()
 
-    # Convert Contract Start/End to datetime if present
+    # Display the columns for debugging (optional)
+    st.write("Owner Data Columns:", owner_df.columns.tolist())
+    st.dataframe(owner_df.head())
+
+    # Define date columns
     date_cols = ["Contract Start Date", "Contract End Date"]
+
+    # Convert Contract Start/End to datetime if present
     for dcol in date_cols:
         if dcol in owner_df.columns:
             owner_df[dcol] = pd.to_datetime(owner_df[dcol], errors='coerce')
@@ -996,9 +959,12 @@ with st.tab("Owner Marketing"):
                 )
                 if isinstance(date_range, tuple) and len(date_range) == 2:
                     start, end = date_range
-                    filtered_owner_df = filtered_owner_df[(filtered_owner_df[col].dt.date >= start) & (filtered_owner_df[col].dt.date <= end)]
+                    filtered_owner_df = filtered_owner_df[
+                        (filtered_owner_df[col].dt.date >= start) & 
+                        (filtered_owner_df[col].dt.date <= end)
+                    ]
 
-        # Numeric filters (e.g. Revenue, Account ID if present)
+        # Numeric filters (e.g., Revenue, Account ID if present)
         elif np.issubdtype(col_type, np.number):
             min_val, max_val = float(col_data.min()), float(col_data.max())
             if min_val == max_val:
@@ -1009,20 +975,31 @@ with st.tab("Owner Marketing"):
                     min_value=min_val, max_value=max_val,
                     value=(min_val, max_val)
                 )
-                filtered_owner_df = filtered_owner_df[(filtered_owner_df[col] >= val_range[0]) & (filtered_owner_df[col] <= val_range[1])]
+                filtered_owner_df = filtered_owner_df[
+                    (filtered_owner_df[col] >= val_range[0]) & 
+                    (filtered_owner_df[col] <= val_range[1])
+                ]
 
         else:
             # For text/categorical
             unique_vals = sorted(col_data.unique())
             if len(unique_vals) <= 20:
-                # Multi-select if relatively few unique values
-                selected_vals = st.sidebar.multiselect(f"{col} filter", options=unique_vals, default=unique_vals)
-                filtered_owner_df = filtered_owner_df[filtered_owner_df[col].isin(selected_vals)]
+                # Multi-select filter
+                selected_vals = st.sidebar.multiselect(
+                    f"{col} filter", 
+                    options=unique_vals, 
+                    default=unique_vals
+                )
+                filtered_owner_df = filtered_owner_df[
+                    filtered_owner_df[col].isin(selected_vals)
+                ]
             else:
                 # Text search
                 text_filter = st.sidebar.text_input(f"Search in {col}")
                 if text_filter:
-                    filtered_owner_df = filtered_owner_df[filtered_owner_df[col].astype(str).str.contains(text_filter, case=False, na=False)]
+                    filtered_owner_df = filtered_owner_df[
+                        filtered_owner_df[col].astype(str).str.contains(text_filter, case=False, na=False)
+                    ]
 
     # Prepare display DataFrame
     display_owner_df = filtered_owner_df.copy()
@@ -1039,22 +1016,24 @@ with st.tab("Owner Marketing"):
     # Insert Select column at the start
     display_owner_df.insert(0, 'Select', False)
 
-    # Session state for communication data
+    # Initialize session state for communication data if not present
     if 'communication_data' not in st.session_state:
         st.session_state['communication_data'] = {}
+    if selected_resort not in st.session_state['communication_data']:
+        st.session_state['communication_data'][selected_resort] = {}
 
-    # Load existing communication data if any
+    # Update display_df with saved communication data from session state
     for idx, row in display_owner_df.iterrows():
         phone = row['Phone Number']
-        if phone in st.session_state['communication_data']:
-            comm_data = st.session_state['communication_data'][phone]
+        if phone in st.session_state['communication_data'][selected_resort]:
+            comm_data = st.session_state['communication_data'][selected_resort][phone]
             display_owner_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
             display_owner_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
             display_owner_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
             display_owner_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
 
     # Fetch Communication Info Button
-    if st.button("Fetch Communication Info"):
+    if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
         headers = {
             "Authorization": OPENPHONE_API_KEY,
             "Content-Type": "application/json"
@@ -1065,33 +1044,56 @@ with st.tab("Owner Marketing"):
             for phone, status, date, duration, agent in zip(
                 display_owner_df['Phone Number'], statuses, dates, durations, agent_names
             ):
-                st.session_state['communication_data'][phone] = {
+                st.session_state['communication_data'][selected_resort][phone] = {
                     'status': status,
                     'date': date,
                     'duration': duration,
                     'agent': agent
                 }
 
-                idx = display_owner_df.index[display_owner_df['Phone Number'] == phone].tolist()
-                if idx:
-                    display_owner_df.loc[idx[0], 'Communication Status'] = status
-                    display_owner_df.loc[idx[0], 'Last Communication Date'] = date
-                    display_owner_df.loc[idx[0], 'Call Duration (seconds)'] = duration
-                    display_owner_df.loc[idx[0], 'Agent Name'] = agent
+                # Update display_df
+                idx_list = display_owner_df.index[display_owner_df['Phone Number'] == phone].tolist()
+                if idx_list:
+                    idx = idx_list[0]
+                    display_owner_df.at[idx, 'Communication Status'] = status
+                    display_owner_df.at[idx, 'Last Communication Date'] = date
+                    display_owner_df.at[idx, 'Call Duration (seconds)'] = duration
+                    display_owner_df.at[idx, 'Agent Name'] = agent
 
         st.success("Communication info fetched.")
 
-    # Data editor with updated info
+    # Reorder columns
+    display_owner_df = display_owner_df[[
+        'Select', 'Owner Name', 'Start Date', 'End Date', 
+        'Phone Number', 'Rate Code', 'Revenue', 
+        'Communication Status', 'Last Communication Date', 
+        'Call Duration (seconds)', 'Agent Name'
+    ]]
+
+    # Display the interactive data editor
     edited_owner_df = st.data_editor(
         display_owner_df,
         column_config={
-            "Select": st.column_config.CheckboxColumn("Select", help="Select or deselect this owner")
+            "Select": st.column_config.CheckboxColumn("Select", help="Select or deselect this owner"),
+            "Owner Name": st.column_config.TextColumn("Owner Name"),
+            "Start Date": st.column_config.DateColumn("Start Date"),
+            "End Date": st.column_config.DateColumn("End Date"),
+            "Phone Number": st.column_config.TextColumn("Phone Number"),
+            "Rate Code": st.column_config.TextColumn("Rate Code"),
+            "Revenue": st.column_config.NumberColumn("Revenue", format="$%.2f"),
+            "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
+            "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
+            "Call Duration (seconds)": st.column_config.NumberColumn("Call Duration (seconds)", disabled=True),
+            "Agent Name": st.column_config.TextColumn("Agent Name", disabled=True)
         },
         hide_index=True,
-        use_container_width=True
+        use_container_width=True,
+        key=f"owner_editor_{selected_resort}"
     )
 
-    # Message Templates for Owners
+    ############################################
+    # Message Templates Section
+    ############################################
     st.markdown("---")
     st.subheader("Owner Message Templates")
 
@@ -1109,7 +1111,9 @@ with st.tab("Owner Marketing"):
     owner_message_preview = owner_message_templates[selected_owner_template]
     custom_message = st.text_area("Message Preview (You can edit)", value=owner_message_preview, height=100)
 
+    ############################################
     # Send SMS to Selected Owners
+    ############################################
     selected_owners = edited_owner_df[edited_owner_df['Select']]
     num_selected_owners = len(selected_owners)
     if num_selected_owners > 0:
@@ -1144,79 +1148,10 @@ with st.tab("Owner Marketing"):
                 except Exception as e:
                     st.error(f"Exception while sending message to {row.get('Owner Name', 'Owner')} ({recipient_phone}): {str(e)}")
 
-                time.sleep(0.2)
+                time.sleep(0.2)  # Respect rate limits
     else:
         st.info("No owners selected to send SMS.")
 
-
-with tab5:
-    st.header("Overnight Misses")
-    # Placeholder for Overnight Misses functionality
-    st.info("Overnight Misses functionality coming soon...")
-    
-    # You can add some basic structure for future development
-    st.subheader("Missed Opportunities")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Misses", "---")
-    with col2:
-        st.metric("Revenue Impact", "$---")
-    with col3:
-        st.metric("Recovery Rate", "---")
-with tab6:
-    st.header("OpenPhone Stats")
-    # Add OpenPhone Stats content
-    
-    # Date filter
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date")
-    with col2:
-        end_date = st.date_input("End Date")
-        
-    # Overview metrics
-    st.subheader("Call Statistics")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Calls", "---")
-    with col2:
-        st.metric("Answered Calls", "---")
-    with col3:
-        st.metric("Missed Calls", "---")
-    with col4:
-        st.metric("Answer Rate", "---%")
-        
-    # Detailed statistics
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Call Volume by Hour")
-        # Placeholder for hourly call volume chart
-        st.info("Hourly call volume chart coming soon...")
-        
-    with col2:
-        st.subheader("Call Volume by Day")
-        # Placeholder for daily call volume chart
-        st.info("Daily call volume chart coming soon...")
-        
-    # Call details table
-    st.subheader("Recent Calls")
-    call_data = {
-        "Date": [],
-        "Time": [],
-        "Phone Number": [],
-        "Duration": [],
-        "Status": [],
-        "Agent": []
-    }
-    st.dataframe(call_data)
-    
-    # Download section
-    st.download_button(
-        label="Download Call Data",
-        data="",  # Add your CSV data here
-        file_name="openphone_stats.csv",
-        mime="text/csv",
-    )
 ############################################
 # Raw Data Viewer
 ############################################
