@@ -643,8 +643,12 @@ with tab2:
             display_df['Select'] = select_all
         
             # Initialize session state for communication data if not present
+            # Initialize session state for communication data, scoped by resort
             if 'communication_data' not in st.session_state:
                 st.session_state['communication_data'] = {}
+            if selected_resort not in st.session_state['communication_data']:
+                st.session_state['communication_data'][selected_resort] = {}
+
         
             # Update display_df with saved communication data from session state
             for idx, row in display_df.iterrows():
@@ -657,23 +661,33 @@ with tab2:
                     display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
         
             # Fetch Communication Info Button
+            # Fetch Communication Info Button
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
-        
+            
                 with st.spinner('Fetching communication information...'):
                     statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
-        
-                    # Update session state and display DataFrame
+            
+                    # Update session state scoped to the selected resort
                     for phone, status, date, duration, agent in zip(
                         display_df['Phone Number'], statuses, dates, durations, agent_names):
-                        st.session_state['communication_data'][phone] = {
+                        st.session_state['communication_data'][selected_resort][phone] = {
                             'status': status,
                             'date': date,
                             'duration': duration,
                             'agent': agent
+                        }
+                        # Safely update display_df using .loc with .index
+                        idx = display_df.index[display_df['Phone Number'] == phone].tolist()
+                        if idx:  # Ensure the index list is not empty
+                            display_df.loc[idx[0], 'Communication Status'] = status
+                            display_df.loc[idx[0], 'Last Communication Date'] = date
+                            display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
+                            display_df.loc[idx[0], 'Agent Name'] = agent
+
                         }
                         # Safely update display_df using .loc with .index
                         idx = display_df.index[display_df['Phone Number'] == phone].tolist()
