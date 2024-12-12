@@ -376,27 +376,8 @@ def cleanup_phone_number(phone):
         return f"+{phone}"
     return 'No Data'
 
-def reset_filters(selected_resort):
-    """Reset date filters to default max range for the selected resort."""
-    # Define the keys related to date inputs for the selected resort
-    date_keys = [
-        f'check_in_start_input_{selected_resort}',
-        f'check_in_end_input_{selected_resort}',
-        f'check_out_start_input_{selected_resort}',
-        f'check_out_end_input_{selected_resort}'
-    ]
-    
-    # Reset each date input by setting its value to the default
-    for key in date_keys:
-        if key in st.session_state:
-            # Retrieve the default date based on the selected resort's data
-            default_value = st.session_state.get(f'default_{key}', pd.to_datetime('today').date())
-            st.session_state[key] = default_value
-
-    # Optionally, provide user feedback
-    st.success("Date filters have been reset to the default maximum range.")
-
 def rate_limited_request(url, headers, params, request_type='get'):
+    """Make an API request while respecting rate limits."""
     time.sleep(1 / 5)  # 5 requests per second max
     try:
         response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
@@ -407,11 +388,13 @@ def rate_limited_request(url, headers, params, request_type='get'):
     return None
 
 def get_all_phone_number_ids(headers):
+    """Retrieve all phoneNumberIds associated with your OpenPhone account."""
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     response_data = rate_limited_request(phone_numbers_url, headers, {})
     return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
 def get_last_communication_info(phone_number, headers):
+    """Retrieve the last communication status with the guest."""
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         return "No Communications", None, None, None
@@ -455,6 +438,7 @@ def get_last_communication_info(phone_number, headers):
     return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_name
 
 def fetch_communication_info(guest_df, headers):
+    """Fetch communication info for all guests."""
     if 'Phone Number' not in guest_df.columns:
         return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
 
@@ -481,6 +465,19 @@ def fetch_communication_info(guest_df, headers):
             agent_names.append("Unknown")
 
     return statuses, dates, durations, agent_names
+
+# Initialize default dates in session_state if not present
+def initialize_default_dates(selected_resort, min_check_in, max_check_out):
+    """Store default dates for the selected resort in session_state."""
+    defaults = {
+        f'default_check_in_start_input_{selected_resort}': min_check_in,
+        f'default_check_in_end_input_{selected_resort}': max_check_out,
+        f'default_check_out_start_input_{selected_resort}': min_check_in,
+        f'default_check_out_end_input_{selected_resort}': max_check_out
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 # Main Tab2 Content
 with tab2:
@@ -511,49 +508,44 @@ with tab2:
         min_check_in = today
         max_check_out = today
 
-    # Store default dates in session_state if not already stored
-    default_keys = [
-        f'default_check_in_start_input_{selected_resort}',
-        f'default_check_in_end_input_{selected_resort}',
-        f'default_check_out_start_input_{selected_resort}',
-        f'default_check_out_end_input_{selected_resort}'
-    ]
-    if not all(key in st.session_state for key in default_keys):
-        st.session_state[f'default_check_in_start_input_{selected_resort}'] = min_check_in
-        st.session_state[f'default_check_in_end_input_{selected_resort}'] = max_check_out
-        st.session_state[f'default_check_out_start_input_{selected_resort}'] = min_check_in
-        st.session_state[f'default_check_out_end_input_{selected_resort}'] = max_check_out
+    # Initialize and store default dates in session_state
+    initialize_default_dates(selected_resort, min_check_in, max_check_out)
 
     # Date filters with unique keys to reset when a new resort is selected
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=st.session_state.get(f'check_in_start_input_{selected_resort}', min_check_in),
+            value=st.session_state[f'default_check_in_start_input_{selected_resort}'],
             key=f'check_in_start_input_{selected_resort}'
         )
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=st.session_state.get(f'check_in_end_input_{selected_resort}', max_check_out),
+            value=st.session_state[f'default_check_in_end_input_{selected_resort}'],
             key=f'check_in_end_input_{selected_resort}'
         )
 
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=st.session_state.get(f'check_out_start_input_{selected_resort}', min_check_in),
+            value=st.session_state[f'default_check_out_start_input_{selected_resort}'],
             key=f'check_out_start_input_{selected_resort}'
         )
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=st.session_state.get(f'check_out_end_input_{selected_resort}', max_check_out),
+            value=st.session_state[f'default_check_out_end_input_{selected_resort}'],
             key=f'check_out_end_input_{selected_resort}'
         )
 
     with col3:
         reset_button = st.button("Reset Dates", key=f'reset_button_{selected_resort}')
         if reset_button:
-            reset_filters(selected_resort)
+            # Reset the date inputs to their default values
+            st.session_state[f'check_in_start_input_{selected_resort}'] = st.session_state[f'default_check_in_start_input_{selected_resort}']
+            st.session_state[f'check_in_end_input_{selected_resort}'] = st.session_state[f'default_check_in_end_input_{selected_resort}']
+            st.session_state[f'check_out_start_input_{selected_resort}'] = st.session_state[f'default_check_out_start_input_{selected_resort}']
+            st.session_state[f'check_out_end_input_{selected_resort}'] = st.session_state[f'default_check_out_end_input_{selected_resort}']
+            st.success("Date filters have been reset to the default maximum range.")
 
     # Process and display data
     if not resort_df.empty:
@@ -685,6 +677,7 @@ with tab2:
             st.warning("No data available for the selected date range.")
     else:
         st.warning("No data available for the selected resort.")
+
 
 ############################################
 # Message Templates Section
