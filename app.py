@@ -8,11 +8,6 @@ import math
 import requests
 import time
 
-
-
-
-
-
 def init_session_state():
     if 'default_dates' not in st.session_state:
         st.session_state['default_dates'] = {}
@@ -625,28 +620,32 @@ with tab2:
     with col3:
         # Slider for Total Price
         # Slider for Total Price
-       # Handle Total Price safely
+       # Ensure total_price_min and total_price_max are always defined
         if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
             total_price_min = resort_df['Total Price'].min()
             total_price_max = resort_df['Total Price'].max()
-            
+        
             # Handle single-value range by adding a buffer
             if total_price_min == total_price_max:
                 total_price_min -= 1  # Add a buffer of 1 unit
                 total_price_max += 1
         else:
-            # Provide default values if column is missing or empty
-            total_price_min = 0
-            total_price_max = 1000  # Arbitrary range for the slider
+            # Fallback values if 'Total Price' column is missing or empty
+            total_price_min = 0  # Default minimum price
+            total_price_max = 1000  # Default maximum price
         
-        # Safely create the slider
-        total_price_range = st.slider(
-            "Total Price Range",
-            min_value=float(total_price_min),
-            max_value=float(total_price_max),
-            value=(float(total_price_min), float(total_price_max)),
-            key=f'total_price_slider_{selected_resort}'
-        )
+        # Safely create the slider using guaranteed valid variables
+        try:
+            total_price_range = st.slider(
+                "Total Price Range",
+                min_value=float(total_price_min),
+                max_value=float(total_price_max),
+                value=(float(total_price_min), float(total_price_max)),
+                key=f'total_price_slider_{selected_resort}'
+            )
+        except Exception as e:
+            st.error(f"Error creating Total Price slider: {e}")
+   
 
 
         
