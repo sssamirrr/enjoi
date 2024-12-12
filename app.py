@@ -38,6 +38,7 @@ init_session_state()
 
 
 
+
 # Set page configuration
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
