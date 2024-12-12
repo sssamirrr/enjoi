@@ -491,6 +491,8 @@ with tab2:
         )
     else:
         st.write("No data available for the selected resort and date range.")
+                st.warning("No data available for the selected resort and date range.")
+
 
 
 
