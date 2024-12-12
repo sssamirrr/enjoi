@@ -377,8 +377,8 @@ def cleanup_phone_number(phone):
     return 'No Data'
 
 def reset_filters():
-    # Reset specific filters or states back to their default values
-    st.session_state['default_dates'] = {}  # Reset default_dates to an empty dictionary, for example
+    st.session_state['communication_data'] = {}
+    st.experimental_rerun()
 
 def rate_limited_request(url, headers, params, request_type='get'):
     time.sleep(1 / 5)  # 5 requests per second max
@@ -524,8 +524,6 @@ with tab2:
     with col3:
         if st.button("Reset Dates"):
             reset_filters()
-            st.write("Filters have been reset. Current state:", st.session_state)  # Debugging line
-
 
     # Process and display data
     if not resort_df.empty:
