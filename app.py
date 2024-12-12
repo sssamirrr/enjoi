@@ -1,3 +1,4 @@
+check_in_start = st.date_input(
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -551,7 +552,7 @@ with tab2:
             'check_out_end': today,
         }
 
-    # Date filters
+        # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
         check_in_start = st.date_input(
@@ -584,11 +585,18 @@ with tab2:
         st.session_state['check_out_end'] = check_out_end
 
     with col3:
-        if st.button("Reset Dates"):
+        if st.button("Reset Dates", key="reset_dates_button"):
+            # Clear existing date inputs from session state
+            for key in ['check_in_start_input', 'check_in_end_input', 
+                       'check_out_start_input', 'check_out_end_input']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
             if 'default_dates' in st.session_state:
                 reset_filters()
             else:
                 st.warning("Default dates are not available.")
+
 
     # Process and display data
     if not resort_df.empty:
