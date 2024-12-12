@@ -578,7 +578,8 @@ with tab2:
             })[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
 
             # Format phone numbers
-            display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
+            display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
+
 
             # Initialize communication status from session state           
            
