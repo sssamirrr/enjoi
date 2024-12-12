@@ -524,6 +524,8 @@ with tab2:
     with col3:
         if st.button("Reset Dates"):
             reset_filters()
+            st.write("Filters have been reset. Current state:", st.session_state)  # Debugging line
+
 
     # Process and display data
     if not resort_df.empty:
