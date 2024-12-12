@@ -687,30 +687,36 @@ with tab2:
                     "Content-Type": "application/json"
                 }
             
-                with st.spinner('Fetching communication information...'):
-                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+                # Filter only the selected rows for fetching communication data
+                selected_rows = display_df[display_df['Select'] == True]
             
-                    # Update session state scoped to the selected resort
-                    for phone, status, date, duration, agent in zip(
-                        display_df['Phone Number'], statuses, dates, durations, agent_names):
-                        st.session_state['communication_data'][selected_resort][phone] = {
-                            'status': status,
-                            'date': date,
-                            'duration': duration,
-                            'agent': agent
-                        }
+                if selected_rows.empty:
+                    st.info("No guests selected to fetch communication info.")
+                else:
+                    with st.spinner('Fetching communication information...'):
+                        # Fetch info only for selected_rows
+                        statuses, dates, durations, agent_names = fetch_communication_info(selected_rows, headers)
+            
+                        # Update session state and display_df for the selected guests only
+                        for phone, status, date, duration, agent in zip(
+                            selected_rows['Phone Number'], statuses, dates, durations, agent_names):
+                            
+                            # Update session state
+                            st.session_state['communication_data'][selected_resort][phone] = {
+                                'status': status,
+                                'date': date,
+                                'duration': duration,
+                                'agent': agent
+                            }
+            
+                            # Update display_df
+                            idx = display_df.index[display_df['Phone Number'] == phone].tolist()
+                            if idx:  # Ensure the index is not empty
+                                display_df.loc[idx[0], 'Communication Status'] = status
+                                display_df.loc[idx[0], 'Last Communication Date'] = date
+                                display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
+                                display_df.loc[idx[0], 'Agent Name'] = agent
 
-                        # Update display_df
-                        idx = display_df.index[display_df['Phone Number'] == phone].tolist()
-                        if idx:  # Ensure the index list is not empty
-                            display_df.loc[idx[0], 'Communication Status'] = status
-                            display_df.loc[idx[0], 'Last Communication Date'] = date
-                            display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
-                            display_df.loc[idx[0], 'Agent Name'] = agent
-
-                        
-
-                        
                         
         
             # Reorder columns
