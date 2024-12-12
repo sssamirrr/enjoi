@@ -625,25 +625,29 @@ with tab2:
     with col3:
         # Slider for Total Price
         # Slider for Total Price
+       # Handle Total Price safely
         if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
             total_price_min = resort_df['Total Price'].min()
             total_price_max = resort_df['Total Price'].max()
-        
+            
             # Handle single-value range by adding a buffer
             if total_price_min == total_price_max:
-                total_price_min = total_price_min - 1  # Add a buffer of 1 unit
-                total_price_max = total_price_max + 1
-        
-            total_price_range = st.slider(
-                "Total Price Range",
-                min_value=float(total_price_min),
-                max_value=float(total_price_max),
-                value=(float(total_price_min), float(total_price_max)),
-                key=f'total_price_slider_{selected_resort}'
-            )
+                total_price_min -= 1  # Add a buffer of 1 unit
+                total_price_max += 1
         else:
-            st.warning("No valid Total Price data available for filtering.")
-            total_price_range = (0, 0)  # Default range if no valid data
+            # Provide default values if column is missing or empty
+            total_price_min = 0
+            total_price_max = 1000  # Arbitrary range for the slider
+        
+        # Safely create the slider
+        total_price_range = st.slider(
+            "Total Price Range",
+            min_value=float(total_price_min),
+            max_value=float(total_price_max),
+            value=(float(total_price_min), float(total_price_max)),
+            key=f'total_price_slider_{selected_resort}'
+        )
+
 
         
         # Dropdown for Rate Code
