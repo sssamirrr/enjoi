@@ -351,13 +351,7 @@ with tab1:
             st.plotly_chart(fig_arrivals, use_container_width=True)
 
 
-# Function to reset filters to defaults
-def reset_filters():
-    default_dates = st.session_state['default_dates']
-    for key, value in default_dates.items():
-        if key in st.session_state:
-            del st.session_state[key]  # Delete the existing key to allow widget reinitialization
-    st.session_state.update(default_dates)  # Update with the default values
+
 
 
 import pandas as pd
@@ -370,14 +364,17 @@ import json
 ############################################
 
 # Helper Functions
-def format_phone_number(phone):
+def cleanup_phone_number(phone):
+    """Clean up phone number format"""
+    if pd.isna(phone):
+        return 'No Data'
+    # Remove spaces and non-numeric characters
     phone = ''.join(filter(str.isdigit, str(phone)))
     if len(phone) == 10:
         return f"+1{phone}"
     elif len(phone) == 11 and phone.startswith('1'):
         return f"+{phone}"
-    else:
-        return 'No Data'
+    return 'No Data'
 
 def reset_filters():
     default_dates = st.session_state['default_dates']
@@ -385,8 +382,9 @@ def reset_filters():
         if key in st.session_state:
             del st.session_state[key]
     st.session_state.update(default_dates)
-    st.session_state.communication_data = {}
+    st.session_state['communication_data'] = {}  # Changed from dot notation
     st.rerun()
+
 
 def rate_limited_request(url, headers, params, request_type='get'):
     time.sleep(1 / 5)  # 5 requests per second max
@@ -612,12 +610,36 @@ with tab2:
             select_all = st.checkbox("Select All")
             display_df['Select'] = select_all
 
-            # Fetch Communication Info button
+            # In the Fetch Communication Info button section:
             if st.button("Fetch Communication Info"):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
+            
+                with st.spinner('Fetching communication information...'):
+                    # Clean up phone numbers first
+                    display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
+                    
+                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+                    
+                    # Update session state and display DataFrame
+                    for phone, status, date, duration, agent in zip(
+                        display_df['Phone Number'], statuses, dates, durations, agent_names):
+                        st.session_state['communication_data'][phone] = {  # Changed from dot notation
+                            'status': status,
+                            'date': date,
+                            'duration': duration,
+                            'agent': agent
+                        }
+                        
+                    display_df['Communication Status'] = statuses
+                    display_df['Last Communication Date'] = dates
+                    display_df['Call Duration (seconds)'] = durations
+                    display_df['Agent Name'] = agent_names
+                    
+                    # Convert phone numbers to string type explicitly
+                    display_df['Phone Number'] = display_df['Phone Number'].astype(str)
 
                 with st.spinner('Fetching communication information...'):
                     statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
