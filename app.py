@@ -682,63 +682,39 @@ with tab2:
             # Fetch Communication Info Button
             # Fetch Communication Info Button
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
-                headers = {
-                    "Authorization": OPENPHONE_API_KEY,
-                    "Content-Type": "application/json"
-                }
+                # Get only the selected rows
+                selected_rows = display_df[display_df['Select'] == True]
+                
+                if selected_rows.empty:
+                    st.warning("Please select at least one guest to fetch communication info.")
+                else:
+                    headers = {
+                        "Authorization": OPENPHONE_API_KEY,
+                        "Content-Type": "application/json"
+                    }
+                
+                    with st.spinner(f'Fetching communication information for {len(selected_rows)} selected guests...'):
+                        # Only fetch for selected rows
+                        statuses, dates, durations, agent_names = fetch_communication_info(selected_rows, headers)
+                    
+                        # Update session state only for selected rows
+                        for i, (idx, row) in enumerate(selected_rows.iterrows()):
+                            phone = row['Phone Number']
+                            st.session_state['communication_data'][selected_resort][phone] = {
+                                'status': statuses[i],
+                                'date': dates[i],
+                                'duration': durations[i],
+                                'agent': agent_names[i]
+                            }
             
-                with st.spinner('Fetching communication information...'):
-                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+                            # Update display_df for the selected row
+                            display_df.loc[idx, 'Communication Status'] = statuses[i]
+                            display_df.loc[idx, 'Last Communication Date'] = dates[i]
+                            display_df.loc[idx, 'Call Duration (seconds)'] = durations[i]
+                            display_df.loc[idx, 'Agent Name'] = agent_names[i]
             
-                    # Update session state scoped to the selected resort
-                    for phone, status, date, duration, agent in zip(
-                        display_df['Phone Number'], statuses, dates, durations, agent_names):
-                        st.session_state['communication_data'][selected_resort][phone] = {
-                            'status': status,
-                            'date': date,
-                            'duration': duration,
-                            'agent': agent
-                        }
+                        st.success(f"Successfully fetched communication info for {len(selected_rows)} guests.")
 
-                        # Update display_df
-                        idx = display_df.index[display_df['Phone Number'] == phone].tolist()
-                        if idx:  # Ensure the index list is not empty
-                            display_df.loc[idx[0], 'Communication Status'] = status
-                            display_df.loc[idx[0], 'Last Communication Date'] = date
-                            display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
-                            display_df.loc[idx[0], 'Agent Name'] = agent
-
-                        
-
-                        
-                        
-        
-            # Reorder columns
-            display_df = display_df[[
-                'Select', 'Guest Name', 'Check In', 'Check Out', 
-                'Phone Number', 'Rate Code', 'Price', 
-                'Communication Status', 'Last Communication Date', 
-                'Call Duration (seconds)', 'Agent Name'
-            ]]
-        
-            # Display the interactive data editor
-            edited_df = st.data_editor(
-                display_df,
-                column_config={
-                    "Select": st.column_config.CheckboxColumn("Select", help="Select or deselect this guest"),
-                    "Guest Name": st.column_config.TextColumn("Guest Name"),
-                    "Check In": st.column_config.DateColumn("Check In"),
-                    "Check Out": st.column_config.DateColumn("Check Out"),
-                    "Phone Number": st.column_config.TextColumn("Phone Number"),
-                    "Rate Code": st.column_config.TextColumn("Rate Code"),
-                    "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
-                    "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
-                    "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
-                },
-                hide_index=True,
-                use_container_width=True,
-                key=f"guest_editor_{selected_resort}"
-            )
         else:
             st.warning("No data available for the selected filters.")
 
