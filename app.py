@@ -542,7 +542,31 @@ with tab2:
         max_check_out = today
 
     # Date filters with unique keys to reset when a new resort is selected
-        # Use the reset trigger to reset widget values
+        # Calculate price range values first
+    try:
+        if 'resort_df' in locals() and not resort_df.empty and 'Total Price' in resort_df.columns:
+            if not resort_df['Total Price'].isnull().all():
+                total_price_min = float(resort_df['Total Price'].min())
+                total_price_max = float(resort_df['Total Price'].max())
+                
+                if total_price_min == total_price_max:
+                    total_price_min -= 1
+                    total_price_max += 1
+            else:
+                total_price_min = float(resort_df['Total Price'].dropna().min())
+                total_price_max = float(resort_df['Total Price'].dropna().max())
+        else:
+            total_price_min = float(df['Total Price'].min())
+            total_price_max = float(df['Total Price'].max())
+
+        total_price_min = max(0.0, float(total_price_min))
+        total_price_max = max(total_price_min + 1, float(total_price_max))
+    except Exception as e:
+        st.error(f"Error calculating price range: {str(e)}")
+        total_price_min = 0.0
+        total_price_max = 1000.0
+
+    # Use the reset trigger to reset widget values
     if st.session_state.get('reset_trigger', False):
         # Reset widget values to their defaults
         check_in_start = st.date_input(
@@ -567,11 +591,12 @@ with tab2:
         )
         total_price_range = st.slider(
             "Total Price Range",
-            min_value=float(total_price_min),
-            max_value=float(total_price_max),
-            value=st.session_state.get(f'default_total_price_{selected_resort}', (float(total_price_min), float(total_price_max))),
+            min_value=total_price_min,
+            max_value=total_price_max,
+            value=(total_price_min, total_price_max),
             key=f'total_price_slider_{selected_resort}'
         )
+
         selected_rate_code = st.selectbox(
             "Select Rate Code",
             options=["All"] + rate_code_options,
@@ -618,59 +643,15 @@ with tab2:
 
     
     with col3:
-      try:
-        # Only try to get values from dataframe if it exists and has data
-        if 'resort_df' in locals() and not resort_df.empty and 'Total Price' in resort_df.columns:
-            if not resort_df['Total Price'].isnull().all():
-                total_price_min = float(resort_df['Total Price'].min())
-                total_price_max = float(resort_df['Total Price'].max())
-    
-                # Handle single-value range
-                if total_price_min == total_price_max:
-                    total_price_min -= 1
-                    total_price_max += 1
-            else:
-                total_price_min = float(resort_df['Total Price'].dropna().min())
-                total_price_max = float(resort_df['Total Price'].dropna().max())
-        else:
-            # If no data is available, get the min and max from the full dataset
-            total_price_min = float(df['Total Price'].min())
-            total_price_max = float(df['Total Price'].max())
-    
-        # Ensure values are valid
-        total_price_min = max(0.0, float(total_price_min))
-        total_price_max = max(total_price_min + 1, float(total_price_max))
-    
-        # Create the slider
-        total_price_range = st.slider(
-            "Total Price Range",
-            min_value=total_price_min,
-            max_value=total_price_max,
-            value=(total_price_min, total_price_max),
-            key=f'total_price_slider_{selected_resort}'
-        )
-    
-    except Exception as e:
-        st.error(f"Error in price range slider: {str(e)}")
-        # If everything fails, fall back to the full dataset range
-        fallback_min = float(df['Total Price'].min())
-        fallback_max = float(df['Total Price'].max())
-        total_price_range = st.slider(
-            "Total Price Range",
-            min_value=fallback_min,
-            max_value=fallback_max,
-            value=(fallback_min, fallback_max),
-            key=f'total_price_slider_fallback_{selected_resort}'
-        )
+    # Dropdown for Rate Code
+    rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
+    selected_rate_code = st.selectbox(
+        "Select Rate Code",
+        options=["All"] + rate_code_options,
+        key=f'rate_code_filter_{selected_resort}'
+    )
 
-        
-        # Dropdown for Rate Code
-        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
-        selected_rate_code = st.selectbox(
-            "Select Rate Code",
-            options=["All"] + rate_code_options,
-            key=f'rate_code_filter_{selected_resort}'
-        )
+    
 
     with st.container():
         # Reset Filters Button
@@ -774,9 +755,7 @@ with tab2:
                             display_df.loc[idx[0], 'Communication Status'] = status
                             display_df.loc[idx[0], 'Last Communication Date'] = date
                             display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
-                            display_df.loc[idx[0], 'Agent Name'] = agent
-
-                        
+                            display_df.loc[idx[0], 'Agent Name'] = agent                 
 
                         
                         
