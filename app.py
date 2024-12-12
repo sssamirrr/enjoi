@@ -533,81 +533,111 @@ with tab2:
 
     # Set default dates based on the selected resort
     if not resort_df.empty:
-        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dropna()
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').dropna()
 
-        arrival_dates = arrival_dates.dropna()
-        departure_dates = departure_dates.dropna()
+        if arrival_dates.empty:
+            min_check_in = pd.to_datetime('today').date()
+        else:
+            min_check_in = arrival_dates.min().date()
 
-        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
-        max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
+        if departure_dates.empty:
+            max_check_out = pd.to_datetime('today').date()
+        else:
+            max_check_out = departure_dates.max().date()
     else:
         today = pd.to_datetime('today').date()
         min_check_in = today
         max_check_out = today
 
-    # Date filters with unique keys to reset when a new resort is selected
+    # Retrieve any stored default values from session state
+    check_in_start_key = f'default_check_in_start_{selected_resort}'
+    check_in_end_key = f'default_check_in_end_{selected_resort}'
+    check_out_start_key = f'default_check_out_start_{selected_resort}'
+    check_out_end_key = f'default_check_out_end_{selected_resort}'
+    price_range_key = f'default_total_price_{selected_resort}'
+    rate_code_key = f'default_rate_code_{selected_resort}'
+
+    check_in_start_default = st.session_state.get(check_in_start_key, min_check_in)
+    check_in_end_default = st.session_state.get(check_in_end_key, max_check_out)
+    check_out_start_default = st.session_state.get(check_out_start_key, min_check_in)
+    check_out_end_default = st.session_state.get(check_out_end_key, max_check_out)
+
+    # Determine defaults for total price
+    if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
+        total_price_min = resort_df['Total Price'].min()
+        total_price_max = resort_df['Total Price'].max()
+        # If min and max are the same, add a small buffer
+        if total_price_min == total_price_max:
+            total_price_min -= 1
+            total_price_max += 1
+    else:
+        # No valid total price data
+        total_price_min = 0
+        total_price_max = 0
+
+    total_price_range_default = st.session_state.get(price_range_key, (float(total_price_min), float(total_price_max)))
+    rate_code_default = st.session_state.get(rate_code_key, "All")
+
     col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
-            value=min_check_in,
+            value=check_in_start_default,
             key=f'check_in_start_input_{selected_resort}'
         )
         check_in_end = st.date_input(
             "Check In Date (End)",
-            value=max_check_out,
+            value=check_in_end_default,
             key=f'check_in_end_input_{selected_resort}'
         )
 
     with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
-            value=min_check_in,
+            value=check_out_start_default,
             key=f'check_out_start_input_{selected_resort}'
         )
         check_out_end = st.date_input(
             "Check Out Date (End)",
-            value=max_check_out,
+            value=check_out_end_default,
             key=f'check_out_end_input_{selected_resort}'
         )
-    
+
     with col3:
-        # Slider for Total Price
-        # Slider for Total Price
         if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
-            total_price_min = resort_df['Total Price'].min()
-            total_price_max = resort_df['Total Price'].max()
-        
-            # Handle single-value range by adding a buffer
-            if total_price_min == total_price_max:
-                total_price_min = total_price_min - 1  # Add a buffer of 1 unit
-                total_price_max = total_price_max + 1
-        
             total_price_range = st.slider(
                 "Total Price Range",
                 min_value=float(total_price_min),
                 max_value=float(total_price_max),
-                value=(float(total_price_min), float(total_price_max)),
+                value=total_price_range_default,
                 key=f'total_price_slider_{selected_resort}'
             )
         else:
             st.warning("No valid Total Price data available for filtering.")
-            total_price_range = (0, 0)  # Default range if no valid data
+            total_price_range = (0, 0)
 
-        
-        # Dropdown for Rate Code
         rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
+        # Set the index for the rate code dropdown to the previously saved default if available
+        rate_code_all_options = ["All"] + list(rate_code_options)
+        initial_rate_code_index = rate_code_all_options.index(rate_code_default) if rate_code_default in rate_code_all_options else 0
         selected_rate_code = st.selectbox(
             "Select Rate Code",
-            options=["All"] + rate_code_options,
+            options=rate_code_all_options,
+            index=initial_rate_code_index,
             key=f'rate_code_filter_{selected_resort}'
         )
 
-    with st.container():
-        # Reset Filters Button
-        if st.button("Reset Filters"):
-            reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
+    # Reset Filters Button
+    if st.button("Reset Filters"):
+        reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
+
+    # Filter and display data code remains the same as before,
+    # ensuring that `st.session_state['communication_data']` is never cleared.
+    # ...
+    # Make sure to NOT overwrite `st.session_state['communication_data']`
+    # and always use it to populate the "Communication Status" columns.
+
 
 
 
