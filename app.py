@@ -225,10 +225,15 @@ def fetch_communication_info(guest_df, headers):
     return statuses, dates
 
 
-############################################
-# Create Tabs
-############################################
-tab1, tab2, tab3 = st.tabs(["Dashboard", "Marketing", "Tour Prediction"])
+# Main tabs
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Dashboard", 
+    "Marketing", 
+    "Tour Prediction",
+    "Owner Marketing",
+    "Overnight Misses"
+])
+
 
 ############################################
 # Dashboard Tab
@@ -808,6 +813,36 @@ with tab3:
                             st.metric("Total Estimated Tours for All Resorts", overall_summary['Tours'].sum())
         else:
             st.info("No tour data available for the selected date range.")
+
+with tab4:
+    st.header("Owner Marketing")
+    # Placeholder for Owner Marketing functionality
+    st.info("Owner Marketing functionality coming soon...")
+    
+    # You can add some basic structure for future development
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Owner Statistics")
+        # Placeholder for owner stats
+        
+    with col2:
+        st.subheader("Marketing Campaigns")
+        # Placeholder for marketing campaigns
+
+with tab5:
+    st.header("Overnight Misses")
+    # Placeholder for Overnight Misses functionality
+    st.info("Overnight Misses functionality coming soon...")
+    
+    # You can add some basic structure for future development
+    st.subheader("Missed Opportunities")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Misses", "---")
+    with col2:
+        st.metric("Revenue Impact", "$---")
+    with col3:
+        st.metric("Recovery Rate", "---")
 
 ############################################
 # Raw Data Viewer
