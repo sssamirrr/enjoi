@@ -383,9 +383,6 @@ def cleanup_phone_number(phone):
     except:
         return 'No Data'
 
-
-d
-
 def rate_limited_request(url, headers, params, request_type='get'):
     time.sleep(1 / 5)  # 5 requests per second max
     try:
