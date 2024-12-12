@@ -8,36 +8,6 @@ import math
 import requests
 import time
 
-# Initialize session state variables
-if 'communication_data' not in st.session_state:
-    st.session_state['communication_data'] = {}
-
-def init_session_state():
-    if 'default_dates' not in st.session_state:
-        st.session_state['default_dates'] = {}
-    
-    # Initialize date input keys for all resorts
-    for resort in df['Market'].unique():
-        sanitized_resort = sanitize_key(resort)
-        check_in_start_key = f'check_in_start_input_{sanitized_resort}'
-        check_in_end_key = f'check_in_end_input_{sanitized_resort}'
-        check_out_start_key = f'check_out_start_input_{sanitized_resort}'
-        check_out_end_key = f'check_out_end_input_{sanitized_resort}'
-        
-        if check_in_start_key not in st.session_state:
-            st.session_state[check_in_start_key] = pd.to_datetime('today').date()
-        if check_in_end_key not in st.session_state:
-            st.session_state[check_in_end_key] = pd.to_datetime('today').date()
-        if check_out_start_key not in st.session_state:
-            st.session_state[check_out_start_key] = pd.to_datetime('today').date()
-        if check_out_end_key not in st.session_state:
-            st.session_state[check_out_end_key] = pd.to_datetime('today').date()
-
-# Call the initialization function
-init_session_state()
-
-
-
 
 # Set page configuration
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
@@ -111,6 +81,51 @@ df = get_google_sheet_data()
 if df is None:
     st.error("Failed to load data. Please check your connection and credentials.")
     st.stop()
+
+# Helper function (move this up, after data loading)
+def sanitize_key(key):
+    """
+    Sanitize the key by replacing non-alphanumeric characters with underscores.
+    Ensures that the key is not empty by adding a prefix if necessary.
+    """
+    sanitized = re.sub(r'\W+', '_', key)
+    if not sanitized:
+        sanitized = 'resort'
+    return f'resort_{sanitized}'
+
+# Initialize session state variables
+if 'communication_data' not in st.session_state:
+    st.session_state['communication_data'] = {}
+
+def init_session_state():
+    if 'default_dates' not in st.session_state:
+        st.session_state['default_dates'] = {}
+    
+    # Initialize date input keys for all resorts
+    for resort in df['Market'].unique():
+        sanitized_resort = sanitize_key(resort)
+        check_in_start_key = f'check_in_start_input_{sanitized_resort}'
+        check_in_end_key = f'check_in_end_input_{sanitized_resort}'
+        check_out_start_key = f'check_out_start_input_{sanitized_resort}'
+        check_out_end_key = f'check_out_end_input_{sanitized_resort}'
+        
+        if check_in_start_key not in st.session_state:
+            st.session_state[check_in_start_key] = pd.to_datetime('today').date()
+        if check_in_end_key not in st.session_state:
+            st.session_state[check_in_end_key] = pd.to_datetime('today').date()
+        if check_out_start_key not in st.session_state:
+            st.session_state[check_out_start_key] = pd.to_datetime('today').date()
+        if check_out_end_key not in st.session_state:
+            st.session_state[check_out_end_key] = pd.to_datetime('today').date()
+
+# Call the initialization function
+init_session_state()
+
+
+
+
+
+
 
 ############################################
 # OpenPhone API Functions
