@@ -618,50 +618,50 @@ with tab2:
 
     
     with col3:
-        # Slider for Total Price
-        # Slider for Total Price
-       # Ensure total_price_min and total_price_max are always defined
-       # Ensure total_price_min and total_price_max are always defined
-        if not resort_df.empty and 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
-            try:
+      try:
+        # Only try to get values from dataframe if it exists and has data
+        if 'resort_df' in locals() and not resort_df.empty and 'Total Price' in resort_df.columns:
+            if not resort_df['Total Price'].isnull().all():
                 total_price_min = float(resort_df['Total Price'].min())
                 total_price_max = float(resort_df['Total Price'].max())
-        
-                # Handle single-value range by adding a buffer
+    
+                # Handle single-value range
                 if total_price_min == total_price_max:
-                    total_price_min -= 1  # Add a buffer of 1 unit
+                    total_price_min -= 1
                     total_price_max += 1
-            except (ValueError, TypeError):
-                total_price_min = 0.0
-                total_price_max = 1000.0
+            else:
+                total_price_min = float(resort_df['Total Price'].dropna().min())
+                total_price_max = float(resort_df['Total Price'].dropna().max())
         else:
-            # Fallback values if 'Total Price' column is missing or empty
-            total_price_min = 0.0  # Default minimum price
-            total_price_max = 1000.0  # Default maximum price
-        
-        # Ensure values are valid floats and in correct order
-        total_price_min = float(max(0, total_price_min))  # Ensure non-negative
-        total_price_max = float(max(total_price_min + 1, total_price_max))  # Ensure max > min
-        
-        # Safely create the slider using guaranteed valid variables
-        try:
-            total_price_range = st.slider(
-                "Total Price Range",
-                min_value=total_price_min,
-                max_value=total_price_max,
-                value=(total_price_min, total_price_max),
-                key=f'total_price_slider_{selected_resort}'
-            )
-        except Exception as e:
-            st.error(f"Error creating Total Price slider: {e}")
-            # Fallback slider with default values
-            total_price_range = st.slider(
-                "Total Price Range",
-                min_value=0.0,
-                max_value=1000.0,
-                value=(0.0, 1000.0),
-                key=f'total_price_slider_fallback_{selected_resort}'
-            )
+            # If no data is available, get the min and max from the full dataset
+            total_price_min = float(df['Total Price'].min())
+            total_price_max = float(df['Total Price'].max())
+    
+        # Ensure values are valid
+        total_price_min = max(0.0, float(total_price_min))
+        total_price_max = max(total_price_min + 1, float(total_price_max))
+    
+        # Create the slider
+        total_price_range = st.slider(
+            "Total Price Range",
+            min_value=total_price_min,
+            max_value=total_price_max,
+            value=(total_price_min, total_price_max),
+            key=f'total_price_slider_{selected_resort}'
+        )
+    
+    except Exception as e:
+        st.error(f"Error in price range slider: {str(e)}")
+        # If everything fails, fall back to the full dataset range
+        fallback_min = float(df['Total Price'].min())
+        fallback_max = float(df['Total Price'].max())
+        total_price_range = st.slider(
+            "Total Price Range",
+            min_value=fallback_min,
+            max_value=fallback_max,
+            value=(fallback_min, fallback_max),
+            key=f'total_price_slider_fallback_{selected_resort}'
+        )
 
         
         # Dropdown for Rate Code
