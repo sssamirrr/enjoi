@@ -492,31 +492,40 @@ with tab2:
     if 'default_dates' not in st.session_state:
         st.session_state['default_dates'] = {}
 
-    # Set default dates
+   # Set default dates to show maximum range
     if not resort_df.empty:
+        # Convert dates to datetime
         arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
-
+    
+        # Drop NaN values
         arrival_dates = arrival_dates.dropna()
         departure_dates = departure_dates.dropna()
+    
+        if not arrival_dates.empty and not departure_dates.empty:
+            # Get the full date range for the resort
+            earliest_arrival = arrival_dates.min().date()
+            latest_arrival = arrival_dates.max().date()
+            earliest_departure = departure_dates.min().date()
+            latest_departure = departure_dates.max().date()
+    
+            # Set the maximum possible range as default
+            st.session_state['default_dates'] = {
+                'check_in_start': earliest_arrival,    # Earliest possible check-in
+                'check_in_end': latest_arrival,        # Latest possible check-in
+                'check_out_start': earliest_departure, # Earliest possible check-out
+                'check_out_end': latest_departure      # Latest possible check-out
+            }
+        else:
+            # Fallback to today's date if no data
+            today = pd.to_datetime('today').date()
+            st.session_state['default_dates'] = {
+                'check_in_start': today,
+                'check_in_end': today,
+                'check_out_start': today,
+                'check_out_end': today
+            }
 
-        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
-        max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
-
-        st.session_state['default_dates'] = {
-            'check_in_start': min_check_in,
-            'check_in_end': max_check_out,
-            'check_out_start': min_check_in,
-            'check_out_end': max_check_out,
-        }
-    else:
-        today = pd.to_datetime('today').date()
-        st.session_state['default_dates'] = {
-            'check_in_start': today,
-            'check_in_end': today,
-            'check_out_start': today,
-            'check_out_end': today,
-        }
 
     # Date filters
     col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
