@@ -524,15 +524,16 @@ with tab2:
         display_df = filtered_df[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
         display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
 
-        # Apply stored communication data if available
-        display_df['Communication Status'] = display_df['Phone Number'].map(
-            st.session_state.communication_data['statuses']).fillna('Not Checked')
-        display_df['Last Communication Date'] = display_df['Phone Number'].map(
-            st.session_state.communication_data['dates'])
-        display_df['Call Duration (seconds)'] = display_df['Phone Number'].map(
-            st.session_state.communication_data['durations'])
-        display_df['Agent Name'] = display_df['Phone Number'].map(
-            st.session_state.communication_data['agent_names'])
+       # Apply stored communication data if available
+        display_df['Communication Status'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['statuses'].get(x, 'Not Checked'))
+        display_df['Last Communication Date'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['dates'].get(x))
+        display_df['Call Duration (seconds)'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['durations'].get(x))
+        display_df['Agent Name'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['agent_names'].get(x))
+
 
         # Add "Select All" checkbox
         select_all = st.checkbox("Select All")
