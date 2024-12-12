@@ -394,6 +394,130 @@ import requests
 import time
 import json
 
+############################################
+# Marketing Tab
+############################################
+
+# Helper Functions
+def cleanup_phone_number(phone):
+    """Clean up phone number format"""
+    if pd.isna(phone):
+        return 'No Data'
+    # Remove spaces and non-numeric characters
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    return 'No Data'
+
+def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max):
+    """
+    Reset filter-related session state variables based on the provided resort and date range.
+    """
+    try:
+        # Set the reset trigger to True
+        st.session_state['reset_trigger'] = True
+
+        # Store the new defaults in session state
+        st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
+        st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
+        st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
+        st.session_state[f'default_check_out_end_{selected_resort}'] = max_check_out
+        st.session_state[f'default_total_price_{selected_resort}'] = (float(total_price_min), float(total_price_max))
+        st.session_state[f'default_rate_code_{selected_resort}'] = "All"
+    except Exception as e:
+        st.error(f"Error resetting filters: {e}")
+
+
+
+def rate_limited_request(url, headers, params, request_type='get'):
+    time.sleep(1 / 5)  # 5 requests per second max
+    try:
+        response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
+        if response and response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.warning(f"Exception during request: {str(e)}")
+    return None
+
+def get_all_phone_number_ids(headers):
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+
+def get_last_communication_info(phone_number, headers):
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        return "No Communications", None, None, None
+
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
+    call_duration = None
+    agent_name = None
+
+    for phone_number_id in phone_number_ids:
+        params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
+        
+        messages_response = rate_limited_request(messages_url, headers, params)
+        if messages_response and 'data' in messages_response:
+            for message in messages_response['data']:
+                msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or msg_time > latest_datetime:
+                    latest_datetime = msg_time
+                    latest_type = "Message"
+                    latest_direction = message.get("direction", "unknown")
+                    agent_name = message.get("user", {}).get("name", "Unknown Agent")
+
+        calls_response = rate_limited_request(calls_url, headers, params)
+        if calls_response and 'data' in calls_response:
+            for call in calls_response['data']:
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
+                    latest_type = "Call"
+                    latest_direction = call.get("direction", "unknown")
+                    call_duration = call.get("duration")
+                    agent_name = call.get("user", {}).get("name", "Unknown Agent")
+
+    if not latest_datetime:
+        return "No Communications", None, None, None
+
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_name
+
+def fetch_communication_info(guest_df, headers):
+    if 'Phone Number' not in guest_df.columns:
+        return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
+
+    statuses, dates, durations, agent_names = [], [], [], []
+    
+    for _, row in guest_df.iterrows():
+        phone = row['Phone Number']
+        if phone and phone != 'No Data':
+            try:
+                status, last_date, duration, agent_name = get_last_communication_info(phone, headers)
+                statuses.append(status)
+                dates.append(last_date)
+                durations.append(duration)
+                agent_names.append(agent_name)
+            except Exception as e:
+                statuses.append("Error")
+                dates.append(None)
+                durations.append(None)
+                agent_names.append("Unknown")
+        else:
+            statuses.append("Invalid Number")
+            dates.append(None)
+            durations.append(None)
+            agent_names.append("Unknown")
+
+    return statuses, dates, durations, agent_names
+
+# Main Tab2 Content
 with tab2:
     st.title("🏖️ Marketing Information by Resort")
 
@@ -403,12 +527,17 @@ with tab2:
         options=sorted(df['Market'].unique())
     )
 
+    # Filter for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    resort_df = df[df['Market'] == selected_resort].copy()
+    # Set default dates based on the selected resort
     if not resort_df.empty:
-        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dropna()
-        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').dropna()
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        arrival_dates = arrival_dates.dropna()
+        departure_dates = departure_dates.dropna()
 
         min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
         max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
@@ -417,6 +546,7 @@ with tab2:
         min_check_in = today
         max_check_out = today
 
+    # Date filters with unique keys to reset when a new resort is selected
     col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
     with col1:
         check_in_start = st.date_input(
@@ -441,16 +571,19 @@ with tab2:
             value=max_check_out,
             key=f'check_out_end_input_{selected_resort}'
         )
-
+    
     with col3:
+        # Slider for Total Price
+        # Slider for Total Price
         if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
             total_price_min = resort_df['Total Price'].min()
             total_price_max = resort_df['Total Price'].max()
-
+        
+            # Handle single-value range by adding a buffer
             if total_price_min == total_price_max:
-                total_price_min -= 1
-                total_price_max += 1
-
+                total_price_min = total_price_min - 1  # Add a buffer of 1 unit
+                total_price_max = total_price_max + 1
+        
             total_price_range = st.slider(
                 "Total Price Range",
                 min_value=float(total_price_min),
@@ -460,22 +593,25 @@ with tab2:
             )
         else:
             st.warning("No valid Total Price data available for filtering.")
-            total_price_range = (0, 0)
+            total_price_range = (0, 0)  # Default range if no valid data
 
-        rate_code_options = []
-        if 'Rate Code Name' in resort_df.columns:
-            rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique())
-
+        
+        # Dropdown for Rate Code
+        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
         selected_rate_code = st.selectbox(
             "Select Rate Code",
             options=["All"] + rate_code_options,
             key=f'rate_code_filter_{selected_resort}'
         )
 
-    # Reset Filters Button
-    if st.button("Reset Filters"):
-        reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
+    with st.container():
+        # Reset Filters Button
+        if st.button("Reset Filters"):
+            reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
 
+
+
+    # Process and display data
     if not resort_df.empty:
         resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
@@ -487,12 +623,14 @@ with tab2:
             (resort_df['Departure Date Short'].dt.date <= check_out_end)
         ]
 
+        # Apply Total Price filter
         if 'Total Price' in filtered_df.columns:
             filtered_df = filtered_df[
                 (filtered_df['Total Price'] >= total_price_range[0]) &
                 (filtered_df['Total Price'] <= total_price_range[1])
             ]
 
+        # Apply Rate Code filter
         if selected_rate_code != "All" and 'Rate Code Name' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Rate Code Name'] == selected_rate_code]
 
@@ -505,39 +643,85 @@ with tab2:
                 'Rate Code Name': 'Rate Code',
                 'Total Price': 'Price'
             })
-
+        
+            # Ensure required columns are present
             required_columns = [
                 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
                 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name'
             ]
             for col in required_columns:
                 if col not in display_df.columns:
-                    display_df[col] = ""  # Use empty string so column is visible
-
-            # Cleanup phone numbers
+                    display_df[col] = None  # Add missing column with default value
+        
+            # Format phone numbers
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
-
-            # Add Select Column as boolean
+        
+            # Add Select All checkbox
             select_all = st.checkbox("Select All Guests", key=f'select_all_{selected_resort}')
-            display_df['Select'] = select_all  # Boolean column: True/False
-
-            # Initialize communication data if needed
+            display_df['Select'] = select_all
+        
+            # Initialize session state for communication data if not present
+            # Initialize session state for communication data, scoped by resort
             if 'communication_data' not in st.session_state:
                 st.session_state['communication_data'] = {}
             if selected_resort not in st.session_state['communication_data']:
                 st.session_state['communication_data'][selected_resort] = {}
 
-            # Update display_df with saved communication data
+        
+            # Update display_df with saved communication data from session state
             for idx, row in display_df.iterrows():
                 phone = row['Phone Number']
                 if phone in st.session_state['communication_data'][selected_resort]:
                     comm_data = st.session_state['communication_data'][selected_resort][phone]
                     display_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
-                    display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', "")
-                    display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', "")
+                    display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
+                    display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
                     display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
 
-            # Show table before fetching communication info
+        
+            # Fetch Communication Info Button
+            # Fetch Communication Info Button
+            if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
+                headers = {
+                    "Authorization": OPENPHONE_API_KEY,
+                    "Content-Type": "application/json"
+                }
+            
+                with st.spinner('Fetching communication information...'):
+                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+            
+                    # Update session state scoped to the selected resort
+                    for phone, status, date, duration, agent in zip(
+                        display_df['Phone Number'], statuses, dates, durations, agent_names):
+                        st.session_state['communication_data'][selected_resort][phone] = {
+                            'status': status,
+                            'date': date,
+                            'duration': duration,
+                            'agent': agent
+                        }
+
+                        # Update display_df
+                        idx = display_df.index[display_df['Phone Number'] == phone].tolist()
+                        if idx:  # Ensure the index list is not empty
+                            display_df.loc[idx[0], 'Communication Status'] = status
+                            display_df.loc[idx[0], 'Last Communication Date'] = date
+                            display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
+                            display_df.loc[idx[0], 'Agent Name'] = agent
+
+                        
+
+                        
+                        
+        
+            # Reorder columns
+            display_df = display_df[[
+                'Select', 'Guest Name', 'Check In', 'Check Out', 
+                'Phone Number', 'Rate Code', 'Price', 
+                'Communication Status', 'Last Communication Date', 
+                'Call Duration (seconds)', 'Agent Name'
+            ]]
+        
+            # Display the interactive data editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
@@ -550,49 +734,15 @@ with tab2:
                     "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
                     "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
                     "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
-                    "Call Duration (seconds)": st.column_config.TextColumn("Call Duration (seconds)", disabled=True),
-                    "Agent Name": st.column_config.TextColumn("Agent Name", disabled=True),
                 },
                 hide_index=True,
                 use_container_width=True,
                 key=f"guest_editor_{selected_resort}"
             )
-
-            # Fetch Communication Info Button
-            if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
-                selected_rows = edited_df[edited_df['Select'] == True].copy()
-                if selected_rows.empty:
-                    st.warning("Please select at least one guest to fetch communication info.")
-                else:
-                    headers = {
-                        "Authorization": OPENPHONE_API_KEY,
-                        "Content-Type": "application/json"
-                    }
-
-                    with st.spinner(f'Fetching communication information for {len(selected_rows)} selected guests...'):
-                        statuses, dates, durations, agent_names = fetch_communication_info(selected_rows, headers)
-
-                        # Update session state and edited_df
-                        for i, (r_idx, row) in enumerate(selected_rows.iterrows()):
-                            phone = row['Phone Number']
-                            st.session_state['communication_data'][selected_resort][phone] = {
-                                'status': statuses[i],
-                                'date': dates[i] if dates[i] else "",
-                                'duration': durations[i] if durations[i] else "",
-                                'agent': agent_names[i] if agent_names[i] else "Unknown"
-                            }
-
-                            mask = edited_df['Phone Number'] == phone
-                            edited_df.loc[mask, 'Communication Status'] = statuses[i]
-                            edited_df.loc[mask, 'Last Communication Date'] = dates[i] if dates[i] else ""
-                            edited_df.loc[mask, 'Call Duration (seconds)'] = durations[i] if durations[i] else ""
-                            edited_df.loc[mask, 'Agent Name'] = agent_names[i] if agent_names[i] else "Unknown"
-
-                        st.success(f"Successfully fetched communication info for {len(selected_rows)} guests.")
         else:
             st.warning("No data available for the selected filters.")
-    else:
-        st.warning("No data available for this resort.")
+
+
 
 ############################################
 # Message Templates Section
