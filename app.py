@@ -411,23 +411,30 @@ def cleanup_phone_number(phone):
         return f"+{phone}"
     return 'No Data'
 
-def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max):
+def reset_filters(selected_resort):
     """
-    Reset filter-related session state variables based on the provided resort and date range.
+    Clear filter-related session state variables so that filters reset to original defaults.
     """
-    try:
-        # Set the reset trigger to True
-        st.session_state['reset_trigger'] = True
+    # List all keys related to filters for this resort
+    keys_to_clear = [
+        f'default_check_in_start_{selected_resort}',
+        f'default_check_in_end_{selected_resort}',
+        f'default_check_out_start_{selected_resort}',
+        f'default_check_out_end_{selected_resort}',
+        f'default_total_price_{selected_resort}',
+        f'default_rate_code_{selected_resort}',
+        f'check_in_start_input_{selected_resort}',
+        f'check_in_end_input_{selected_resort}',
+        f'check_out_start_input_{selected_resort}',
+        f'check_out_end_input_{selected_resort}',
+        f'total_price_slider_{selected_resort}',
+        f'rate_code_filter_{selected_resort}',
+        f'select_all_{selected_resort}'
+    ]
 
-        # Store the new defaults in session state
-        st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
-        st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
-        st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
-        st.session_state[f'default_check_out_end_{selected_resort}'] = max_check_out
-        st.session_state[f'default_total_price_{selected_resort}'] = (float(total_price_min), float(total_price_max))
-        st.session_state[f'default_rate_code_{selected_resort}'] = "All"
-    except Exception as e:
-        st.error(f"Error resetting filters: {e}")
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
 
 
 
@@ -630,7 +637,8 @@ with tab2:
 
     # Reset Filters Button
     if st.button("Reset Filters"):
-        reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
+        reset_filters(selected_resort)
+        # No need for st.experimental_rerun()
 
     # Filter and display data code remains the same as before,
     # ensuring that `st.session_state['communication_data']` is never cleared.
