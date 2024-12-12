@@ -393,28 +393,27 @@ def reset_filters():
         resort_df = df[df['Market'] == selected_resort].copy()
         
         if not resort_df.empty:
-            # Get the full date range for this resort
+            # Get absolute min and max dates for this resort without any filtering
             min_arrival = pd.to_datetime(resort_df['Arrival Date Short']).min()
             max_departure = pd.to_datetime(resort_df['Departure Date Short']).max()
             
-            # Set the default dates to the full range
-            st.session_state['default_dates'] = {
-                'check_in_start': min_arrival.date(),
-                'check_in_end': max_departure.date(),
-                'check_out_start': min_arrival.date(),
-                'check_out_end': max_departure.date()
-            }
-            
-            # Explicitly set the date input values
-            st.session_state['check_in_start_input'] = min_arrival.date()
-            st.session_state['check_in_end_input'] = max_departure.date()
-            st.session_state['check_out_start_input'] = min_arrival.date()
-            st.session_state['check_out_end_input'] = max_departure.date()
-    
-    # Force a rerun of the app
-    st.rerun()
-
-
+            if pd.notnull(min_arrival) and pd.notnull(max_departure):
+                # Update both default_dates and input values
+                for key in ['check_in_start', 'check_in_end', 'check_out_start', 'check_out_end']:
+                    if key.endswith('start'):
+                        st.session_state[f'{key}_input'] = min_arrival.date()
+                    else:
+                        st.session_state[f'{key}_input'] = max_departure.date()
+                
+                # Also update default_dates dictionary
+                st.session_state['default_dates'] = {
+                    'check_in_start': min_arrival.date(),
+                    'check_in_end': max_departure.date(),
+                    'check_out_start': min_arrival.date(),
+                    'check_out_end': max_departure.date()
+                }
+                
+                st.rerun()
 
 
 
