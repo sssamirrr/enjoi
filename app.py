@@ -688,7 +688,7 @@ with tab2:
                             display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
                             display_df.loc[idx[0], 'Agent Name'] = agent
 
-                        }
+                        
                         
         
             # Reorder columns
