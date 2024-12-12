@@ -413,9 +413,8 @@ def cleanup_phone_number(phone):
 
 def reset_filters(selected_resort):
     """
-    Clear filter-related session state variables so that filters reset to original defaults.
+    Clear filter-related session state variables and set back default values.
     """
-    # List all keys related to filters for this resort
     keys_to_clear = [
         f'default_check_in_start_{selected_resort}',
         f'default_check_in_end_{selected_resort}',
@@ -431,10 +430,27 @@ def reset_filters(selected_resort):
         f'rate_code_filter_{selected_resort}',
         f'select_all_{selected_resort}'
     ]
-
+    
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
+
+    # Set new defaults after clearing the old state
+    st.session_state[f'default_check_in_start_{selected_resort}'] = st.session_state.get(f'default_check_in_start_{selected_resort}', min_check_in)
+    st.session_state[f'default_check_in_end_{selected_resort}'] = st.session_state.get(f'default_check_in_end_{selected_resort}', max_check_out)
+    st.session_state[f'default_check_out_start_{selected_resort}'] = st.session_state.get(f'default_check_out_start_{selected_resort}', min_check_in)
+    st.session_state[f'default_check_out_end_{selected_resort}'] = st.session_state.get(f'default_check_out_end_{selected_resort}', max_check_out)
+    st.session_state[f'default_total_price_{selected_resort}'] = st.session_state.get(f'default_total_price_{selected_resort}', (total_price_min, total_price_max))
+    st.session_state[f'default_rate_code_{selected_resort}'] = st.session_state.get(f'default_rate_code_{selected_resort}', "All")
+
+    st.session_state[f'check_in_start_input_{selected_resort}'] = min_check_in
+    st.session_state[f'check_in_end_input_{selected_resort}'] = max_check_out
+    st.session_state[f'check_out_start_input_{selected_resort}'] = min_check_in
+    st.session_state[f'check_out_end_input_{selected_resort}'] = max_check_out
+    st.session_state[f'total_price_slider_{selected_resort}'] = (total_price_min, total_price_max)
+    st.session_state[f'rate_code_filter_{selected_resort}'] = "All"
+    st.session_state[f'select_all_{selected_resort}'] = False  # Reset checkbox to unchecked
+
     st.rerun()
 
 
