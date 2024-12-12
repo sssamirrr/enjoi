@@ -902,7 +902,8 @@ with tab3:
 
 with tab4:
     # Pass the owner DataFrame to the Owner Marketing module
-    owner_marketing.run_owner_marketing_tab(owner_df=owner_marketing.get_owner_sheet_data())
+    owner_df = owner_marketing.get_owner_sheet_data()
+    owner_marketing.run_owner_marketing_tab(owner_df=owner_df)
     # Ensure that `get_owner_sheet_data` is properly defined in owner_marketing.py
     # Alternatively, pass `owner_df` from the main app if it's already loaded
 
