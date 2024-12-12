@@ -565,7 +565,8 @@ with tab2:
         st.error(f"Error calculating price range: {str(e)}")
         total_price_min = 0.0
         total_price_max = 1000.0
-
+    # Define rate code options before reset logic
+    rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
     # Use the reset trigger to reset widget values
     if st.session_state.get('reset_trigger', False):
         # Reset widget values to their defaults
