@@ -1,5 +1,3 @@
-# owner_marketing.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,10 +5,7 @@ import time
 import requests
 from datetime import datetime
 import gspread
-from google.oauth2 import service_account  # Add this import
-
-# The rest of your imports...
-
+from google.oauth2 import service_account
 
 @st.cache_resource
 def get_owner_sheet_data():
@@ -31,17 +26,15 @@ def get_owner_sheet_data():
         )
 
         gc = gspread.authorize(credentials)
-        # Replace with your owner data sheet key
         spreadsheet = gc.open_by_key(st.secrets["owner_sheets"]["sheet_key"])
-        worksheet = spreadsheet.get_worksheet(0)  # Adjust worksheet index as needed
+        worksheet = spreadsheet.get_worksheet(0)
         data = worksheet.get_all_records()
         return pd.DataFrame(data)
 
     except Exception as e:
         st.error(f"Error connecting to Owner Google Sheet: {str(e)}")
-        return pd.DataFrame()  # Return empty DataFrame on error
+        return pd.DataFrame()
 
-# Define helper functions within this module or import them from a shared utils.py
 def cleanup_phone_number(phone):
     """Clean up phone number format"""
     if pd.isna(phone):
@@ -51,25 +44,16 @@ def cleanup_phone_number(phone):
         return f"+1{phone}"
     elif len(phone) == 11 and phone.startswith('1'):
         return f"+{phone}"
-    return 'No Data'
+    return phone
 
 def fetch_communication_info(guest_df, headers):
-    """
-    Retrieve communication info for all guests in the DataFrame.
-    Returns lists of statuses, dates, durations, and agent names.
-    """
-    if 'Phone Number' not in guest_df.columns:
-        st.error("The column 'Phone Number' is missing in the DataFrame.")
-        return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
-
-    guest_df['Phone Number'] = guest_df['Phone Number'].astype(str).str.strip()
+    """Fetch communication info for owners"""
     statuses, dates, durations, agent_names = [], [], [], []
-
+    
     for _, row in guest_df.iterrows():
         phone = row['Phone Number']
         if phone and phone != 'No Data':
             try:
-                # Implement your actual logic to fetch communication info
                 status, last_date, duration, agent_name = get_last_communication_info(phone, headers)
                 statuses.append(status)
                 dates.append(last_date)
@@ -89,269 +73,192 @@ def fetch_communication_info(guest_df, headers):
     return statuses, dates, durations, agent_names
 
 def get_last_communication_info(phone_number, headers):
-    """
-    Placeholder function to fetch the last communication info.
-    Replace this with actual API interaction logic.
-    """
-    # Example placeholder logic
-    # Replace this with your actual OpenPhone API calls
-    status = "Message - sent"
-    last_date = "2024-01-01 12:00:00"
-    duration = None
-    agent_name = "Agent Smith"
-    return status, last_date, duration, agent_name
+    """Placeholder for actual OpenPhone API call"""
+    # Replace with actual API implementation
+    return "No Communication", None, None, "Unknown"
 
 def run_owner_marketing_tab(owner_df):
-    """
-    Function to render the Owner Marketing tab.
-    """
+    """Main function to run the owner marketing dashboard"""
     st.header("🏠 Owner Marketing Dashboard")
 
     if owner_df.empty:
         st.warning("No owner data available.")
-        st.stop()
+        return
 
-    # Display the columns for debugging (optional)
-    st.write("Owner Data Columns:", owner_df.columns.tolist())
-    st.dataframe(owner_df.head())
+    # Convert date columns
+    date_columns = ['Sale Date', 'Maturity Date']
+    for col in date_columns:
+        if col in owner_df.columns:
+            owner_df[col] = pd.to_datetime(owner_df[col], errors='coerce')
 
-    # Define date columns
-    date_cols = ["Contract Start Date", "Contract End Date"]
+    # Convert monetary columns
+    money_columns = ['Closing Costs', 'Equity']
+    for col in money_columns:
+        if col in owner_df.columns:
+            owner_df[col] = owner_df[col].replace({'\$': '', ',': ''}, regex=True).astype(float)
 
-    # Convert Contract Start/End to datetime if present
-    for dcol in date_cols:
-        if dcol in owner_df.columns:
-            owner_df[dcol] = pd.to_datetime(owner_df[dcol], errors='coerce')
+    # Filters Section
+    st.subheader("Filter Owners")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Unit Type Filter
+        if 'Unit' in owner_df.columns:
+            unit_types = ['All'] + sorted(owner_df['Unit'].unique().tolist())
+            selected_unit = st.selectbox('Unit Type', unit_types)
+        
+        # State Filter
+        if 'State' in owner_df.columns:
+            states = ['All'] + sorted(owner_df['State'].unique().tolist())
+            selected_state = st.selectbox('State', states)
 
-    # Convert Revenue to numeric if present
-    if "Revenue" in owner_df.columns:
-        # If revenue is stored in a format like "$123.00", remove $ and convert
-        owner_df["Revenue"] = owner_df["Revenue"].replace({'\$':''}, regex=True)
-        owner_df["Revenue"] = pd.to_numeric(owner_df["Revenue"], errors='coerce')
-
-    # Cleanup phone numbers if present
-    if "Phone Number" in owner_df.columns:
-        owner_df["Phone Number"] = owner_df["Phone Number"].apply(cleanup_phone_number)
-    else:
-        owner_df["Phone Number"] = "No Data"
-
-    # Sidebar filters
-    st.sidebar.title("Owner Filters")
-
-    filtered_owner_df = owner_df.copy()
-
-    # Dynamically create filters
-    for col in owner_df.columns:
-        col_data = owner_df[col].dropna()
-        if col_data.empty:
-            continue
-        col_type = owner_df[col].dtype
-
-        # Date filters (for Contract Start/End)
-        if col in date_cols:
-            valid_dates = col_data.dropna()
-            if not valid_dates.empty:
-                min_date = valid_dates.min().date()
-                max_date = valid_dates.max().date()
-                date_range = st.sidebar.date_input(
-                    f"{col} range",
-                    value=(min_date, max_date),
-                    min_value=min_date,
-                    max_value=max_date
+    with col2:
+        # Date Range Filter
+        if 'Sale Date' in owner_df.columns:
+            date_range = st.date_input(
+                'Sale Date Range',
+                value=(
+                    owner_df['Sale Date'].min().date(),
+                    owner_df['Sale Date'].max().date()
                 )
-                if isinstance(date_range, tuple) and len(date_range) == 2:
-                    start, end = date_range
-                    filtered_owner_df = filtered_owner_df[
-                        (filtered_owner_df[col].dt.date >= start) & 
-                        (filtered_owner_df[col].dt.date <= end)
-                    ]
+            )
 
-        # Numeric filters (e.g., Revenue, Account ID if present)
-        elif np.issubdtype(col_type, np.number):
-            min_val, max_val = float(col_data.min()), float(col_data.max())
-            if min_val == max_val:
-                st.sidebar.write(f"All {col} = {min_val}")
-            else:
-                val_range = st.sidebar.slider(
-                    f"{col} range",
-                    min_value=min_val, max_value=max_val,
-                    value=(min_val, max_val)
-                )
-                filtered_owner_df = filtered_owner_df[
-                    (filtered_owner_df[col] >= val_range[0]) & 
-                    (filtered_owner_df[col] <= val_range[1])
-                ]
+        # FICO Score Range
+        if 'Primary FICO' in owner_df.columns:
+            fico_range = st.slider(
+                'FICO Score Range',
+                min_value=300,
+                max_value=850,
+                value=(500, 850)
+            )
 
-        else:
-            # For text/categorical
-            unique_vals = sorted(col_data.unique())
-            if len(unique_vals) <= 20:
-                # Multi-select filter
-                selected_vals = st.sidebar.multiselect(
-                    f"{col} filter", 
-                    options=unique_vals, 
-                    default=unique_vals
-                )
-                filtered_owner_df = filtered_owner_df[
-                    filtered_owner_df[col].isin(selected_vals)
-                ]
-            else:
-                # Text search
-                text_filter = st.sidebar.text_input(f"Search in {col}")
-                if text_filter:
-                    filtered_owner_df = filtered_owner_df[
-                        filtered_owner_df[col].astype(str).str.contains(text_filter, case=False, na=False)
-                    ]
+    with col3:
+        # Points Range
+        if 'Points' in owner_df.columns:
+            points_range = st.slider(
+                'Points Range',
+                min_value=int(owner_df['Points'].min()),
+                max_value=int(owner_df['Points'].max()),
+                value=(int(owner_df['Points'].min()), int(owner_df['Points'].max()))
+            )
 
-    # Prepare display DataFrame
-    display_owner_df = filtered_owner_df.copy()
+    # Apply filters
+    filtered_df = owner_df.copy()
+    
+    if selected_unit != 'All':
+        filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
+    
+    if selected_state != 'All':
+        filtered_df = filtered_df[filtered_df['State'] == selected_state]
+    
+    if 'Sale Date' in filtered_df.columns:
+        filtered_df = filtered_df[
+            (filtered_df['Sale Date'].dt.date >= date_range[0]) &
+            (filtered_df['Sale Date'].dt.date <= date_range[1])
+        ]
+    
+    if 'Primary FICO' in filtered_df.columns:
+        filtered_df = filtered_df[
+            (filtered_df['Primary FICO'] >= fico_range[0]) &
+            (filtered_df['Primary FICO'] <= fico_range[1])
+        ]
+    
+    if 'Points' in filtered_df.columns:
+        filtered_df = filtered_df[
+            (filtered_df['Points'] >= points_range[0]) &
+            (filtered_df['Points'] <= points_range[1])
+        ]
 
-    # Ensure required columns for communication info
-    required_owner_columns = [
-        'Owner Name', 'Start Date', 'End Date', 'Phone Number', 'Rate Code', 'Revenue',
-        'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name'
-    ]
-    for rc in required_owner_columns:
-        if rc not in display_owner_df.columns:
-            display_owner_df[rc] = None
+    # Add Select column
+    filtered_df.insert(0, 'Select', False)
 
-    # Insert Select column at the start
-    display_owner_df.insert(0, 'Select', False)
-
-    # Initialize session state for communication data if not present
-    if 'communication_data' not in st.session_state:
-        st.session_state['communication_data'] = {}
-    # Assuming 'selected_resort' is available; adjust accordingly
-    selected_resort = "Owner Marketing"  # Or pass as a parameter if needed
-    if selected_resort not in st.session_state['communication_data']:
-        st.session_state['communication_data'][selected_resort] = {}
-
-    # Load existing communication data if any
-    for idx, row in display_owner_df.iterrows():
-        phone = row['Phone Number']
-        if phone in st.session_state['communication_data'][selected_resort]:
-            comm_data = st.session_state['communication_data'][selected_resort][phone]
-            display_owner_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
-            display_owner_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
-            display_owner_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
-            display_owner_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
-
-    # Fetch Communication Info Button
-    if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
-        headers = {
-            "Authorization": st.secrets["openphone"]["api_key"],
-            "Content-Type": "application/json"
-        }
-        with st.spinner('Fetching communication information...'):
-            statuses, dates, durations, agent_names = fetch_communication_info(display_owner_df, headers)
-
-            for phone, status, date, duration, agent in zip(
-                display_owner_df['Phone Number'], statuses, dates, durations, agent_names
-            ):
-                st.session_state['communication_data'][selected_resort][phone] = {
-                    'status': status,
-                    'date': date,
-                    'duration': duration,
-                    'agent': agent
-                }
-
-                # Update display_df
-                idx_list = display_owner_df.index[display_owner_df['Phone Number'] == phone].tolist()
-                if idx_list:
-                    idx = idx_list[0]
-                    display_owner_df.at[idx, 'Communication Status'] = status
-                    display_owner_df.at[idx, 'Last Communication Date'] = date
-                    display_owner_df.at[idx, 'Call Duration (seconds)'] = duration
-                    display_owner_df.at[idx, 'Agent Name'] = agent
-
-        st.success("Communication info fetched.")
-
-    # Reorder columns
-    display_owner_df = display_owner_df[[
-        'Select', 'Owner Name', 'Start Date', 'End Date', 
-        'Phone Number', 'Rate Code', 'Revenue', 
-        'Communication Status', 'Last Communication Date', 
-        'Call Duration (seconds)', 'Agent Name'
-    ]]
-
-    # Display the interactive data editor
-    edited_owner_df = st.data_editor(
-        display_owner_df,
+    # Create the editable dataframe
+    edited_df = st.data_editor(
+        filtered_df,
         column_config={
-            "Select": st.column_config.CheckboxColumn("Select", help="Select or deselect this owner"),
-            "Owner Name": st.column_config.TextColumn("Owner Name"),
-            "Start Date": st.column_config.DateColumn("Start Date"),
-            "End Date": st.column_config.DateColumn("End Date"),
+            "Select": st.column_config.CheckboxColumn("Select", help="Select owner for communication"),
+            "Account ID": st.column_config.TextColumn("Account ID"),
+            "Last Name": st.column_config.TextColumn("Last Name"),
+            "First Name": st.column_config.TextColumn("First Name"),
+            "Unit": st.column_config.TextColumn("Unit"),
+            "Sale Date": st.column_config.DateColumn("Sale Date"),
+            "Address": st.column_config.TextColumn("Address"),
+            "City": st.column_config.TextColumn("City"),
+            "State": st.column_config.TextColumn("State"),
+            "Zip Code": st.column_config.TextColumn("Zip Code"),
+            "Primary FICO": st.column_config.NumberColumn("Primary FICO"),
+            "Maturity Date": st.column_config.DateColumn("Maturity Date"),
+            "Closing Costs": st.column_config.NumberColumn("Closing Costs", format="$%.2f"),
             "Phone Number": st.column_config.TextColumn("Phone Number"),
-            "Rate Code": st.column_config.TextColumn("Rate Code"),
-            "Revenue": st.column_config.NumberColumn("Revenue", format="$%.2f"),
-            "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
-            "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
-            "Call Duration (seconds)": st.column_config.NumberColumn("Call Duration (seconds)", disabled=True),
-            "Agent Name": st.column_config.TextColumn("Agent Name", disabled=True)
+            "Email Address": st.column_config.TextColumn("Email Address"),
+            "Points": st.column_config.NumberColumn("Points"),
+            "Equity": st.column_config.NumberColumn("Equity", format="$%.2f")
         },
         hide_index=True,
-        use_container_width=True,
-        key=f"owner_editor_{selected_resort}"
+        use_container_width=True
     )
 
-    ############################################
-    # Message Templates for Owners
-    ############################################
+    # Summary Statistics
+    st.subheader("Summary Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Owners", len(filtered_df))
+    with col2:
+        st.metric("Average Points", f"{filtered_df['Points'].mean():,.0f}")
+    with col3:
+        st.metric("Average FICO", f"{filtered_df['Primary FICO'].mean():.0f}")
+    with col4:
+        st.metric("Selected Owners", len(filtered_df[filtered_df['Select']]))
+
+    # Message Templates Section
     st.markdown("---")
     st.subheader("Owner Message Templates")
 
-    owner_message_templates = {
-        "Welcome Owner": "Hello! Thank you for partnering with us. Please stop by our office for a special welcome gift! 🎁",
-        "Revenue Update": "Hello, this is your updated revenue summary. Please contact us if you have any questions!",
-        "Contract Renewal": "Your contract is approaching renewal. Let's discuss the best options moving forward!"
+    templates = {
+        "Welcome": "Welcome to our timeshare family! We're excited to have you with us.",
+        "Payment Reminder": "This is a friendly reminder about your upcoming payment due on {due_date}.",
+        "Special Offer": "As a valued owner, we'd like to offer you a special upgrade opportunity.",
+        "Maintenance Notice": "Important information about upcoming maintenance in your unit.",
+        "Custom Message": ""
     }
 
-    selected_owner_template = st.selectbox(
-        "Choose an Owner Message Template",
-        options=list(owner_message_templates.keys())
+    template_choice = st.selectbox("Select Message Template", list(templates.keys()))
+    message_text = st.text_area(
+        "Customize Your Message",
+        value=templates[template_choice],
+        height=100
     )
 
-    owner_message_preview = owner_message_templates[selected_owner_template]
-    custom_message = st.text_area("Message Preview (You can edit)", value=owner_message_preview, height=100)
-
-    ############################################
-    # Send SMS to Selected Owners
-    ############################################
-    selected_owners = edited_owner_df[edited_owner_df['Select']]
-    num_selected_owners = len(selected_owners)
-    if num_selected_owners > 0:
-        st.write(f"{num_selected_owners} owner(s) selected.")
-        if st.button("Send SMS to Selected Owners"):
-            openphone_url = "https://api.openphone.com/v1/messages"
-            headers_sms = {
-                "Authorization": st.secrets["openphone"]["api_key"],
-                "Content-Type": "application/json"
-            }
-            sender_phone_number = st.secrets["openphone"]["phone_number"]
-
-            for idx, row in selected_owners.iterrows():
-                recipient_phone = row['Phone Number']
-                payload = {
-                    "content": custom_message,
-                    "from": sender_phone_number,
-                    "to": [recipient_phone]
-                }
-
-                try:
-                    response = requests.post(openphone_url, json=payload, headers=headers_sms)
-                    if response.status_code == 202:
-                        st.success(f"Message sent to {row.get('Owner Name', 'Owner')} ({recipient_phone})")
-                    else:
-                        st.error(f"Failed to send message to {row.get('Owner Name', 'Owner')} ({recipient_phone})")
-                        st.write("Response Status Code:", response.status_code)
-                        try:
-                            st.write("Response Body:", response.json())
-                        except:
-                            st.write("Response Body:", response.text)
-                except Exception as e:
-                    st.error(f"Exception while sending message to {row.get('Owner Name', 'Owner')} ({recipient_phone}): {str(e)}")
-
-                time.sleep(0.2)  # Respect rate limits
+    # Send Messages Section
+    selected_owners = edited_df[edited_df['Select']]
+    if len(selected_owners) > 0:
+        st.write(f"Selected {len(selected_owners)} owners for communication")
+        
+        if st.button("Send Messages to Selected Owners"):
+            with st.spinner("Sending messages..."):
+                for _, owner in selected_owners.iterrows():
+                    try:
+                        # Replace with actual message sending logic
+                        st.success(f"Message sent to {owner['First Name']} {owner['Last Name']}")
+                        time.sleep(0.5)  # Simulate API call
+                    except Exception as e:
+                        st.error(f"Failed to send message to {owner['First Name']} {owner['Last Name']}: {str(e)}")
     else:
-        st.info("No owners selected to send SMS.")
+        st.info("Please select owners to send messages")
+
+    return edited_df
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    # Test data for development
+    test_data = {
+        "Account ID": ["123", "456"],
+        "First Name": ["John", "Jane"],
+        "Last Name": ["Doe", "Smith"],
+        "Unit": ["2BR", "1BR"],
+        "Points": [1000, 2000]
+    }
+    test_df = pd.DataFrame(test_data)
+    run_owner_marketing_tab(test_df)
