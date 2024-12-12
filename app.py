@@ -354,7 +354,7 @@ with tab2:
         })
 
         display_df = filtered_df[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
-        display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
+     
 
         # Apply stored communication data if available
         display_df['Communication Status'] = display_df['Phone Number'].apply(
