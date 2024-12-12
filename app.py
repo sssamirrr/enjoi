@@ -547,47 +547,8 @@ with tab2:
         max_check_out = today
 
     # Date filters with unique keys to reset when a new resort is selected
-        # Use the reset trigger to reset widget values
-    if st.session_state.get('reset_trigger', False):
-        # Reset widget values to their defaults
-        check_in_start = st.date_input(
-            "Check In Date (Start)",
-            value=st.session_state.get(f'default_check_in_start_{selected_resort}', min_check_in),
-            key=f'check_in_start_input_{selected_resort}'
-        )
-        check_in_end = st.date_input(
-            "Check In Date (End)",
-            value=st.session_state.get(f'default_check_in_end_{selected_resort}', max_check_out),
-            key=f'check_in_end_input_{selected_resort}'
-        )
-        check_out_start = st.date_input(
-            "Check Out Date (Start)",
-            value=st.session_state.get(f'default_check_out_start_{selected_resort}', min_check_in),
-            key=f'check_out_start_input_{selected_resort}'
-        )
-        check_out_end = st.date_input(
-            "Check Out Date (End)",
-            value=st.session_state.get(f'default_check_out_end_{selected_resort}', max_check_out),
-            key=f'check_out_end_input_{selected_resort}'
-        )
-        total_price_range = st.slider(
-            "Total Price Range",
-            min_value=float(total_price_min),
-            max_value=float(total_price_max),
-            value=st.session_state.get(f'default_total_price_{selected_resort}', (float(total_price_min), float(total_price_max))),
-            key=f'total_price_slider_{selected_resort}'
-        )
-        selected_rate_code = st.selectbox(
-            "Select Rate Code",
-            options=["All"] + rate_code_options,
-            index=0,  # Always reset to default (first option)
-            key=f'rate_code_filter_{selected_resort}'
-        )
-
-        # Reset the trigger back to False
-        st.session_state['reset_trigger'] = False
-    else:
-        # Render widgets normally if not resetting
+    col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
+    with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
             value=min_check_in,
@@ -598,6 +559,8 @@ with tab2:
             value=max_check_out,
             key=f'check_in_end_input_{selected_resort}'
         )
+
+    with col2:
         check_out_start = st.date_input(
             "Check Out Date (Start)",
             value=min_check_in,
@@ -608,19 +571,6 @@ with tab2:
             value=max_check_out,
             key=f'check_out_end_input_{selected_resort}'
         )
-        total_price_range = st.slider(
-            "Total Price Range",
-            min_value=float(total_price_min),
-            max_value=float(total_price_max),
-            value=(float(total_price_min), float(total_price_max)),
-            key=f'total_price_slider_{selected_resort}'
-        )
-        selected_rate_code = st.selectbox(
-            "Select Rate Code",
-            options=["All"] + rate_code_options,
-            key=f'rate_code_filter_{selected_resort}'
-        )
-
     
     with col3:
         # Slider for Total Price
