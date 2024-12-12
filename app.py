@@ -435,7 +435,7 @@ def reset_filters(selected_resort):
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
 
 
 
