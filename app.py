@@ -682,41 +682,54 @@ with tab2:
             # Fetch Communication Info Button
             # Fetch Communication Info Button
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
-                # Get only the selected rows
-                selected_rows = display_df[display_df['Select'] == True]
-                
-                if selected_rows.empty:
-                    st.warning("Please select at least one guest to fetch communication info.")
-                else:
-                    headers = {
-                        "Authorization": OPENPHONE_API_KEY,
-                        "Content-Type": "application/json"
-                    }
-                
-                    with st.spinner(f'Fetching communication information for {len(selected_rows)} selected guests...'):
-                        # Only fetch for selected rows
-                        statuses, dates, durations, agent_names = fetch_communication_info(selected_rows, headers)
+                # Make sure we're working with the most recent data from the data editor
+                if 'edited_df' in locals():
+                    # Get only the selected rows
+                    selected_rows = edited_df[edited_df['Select'] == True].copy()
                     
-                        # Update session state only for selected rows
-                        for i, (idx, row) in enumerate(selected_rows.iterrows()):
-                            phone = row['Phone Number']
-                            st.session_state['communication_data'][selected_resort][phone] = {
-                                'status': statuses[i],
-                                'date': dates[i],
-                                'duration': durations[i],
-                                'agent': agent_names[i]
-                            }
+                    if selected_rows.empty:
+                        st.warning("Please select at least one guest to fetch communication info.")
+                    else:
+                        headers = {
+                            "Authorization": OPENPHONE_API_KEY,
+                            "Content-Type": "application/json"
+                        }
+                    
+                        with st.spinner(f'Fetching communication information for {len(selected_rows)} selected guests...'):
+                            # Only fetch for selected rows
+                            statuses, dates, durations, agent_names = fetch_communication_info(selected_rows, headers)
+                        
+                            # Update both session state and display_df for selected rows
+                            for i, (idx, row) in enumerate(selected_rows.iterrows()):
+                                phone = row['Phone Number']
+                                
+                                # Update session state
+                                if selected_resort not in st.session_state['communication_data']:
+                                    st.session_state['communication_data'][selected_resort] = {}
+                                
+                                st.session_state['communication_data'][selected_resort][phone] = {
+                                    'status': statuses[i],
+                                    'date': dates[i],
+                                    'duration': durations[i],
+                                    'agent': agent_names[i]
+                                }
             
-                            # Update display_df for the selected row
-                            display_df.loc[idx, 'Communication Status'] = statuses[i]
-                            display_df.loc[idx, 'Last Communication Date'] = dates[i]
-                            display_df.loc[idx, 'Call Duration (seconds)'] = durations[i]
-                            display_df.loc[idx, 'Agent Name'] = agent_names[i]
+                                # Update the main display_df
+                                mask = display_df['Phone Number'] == phone
+                                if any(mask):
+                                    display_df.loc[mask, 'Communication Status'] = statuses[i]
+                                    display_df.loc[mask, 'Last Communication Date'] = dates[i]
+                                    display_df.loc[mask, 'Call Duration (seconds)'] = durations[i]
+                                    display_df.loc[mask, 'Agent Name'] = agent_names[i]
             
-                        st.success(f"Successfully fetched communication info for {len(selected_rows)} guests.")
+                            # Update the edited_df with the new information
+                            edited_df.update(display_df)
+            
+                            st.success(f"Successfully fetched communication info for {len(selected_rows)} guests.")
+                            st.experimental_rerun()  # Force a rerun to update the display
+                else:
+                    st.error("No data available to process. Please ensure the table is properly loaded.")
 
-        else:
-            st.warning("No data available for the selected filters.")
 
 
 
