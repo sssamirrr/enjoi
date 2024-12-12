@@ -7,6 +7,35 @@ import time
 import requests
 from datetime import datetime
 
+@st.cache_resource
+def get_owner_sheet_data():
+    """
+    Fetch owner data from Google Sheets.
+    Returns a pandas DataFrame containing owner information.
+    """
+    try:
+        # Retrieve Google Sheets credentials from st.secrets
+        service_account_info = st.secrets["gcp_service_account"]
+        
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly"
+            ],
+        )
+
+        gc = gspread.authorize(credentials)
+        # Replace with your owner data sheet key
+        spreadsheet = gc.open_by_key(st.secrets["sheets"]["owner_sheet_key"])
+        worksheet = spreadsheet.get_worksheet(0)  # Adjust worksheet index as needed
+        data = worksheet.get_all_records()
+        return pd.DataFrame(data)
+
+    except Exception as e:
+        st.error(f"Error connecting to Owner Google Sheet: {str(e)}")
+        return pd.DataFrame()  # Return empty DataFrame on error
+
 # Define helper functions within this module or import them from a shared utils.py
 def cleanup_phone_number(phone):
     """Clean up phone number format"""
