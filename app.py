@@ -368,13 +368,21 @@ def cleanup_phone_number(phone):
     """Clean up phone number format"""
     if pd.isna(phone):
         return 'No Data'
-    # Remove spaces and non-numeric characters
-    phone = ''.join(filter(str.isdigit, str(phone)))
-    if len(phone) == 10:
-        return f"+1{phone}"
-    elif len(phone) == 11 and phone.startswith('1'):
-        return f"+{phone}"
-    return 'No Data'
+    try:
+        # Convert to string and remove all non-numeric characters
+        phone = str(phone)
+        clean_phone = ''.join(filter(str.isdigit, phone))
+        
+        # Check length and format accordingly
+        if len(clean_phone) == 10:
+            return f"+1{clean_phone}"
+        elif len(clean_phone) == 11 and clean_phone.startswith('1'):
+            return f"+{clean_phone}"
+        else:
+            return 'No Data'
+    except:
+        return 'No Data'
+
 
 def reset_filters():
     # Get the current selected resort
@@ -385,38 +393,47 @@ def reset_filters():
         resort_df = df[df['Market'] == selected_resort].copy()
         
         if not resort_df.empty:
-            # Calculate date ranges for the selected resort
-            arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
-            departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
-
-            arrival_dates = arrival_dates.dropna()
-            departure_dates = departure_dates.dropna()
-
-            min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
-            max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
-
-            # Update default dates
-            st.session_state['default_dates'] = {
-                'check_in_start': min_check_in,
-                'check_in_end': max_check_out,
-                'check_out_start': min_check_in,
-                'check_out_end': max_check_out,
-            }
+            # Convert dates to datetime
+            resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'])
+            resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'])
+            
+            # Get min and max dates
+            min_arrival = resort_df['Arrival Date Short'].min()
+            max_departure = resort_df['Departure Date Short'].max()
+            
+            if pd.notnull(min_arrival) and pd.notnull(max_departure):
+                # Update session state with new date ranges
+                st.session_state['default_dates'] = {
+                    'check_in_start': min_arrival.date(),
+                    'check_in_end': max_departure.date(),
+                    'check_out_start': min_arrival.date(),
+                    'check_out_end': max_departure.date()
+                }
+            else:
+                # Fallback to today if no valid dates
+                today = pd.to_datetime('today').date()
+                st.session_state['default_dates'] = {
+                    'check_in_start': today,
+                    'check_in_end': today,
+                    'check_out_start': today,
+                    'check_out_end': today
+                }
     
-    # Reset the input widget states
-    if 'check_in_start_input' in st.session_state:
-        del st.session_state['check_in_start_input']
-    if 'check_in_end_input' in st.session_state:
-        del st.session_state['check_in_end_input']
-    if 'check_out_start_input' in st.session_state:
-        del st.session_state['check_out_start_input']
-    if 'check_out_end_input' in st.session_state:
-        del st.session_state['check_out_end_input']
+    # Clear all date input widget states
+    date_keys = [
+        'check_in_start_input',
+        'check_in_end_input',
+        'check_out_start_input',
+        'check_out_end_input'
+    ]
     
-    # Reset communication data
-    st.session_state['communication_data'] = {}
+    for key in date_keys:
+        if key in st.session_state:
+            del st.session_state[key]
     
+    # Force a rerun of the app
     st.rerun()
+
 
 
 
