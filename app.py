@@ -630,19 +630,30 @@ with tab2:
             select_all = st.checkbox("Select All Guests", key=f'select_all_{selected_resort}')
             display_df['Select'] = select_all
         
+            # Initialize session state for communication data if not present
+            if 'communication_data' not in st.session_state:
+                st.session_state['communication_data'] = {}
+        
+            # Update display_df with saved communication data from session state
+            for idx, row in display_df.iterrows():
+                phone = row['Phone Number']
+                if phone in st.session_state['communication_data']:
+                    comm_data = st.session_state['communication_data'][phone]
+                    display_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
+                    display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
+                    display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
+                    display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
+        
             # Fetch Communication Info Button
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
-            
+        
                 with st.spinner('Fetching communication information...'):
-                    # Clean up phone numbers first
-                    display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
-                    
                     statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
-                    
+        
                     # Update session state and display DataFrame
                     for phone, status, date, duration, agent in zip(
                         display_df['Phone Number'], statuses, dates, durations, agent_names):
@@ -652,11 +663,12 @@ with tab2:
                             'duration': duration,
                             'agent': agent
                         }
-                        
-                    display_df['Communication Status'] = statuses
-                    display_df['Last Communication Date'] = dates
-                    display_df['Call Duration (seconds)'] = durations
-                    display_df['Agent Name'] = agent_names
+                        # Update display_df with new data
+                        idx = display_df[display_df['Phone Number'] == phone].index
+                        display_df.at[idx, 'Communication Status'] = status
+                        display_df.at[idx, 'Last Communication Date'] = date
+                        display_df.at[idx, 'Call Duration (seconds)'] = duration
+                        display_df.at[idx, 'Agent Name'] = agent
         
             # Reorder columns
             display_df = display_df[[
@@ -686,6 +698,7 @@ with tab2:
             )
         else:
             st.warning("No data available for the selected filters.")
+
 
 
 
