@@ -532,7 +532,7 @@ with tab2:
         max_check_out = today
 
     # Date filters with unique keys to reset when a new resort is selected
-    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
+    col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
     with col1:
         check_in_start = st.date_input(
             "Check In Date (Start)",
@@ -556,9 +556,29 @@ with tab2:
             value=max_check_out,
             key=f'check_out_end_input_{selected_resort}'
         )
-
+    
     with col3:
-        if st.button("Reset Dates"):
+        # Slider for Total Price
+        total_price_min = resort_df['Total Price'].min() if 'Total Price' in resort_df.columns else 0
+        total_price_max = resort_df['Total Price'].max() if 'Total Price' in resort_df.columns else 1000
+        total_price_range = st.slider(
+            "Total Price Range",
+            min_value=float(total_price_min),
+            max_value=float(total_price_max),
+            value=(float(total_price_min), float(total_price_max)),
+            key=f'total_price_slider_{selected_resort}'
+        )
+        
+        # Dropdown for Rate Code
+        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
+        selected_rate_code = st.selectbox(
+            "Select Rate Code",
+            options=["All"] + rate_code_options,
+            key=f'rate_code_filter_{selected_resort}'
+        )
+
+    with st.container():
+        if st.button("Reset Filters"):
             reset_filters()
 
     # Process and display data
@@ -571,124 +591,51 @@ with tab2:
             (resort_df['Arrival Date Short'].dt.date <= check_in_end) &
             (resort_df['Departure Date Short'].dt.date >= check_out_start) &
             (resort_df['Departure Date Short'].dt.date <= check_out_end)
-        ].copy()
+        ]
+
+        # Apply Total Price filter
+        if 'Total Price' in filtered_df.columns:
+            filtered_df = filtered_df[
+                (filtered_df['Total Price'] >= total_price_range[0]) &
+                (filtered_df['Total Price'] <= total_price_range[1])
+            ]
+
+        # Apply Rate Code filter
+        if selected_rate_code != "All" and 'Rate Code Name' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Rate Code Name'] == selected_rate_code]
 
         if not filtered_df.empty:
             # Prepare display DataFrame
             display_df = filtered_df.rename(columns={
                 'Name': 'Guest Name',
                 'Arrival Date Short': 'Check In',
-                'Departure Date Short': 'Check Out'
-            })[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
+                'Departure Date Short': 'Check Out',
+                'Rate Code Name': 'Rate Code',
+                'Total Price': 'Price'
+            })[['Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price']].copy()
 
             # Format phone numbers
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
-
-            # Initialize communication columns
-            display_df['Communication Status'] = 'Not Checked'
-            display_df['Last Communication Date'] = None
-            display_df['Call Duration (seconds)'] = None
-            display_df['Agent Name'] = 'Unknown'
-
-            # Update values from session state
-            if len(st.session_state['communication_data']) > 0:
-                for idx, row in display_df.iterrows():
-                    phone = row['Phone Number']
-                    if phone in st.session_state['communication_data']:
-                        comm_data = st.session_state['communication_data'][phone]
-                        display_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
-                        display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
-                        display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
-                        display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
-
-            # Add Select All checkbox
-            select_all = st.checkbox("Select All", key=f'select_all_{selected_resort}')
-            display_df['Select'] = select_all
-
-            # In the Fetch Communication Info button section:
-            if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
-                headers = {
-                    "Authorization": OPENPHONE_API_KEY,
-                    "Content-Type": "application/json"
-                }
-            
-                with st.spinner('Fetching communication information...'):
-                    # Clean up phone numbers first
-                    display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
-                    
-                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
-                    
-                    # Update session state and display DataFrame
-                    for phone, status, date, duration, agent in zip(
-                        display_df['Phone Number'], statuses, dates, durations, agent_names):
-                        st.session_state['communication_data'][phone] = {
-                            'status': status,
-                            'date': date,
-                            'duration': duration,
-                            'agent': agent
-                        }
-                        
-                    display_df['Communication Status'] = statuses
-                    display_df['Last Communication Date'] = dates
-                    display_df['Call Duration (seconds)'] = durations
-                    display_df['Agent Name'] = agent_names
-                    
-                    # Convert phone numbers to string type explicitly
-                    display_df['Phone Number'] = display_df['Phone Number'].astype(str)
-
-            # Reorder columns
-            display_df = display_df[[
-                'Select', 'Guest Name', 'Check In', 'Check Out', 
-                'Phone Number', 'Communication Status', 
-                'Last Communication Date', 'Call Duration (seconds)', 
-                'Agent Name'
-            ]]
 
             # Display the interactive data editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
-                    "Select": st.column_config.CheckboxColumn(
-                        "Select",
-                        help="Select or deselect this guest",
-                        default=select_all
-                    ),
-                    "Guest Name": st.column_config.TextColumn(
-                        "Guest Name",
-                        help="Guest's full name"
-                    ),
-                    "Check In": st.column_config.DateColumn(
-                        "Check In",
-                        help="Check-in date"
-                    ),
-                    "Check Out": st.column_config.DateColumn(
-                        "Check Out",
-                        help="Check-out date"
-                    ),
-                    "Phone Number": st.column_config.TextColumn(
-                        "Phone Number",
-                        help="Guest's phone number"
-                    ),
-                    "Communication Status": st.column_config.TextColumn(
-                        "Communication Status",
-                        help="Last communication status with the guest",
-                        disabled=True
-                    ),
-                    "Last Communication Date": st.column_config.TextColumn(
-                        "Last Communication Date",
-                        help="Date and time of the last communication with the guest",
-                        disabled=True
-                    ),
+                    "Guest Name": st.column_config.TextColumn("Guest Name"),
+                    "Check In": st.column_config.DateColumn("Check In"),
+                    "Check Out": st.column_config.DateColumn("Check Out"),
+                    "Phone Number": st.column_config.TextColumn("Phone Number"),
+                    "Rate Code": st.column_config.TextColumn("Rate Code"),
+                    "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
                 },
                 hide_index=True,
                 use_container_width=True,
                 key=f"guest_editor_{selected_resort}"
             )
         else:
-            st.warning("No data available for the selected date range.")
+            st.warning("No data available for the selected filters.")
     else:
         st.warning("No data available for the selected resort.")
-
 
 ############################################
 # Message Templates Section
