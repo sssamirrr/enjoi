@@ -689,13 +689,7 @@ with tab2:
                             display_df.loc[idx[0], 'Agent Name'] = agent
 
                         }
-                        # Safely update display_df using .loc with .index
-                        idx = display_df.index[display_df['Phone Number'] == phone].tolist()
-                        if idx:  # Ensure the index list is not empty
-                            display_df.loc[idx[0], 'Communication Status'] = status
-                            display_df.loc[idx[0], 'Last Communication Date'] = date
-                            display_df.loc[idx[0], 'Call Duration (seconds)'] = duration
-                            display_df.loc[idx[0], 'Agent Name'] = agent
+                        
         
             # Reorder columns
             display_df = display_df[[
