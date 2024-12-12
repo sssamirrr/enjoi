@@ -574,31 +574,26 @@ with tab2:
             display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
 
             # Initialize communication status from session state           
-            def get_communication_status(phone):
-                if phone in st.session_state.communication_data:
-                    return st.session_state.communication_data[phone].get('status', 'Not Checked')
-                return 'Not Checked'
-            
-            def get_communication_date(phone):
-                if phone in st.session_state.communication_data:
-                    return st.session_state.communication_data[phone].get('date', None)
-                return None
-            
-            def get_call_duration(phone):
-                if phone in st.session_state.communication_data:
-                    return st.session_state.communication_data[phone].get('duration', None)
-                return None
-            
-            def get_agent_name(phone):
-                if phone in st.session_state.communication_data:
-                    return st.session_state.communication_data[phone].get('agent', None)
-                return None
+           
 
-            # Apply the functions to create new columns
-            display_df['Communication Status'] = display_df['Phone Number'].apply(get_communication_status)
-            display_df['Last Communication Date'] = display_df['Phone Number'].apply(get_communication_date)
-            display_df['Call Duration (seconds)'] = display_df['Phone Number'].apply(get_call_duration)
-            display_df['Agent Name'] = display_df['Phone Number'].apply(get_agent_name)
+          
+            # Initialize communication columns with default values
+            display_df['Communication Status'] = 'Not Checked'
+            display_df['Last Communication Date'] = None
+            display_df['Call Duration (seconds)'] = None
+            display_df['Agent Name'] = 'Unknown'
+            
+            # Update values from session state
+            if st.session_state.communication_data:
+                for idx, row in display_df.iterrows():
+                    phone = row['Phone Number']
+                    if phone in st.session_state.communication_data:
+                        comm_data = st.session_state.communication_data[phone]
+                        display_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
+                        display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
+                        display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
+                        display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
+
 
 
             # Add Select All checkbox
