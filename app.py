@@ -621,7 +621,7 @@ with tab2:
         # Slider for Total Price
         # Slider for Total Price
        # Ensure total_price_min and total_price_max are always defined
-        if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
+        if not resort_df.empty and 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
             total_price_min = resort_df['Total Price'].min()
             total_price_max = resort_df['Total Price'].max()
         
@@ -645,7 +645,7 @@ with tab2:
             )
         except Exception as e:
             st.error(f"Error creating Total Price slider: {e}")
-   
+
 
 
         
