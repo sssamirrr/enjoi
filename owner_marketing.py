@@ -6,6 +6,11 @@ import numpy as np
 import time
 import requests
 from datetime import datetime
+import gspread
+from google.oauth2 import service_account  # Add this import
+
+# The rest of your imports...
+
 
 @st.cache_resource
 def get_owner_sheet_data():
