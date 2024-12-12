@@ -465,6 +465,72 @@ with tab2:
             "Check Out Date (Start)",
             value=default_check_out_start,
             key=f'check_out_start_input_{selected_resort}'
+        )with tab2:
+    st.title("🏖️ Marketing Information by Resort")
+
+    # Resort selection
+    selected_resort = st.selectbox(
+        "Select Resort",
+        options=sorted(df['Market'].unique()),
+        key="select_resort"
+    )
+
+    # Filter for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
+    st.subheader(f"Guest Information for {selected_resort}")
+
+    # Compute initial defaults based on the current resort's data
+    if not resort_df.empty:
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+        arrival_dates = arrival_dates.dropna()
+        departure_dates = departure_dates.dropna()
+
+        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
+        max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
+    else:
+        today = pd.to_datetime('today').date()
+        min_check_in = today
+        max_check_out = today
+
+    # Determine initial total price range
+    if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
+        total_price_min = resort_df['Total Price'].min()
+        total_price_max = resort_df['Total Price'].max()
+        if total_price_min == total_price_max:  # Handle single-value range
+            total_price_min -= 1
+            total_price_max += 1
+    else:
+        total_price_min = 0
+        total_price_max = 1000  # Arbitrary fallback if no data
+
+    # Retrieve defaults from session_state or fall back to computed values
+    default_check_in_start = st.session_state.get(f'default_check_in_start_{selected_resort}', min_check_in)
+    default_check_in_end = st.session_state.get(f'default_check_in_end_{selected_resort}', max_check_out)
+    default_check_out_start = st.session_state.get(f'default_check_out_start_{selected_resort}', min_check_in)
+    default_check_out_end = st.session_state.get(f'default_check_out_end_{selected_resort}', max_check_out)
+    default_total_price = st.session_state.get(f'default_total_price_{selected_resort}', (float(total_price_min), float(total_price_max)))
+    default_rate_code = st.session_state.get(f'default_rate_code_{selected_resort}', "All")
+
+    # Date and price filters
+    col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
+    with col1:
+        check_in_start = st.date_input(
+            "Check In Date (Start)",
+            value=default_check_in_start,
+            key=f'check_in_start_input_{selected_resort}'
+        )
+        check_in_end = st.date_input(
+            "Check In Date (End)",
+            value=default_check_in_end,
+            key=f'check_in_end_input_{selected_resort}'
+        )
+
+    with col2:
+        check_out_start = st.date_input(
+            "Check Out Date (Start)",
+            value=default_check_out_start,
+            key=f'check_out_start_input_{selected_resort}'
         )
         check_out_end = st.date_input(
             "Check Out Date (End)",
@@ -484,7 +550,7 @@ with tab2:
             )
         else:
             st.warning("No valid Total Price data available for filtering.")
-            total_price_range = (0, 0)  # Default range if no valid data
+            total_price_range = (0, 0)  # Default if no valid data
 
         # Dropdown for Rate Code
         rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
@@ -510,7 +576,7 @@ with tab2:
         st.session_state[f'default_rate_code_{selected_resort}'] = "All"
 
     # Reset Filters Button
-    if st.button("Reset Filters"):
+    if st.button("Reset Filters", key=f"reset_filters_button_{selected_resort}"):
         reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
         st.rerun()
 
@@ -555,7 +621,7 @@ with tab2:
                 if col not in display_df.columns:
                     display_df[col] = None
 
-            # Format phone numbers
+            # Apply the cleanup_phone_number function
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
 
             # Select All checkbox
@@ -649,11 +715,12 @@ with tab2:
 
     selected_template = st.selectbox(
         "Choose a Message Template",
-        options=list(message_templates.keys())
+        options=list(message_templates.keys()),
+        key=f"message_template_select_{selected_resort}"
     )
 
     message_preview = message_templates[selected_template]
-    st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
+    st.text_area("Message Preview", value=message_preview, height=100, disabled=True, key=f"message_preview_{selected_resort}")
 
     # Send SMS to Selected Guests
     if 'edited_df' in locals() and not edited_df.empty:
@@ -661,13 +728,13 @@ with tab2:
         num_selected = len(selected_guests)
         if not selected_guests.empty:
             button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-            if st.button(button_label):
+            if st.button(button_label, key=f"send_sms_button_{selected_resort}"):
                 openphone_url = "https://api.openphone.com/v1/messages"
                 headers_sms = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
-                sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
+                sender_phone_number = OPENPHONE_NUMBER
 
                 for idx, row in selected_guests.iterrows():
                     recipient_phone = row['Phone Number']
@@ -696,7 +763,6 @@ with tab2:
             st.info("No guests selected to send SMS.")
     else:
         st.info("No guest data available to send SMS.")
-
 
 ############################################
 # Message Templates Section
