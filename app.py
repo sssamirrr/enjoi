@@ -377,8 +377,8 @@ def cleanup_phone_number(phone):
     return 'No Data'
 
 def reset_filters():
-    st.session_state['communication_data'] = {}
-    st.experimental_rerun()
+    # Reset specific filters or states back to their default values
+    st.session_state['default_dates'] = {}  # Reset default_dates to an empty dictionary, for example
 
 def rate_limited_request(url, headers, params, request_type='get'):
     time.sleep(1 / 5)  # 5 requests per second max
