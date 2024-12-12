@@ -384,41 +384,7 @@ def cleanup_phone_number(phone):
         return 'No Data'
 
 
-def reset_filters():
-    # Get the current selected resort
-    selected_resort = st.session_state.get('selected_resort')
-    
-    if selected_resort:
-        # Filter data for the selected resort
-        resort_df = df[df['Market'] == selected_resort].copy()
-        
-        if not resort_df.empty:
-            # Get absolute min and max dates for this resort
-            min_arrival = pd.to_datetime(resort_df['Arrival Date Short']).min()
-            max_departure = pd.to_datetime(resort_df['Departure Date Short']).max()
-            
-            # Clear existing date inputs from session state
-            if 'check_in_start_input' in st.session_state:
-                del st.session_state['check_in_start_input']
-            if 'check_in_end_input' in st.session_state:
-                del st.session_state['check_in_end_input']
-            if 'check_out_start_input' in st.session_state:
-                del st.session_state['check_out_start_input']
-            if 'check_out_end_input' in st.session_state:
-                del st.session_state['check_out_end_input']
-            
-            # Set new default dates
-            st.session_state['default_dates'] = {
-                'check_in_start': min_arrival.date(),
-                'check_in_end': max_departure.date(),
-                'check_out_start': min_arrival.date(),
-                'check_out_end': max_departure.date()
-            }
-            
-            # Force streamlit to rerun
-            st.rerun()
-
-
+d
 
 def rate_limited_request(url, headers, params, request_type='get'):
     time.sleep(1 / 5)  # 5 requests per second max
