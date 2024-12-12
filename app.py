@@ -377,28 +377,105 @@ def cleanup_phone_number(phone):
     return 'No Data'
 
 def reset_filters():
-    """
-    Reset the date filters to their default values.
-    """
     default_dates = st.session_state['default_dates']
-    
-    # Map default_dates to the corresponding input keys
-    st.session_state['check_in_start_input'] = default_dates.get('check_in_start', datetime.today().date())
-    st.session_state['check_in_end_input'] = default_dates.get('check_in_end', datetime.today().date())
-    st.session_state['check_out_start_input'] = default_dates.get('check_out_start', datetime.today().date())
-    st.session_state['check_out_end_input'] = default_dates.get('check_out_end', datetime.today().date())
-    
-    # Clear communication data
-    st.session_state['communication_data'] = {}
-    
-    # Rerun the app to apply changes
-    st.experimental_rerun()
+    for key, value in default_dates.items():
+        if key in st.session_state:
+            del st.session_state[key]
+    st.session_state.update(default_dates)
+    st.session_state['communication_data'] = {}  # Changed from dot notation
+    st.rerun()
 
-# (Ensure that other helper functions like rate_limited_request, get_all_phone_number_ids, etc., remain unchanged)
+
+def rate_limited_request(url, headers, params, request_type='get'):
+    time.sleep(1 / 5)  # 5 requests per second max
+    try:
+        response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
+        if response and response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.warning(f"Exception during request: {str(e)}")
+    return None
+
+def get_all_phone_number_ids(headers):
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+
+def get_last_communication_info(phone_number, headers):
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        return "No Communications", None, None, None
+
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
+    call_duration = None
+    agent_name = None
+
+    for phone_number_id in phone_number_ids:
+        params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
+        
+        messages_response = rate_limited_request(messages_url, headers, params)
+        if messages_response and 'data' in messages_response:
+            for message in messages_response['data']:
+                msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or msg_time > latest_datetime:
+                    latest_datetime = msg_time
+                    latest_type = "Message"
+                    latest_direction = message.get("direction", "unknown")
+                    agent_name = message.get("user", {}).get("name", "Unknown Agent")
+
+        calls_response = rate_limited_request(calls_url, headers, params)
+        if calls_response and 'data' in calls_response:
+            for call in calls_response['data']:
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
+                    latest_type = "Call"
+                    latest_direction = call.get("direction", "unknown")
+                    call_duration = call.get("duration")
+                    agent_name = call.get("user", {}).get("name", "Unknown Agent")
+
+    if not latest_datetime:
+        return "No Communications", None, None, None
+
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_name
+
+def fetch_communication_info(guest_df, headers):
+    if 'Phone Number' not in guest_df.columns:
+        return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
+
+    statuses, dates, durations, agent_names = [], [], [], []
+    
+    for _, row in guest_df.iterrows():
+        phone = row['Phone Number']
+        if phone and phone != 'No Data':
+            try:
+                status, last_date, duration, agent_name = get_last_communication_info(phone, headers)
+                statuses.append(status)
+                dates.append(last_date)
+                durations.append(duration)
+                agent_names.append(agent_name)
+            except Exception as e:
+                statuses.append("Error")
+                dates.append(None)
+                durations.append(None)
+                agent_names.append("Unknown")
+        else:
+            statuses.append("Invalid Number")
+            dates.append(None)
+            durations.append(None)
+            agent_names.append("Unknown")
+
+    return statuses, dates, durations, agent_names
 
 # Main Tab2 Content
 with tab2:
     
+
     st.title("🏖️ Marketing Information by Resort")
 
     # Resort selection
