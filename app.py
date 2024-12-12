@@ -612,15 +612,24 @@ with tab2:
                 'Departure Date Short': 'Check Out',
                 'Rate Code Name': 'Rate Code',
                 'Total Price': 'Price'
-            })[['Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price']].copy()
-
+            })
+        
+            # Ensure required columns are present
+            required_columns = [
+                'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
+                'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name'
+            ]
+            for col in required_columns:
+                if col not in display_df.columns:
+                    display_df[col] = None  # Add missing column with default value
+        
             # Format phone numbers
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
-
+        
             # Add Select All checkbox
             select_all = st.checkbox("Select All Guests", key=f'select_all_{selected_resort}')
             display_df['Select'] = select_all
-
+        
             # Fetch Communication Info Button
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
@@ -648,7 +657,7 @@ with tab2:
                     display_df['Last Communication Date'] = dates
                     display_df['Call Duration (seconds)'] = durations
                     display_df['Agent Name'] = agent_names
-
+        
             # Reorder columns
             display_df = display_df[[
                 'Select', 'Guest Name', 'Check In', 'Check Out', 
@@ -656,7 +665,7 @@ with tab2:
                 'Communication Status', 'Last Communication Date', 
                 'Call Duration (seconds)', 'Agent Name'
             ]]
-
+        
             # Display the interactive data editor
             edited_df = st.data_editor(
                 display_df,
@@ -677,8 +686,7 @@ with tab2:
             )
         else:
             st.warning("No data available for the selected filters.")
-    else:
-        st.warning("No data available for the selected resort.")
+
 
 
 ############################################
