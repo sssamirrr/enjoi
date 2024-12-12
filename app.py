@@ -857,3 +857,5 @@ with tab3:
 ############################################
 with st.expander("Show Raw Data"):
     st.dataframe(df)
+
+I WANT THE RESET BUTTON TO WORK NOW IT DOES NOT DO ANUTHING ALL IT HAS TO DO IS LOAD THE DEFAULT VALUES FOR THE FILTERS AND APPLY IT THE DATA
