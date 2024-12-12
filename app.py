@@ -91,6 +91,54 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
+def format_phone_number(phone):
+    """
+    Format phone numbers to the standard format: +1XXXXXXXXXX
+    """
+    if pd.isna(phone) or phone == 'No Data':
+        return 'No Data'
+    
+    # Remove any non-digit characters
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    
+    # Format based on length
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    elif len(phone) == 12 and phone.startswith('+1'):
+        return phone
+    else:
+        return 'Invalid Number'
+# Prepare display DataFrame
+if 'communication_data' not in st.session_state:
+    st.session_state.communication_data = {
+        'statuses': {},
+        'dates': {},
+        'durations': {},
+        'agent_names': {}
+    }
+
+display_df = filtered_df[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
+
+# Initialize new columns with default values
+display_df['Communication Status'] = 'Not Checked'
+display_df['Last Communication Date'] = None
+display_df['Call Duration (seconds)'] = None
+display_df['Agent Name'] = 'Unknown'
+
+# Update values from session state if they exist
+for idx, row in display_df.iterrows():
+    phone = row['Phone Number']
+    if phone in st.session_state.communication_data['statuses']:
+        display_df.at[idx, 'Communication Status'] = st.session_state.communication_data['statuses'].get(phone, 'Not Checked')
+        display_df.at[idx, 'Last Communication Date'] = st.session_state.communication_data['dates'].get(phone)
+        display_df.at[idx, 'Call Duration (seconds)'] = st.session_state.communication_data['durations'].get(phone)
+        display_df.at[idx, 'Agent Name'] = st.session_state.communication_data['agent_names'].get(phone, 'Unknown')
+
+# Add "Select All" checkbox
+select_all = st.checkbox("Select All")
+display_df['Select'] = select_all
 
 
 def rate_limited_request(url, headers, params, request_type='get'):
