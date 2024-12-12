@@ -676,6 +676,301 @@ with tab2:
             required_columns = [
                 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
                 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name'
+            ]############################################
+# Marketing Tab
+############################################
+
+# Helper Functions
+def cleanup_phone_number(phone):
+    """Clean up phone number format"""
+    if pd.isna(phone):
+        return 'No Data'
+    # Remove spaces and non-numeric characters
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    return 'No Data'
+
+def reset_filters(selected_resort):
+    """
+    Clear filter-related session state variables so that filters reset to original defaults.
+    """
+    # List all keys related to filters for this resort
+    keys_to_clear = [
+        f'default_check_in_start_{selected_resort}',
+        f'default_check_in_end_{selected_resort}',
+        f'default_check_out_start_{selected_resort}',
+        f'default_check_out_end_{selected_resort}',
+        f'default_total_price_{selected_resort}',
+        f'default_rate_code_{selected_resort}',
+        f'check_in_start_input_{selected_resort}',
+        f'check_in_end_input_{selected_resort}',
+        f'check_out_start_input_{selected_resort}',
+        f'check_out_end_input_{selected_resort}',
+        f'total_price_slider_{selected_resort}',
+        f'rate_code_filter_{selected_resort}',
+        f'select_all_{selected_resort}'
+    ]
+
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+
+
+def rate_limited_request(url, headers, params, request_type='get'):
+    time.sleep(1 / 5)  # 5 requests per second max
+    try:
+        response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
+        if response and response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.warning(f"Exception during request: {str(e)}")
+    return None
+
+def get_all_phone_number_ids(headers):
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+
+def get_last_communication_info(phone_number, headers):
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        return "No Communications", None, None, None
+
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
+    call_duration = None
+    agent_name = None
+
+    for phone_number_id in phone_number_ids:
+        params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
+        
+        messages_response = rate_limited_request(messages_url, headers, params)
+        if messages_response and 'data' in messages_response:
+            for message in messages_response['data']:
+                msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or msg_time > latest_datetime:
+                    latest_datetime = msg_time
+                    latest_type = "Message"
+                    latest_direction = message.get("direction", "unknown")
+                    agent_name = message.get("user", {}).get("name", "Unknown Agent")
+
+        calls_response = rate_limited_request(calls_url, headers, params)
+        if calls_response and 'data' in calls_response:
+            for call in calls_response['data']:
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
+                    latest_type = "Call"
+                    latest_direction = call.get("direction", "unknown")
+                    call_duration = call.get("duration")
+                    agent_name = call.get("user", {}).get("name", "Unknown Agent")
+
+    if not latest_datetime:
+        return "No Communications", None, None, None
+
+    return f"{latest_type} - {latest_direction}", latest_datetime.strftime("%Y-%m-%d %H:%M:%S"), call_duration, agent_name
+
+def fetch_communication_info(guest_df, headers):
+    if 'Phone Number' not in guest_df.columns:
+        return ["No Status"] * len(guest_df), [None] * len(guest_df), [None] * len(guest_df), ["Unknown"] * len(guest_df)
+
+    statuses, dates, durations, agent_names = [], [], [], []
+    
+    for _, row in guest_df.iterrows():
+        phone = row['Phone Number']
+        if phone and phone != 'No Data':
+            try:
+                status, last_date, duration, agent_name = get_last_communication_info(phone, headers)
+                statuses.append(status)
+                dates.append(last_date)
+                durations.append(duration)
+                agent_names.append(agent_name)
+            except Exception as e:
+                statuses.append("Error")
+                dates.append(None)
+                durations.append(None)
+                agent_names.append("Unknown")
+        else:
+            statuses.append("Invalid Number")
+            dates.append(None)
+            durations.append(None)
+            agent_names.append("Unknown")
+
+    return statuses, dates, durations, agent_names
+
+# Main Tab2 Content
+with tab2:
+    st.title("🏖️ Marketing Information by Resort")
+
+    # Resort selection
+    selected_resort = st.selectbox(
+        "Select Resort",
+        options=sorted(df['Market'].unique())
+    )
+
+    # Filter for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
+    st.subheader(f"Guest Information for {selected_resort}")
+
+    # Set default dates based on the selected resort
+    if not resort_df.empty:
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce').dropna()
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce').dropna()
+
+        if arrival_dates.empty:
+            min_check_in = pd.to_datetime('today').date()
+        else:
+            min_check_in = arrival_dates.min().date()
+
+        if departure_dates.empty:
+            max_check_out = pd.to_datetime('today').date()
+        else:
+            max_check_out = departure_dates.max().date()
+    else:
+        today = pd.to_datetime('today').date()
+        min_check_in = today
+        max_check_out = today
+
+    # Retrieve any stored default values from session state
+    check_in_start_key = f'default_check_in_start_{selected_resort}'
+    check_in_end_key = f'default_check_in_end_{selected_resort}'
+    check_out_start_key = f'default_check_out_start_{selected_resort}'
+    check_out_end_key = f'default_check_out_end_{selected_resort}'
+    price_range_key = f'default_total_price_{selected_resort}'
+    rate_code_key = f'default_rate_code_{selected_resort}'
+
+    check_in_start_default = st.session_state.get(check_in_start_key, min_check_in)
+    check_in_end_default = st.session_state.get(check_in_end_key, max_check_out)
+    check_out_start_default = st.session_state.get(check_out_start_key, min_check_in)
+    check_out_end_default = st.session_state.get(check_out_end_key, max_check_out)
+
+    # Determine defaults for total price
+    if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
+        total_price_min = resort_df['Total Price'].min()
+        total_price_max = resort_df['Total Price'].max()
+        # If min and max are the same, add a small buffer
+        if total_price_min == total_price_max:
+            total_price_min -= 1
+            total_price_max += 1
+    else:
+        # No valid total price data
+        total_price_min = 0
+        total_price_max = 0
+
+    total_price_range_default = st.session_state.get(price_range_key, (float(total_price_min), float(total_price_max)))
+
+    # Clamp the default range to ensure it fits within the computed range
+    tp_min = float(total_price_min)
+    tp_max = float(total_price_max)
+
+    val_start, val_end = total_price_range_default
+    val_start = max(tp_min, min(val_start, tp_max))
+    val_end = max(tp_min, min(val_end, tp_max))
+    if val_start > val_end:
+        val_start, val_end = val_end, val_start
+    total_price_range_default = (val_start, val_end)
+
+    rate_code_default = st.session_state.get(rate_code_key, "All")
+
+    col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
+    with col1:
+        check_in_start = st.date_input(
+            "Check In Date (Start)",
+            value=check_in_start_default,
+            key=f'check_in_start_input_{selected_resort}'
+        )
+        check_in_end = st.date_input(
+            "Check In Date (End)",
+            value=check_in_end_default,
+            key=f'check_in_end_input_{selected_resort}'
+        )
+
+    with col2:
+        check_out_start = st.date_input(
+            "Check Out Date (Start)",
+            value=check_out_start_default,
+            key=f'check_out_start_input_{selected_resort}'
+        )
+        check_out_end = st.date_input(
+            "Check Out Date (End)",
+            value=check_out_end_default,
+            key=f'check_out_end_input_{selected_resort}'
+        )
+
+    with col3:
+        if total_price_min < total_price_max:
+            total_price_range = st.slider(
+                "Total Price Range",
+                min_value=tp_min,
+                max_value=tp_max,
+                value=total_price_range_default,
+                key=f'total_price_slider_{selected_resort}'
+            )
+        else:
+            # If we can't create a valid range, skip the slider
+            st.warning("No valid Total Price data available for filtering.")
+            total_price_range = (float(total_price_min), float(total_price_max))
+
+        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
+        # Set the index for the rate code dropdown to the previously saved default if available
+        rate_code_all_options = ["All"] + list(rate_code_options)
+        initial_rate_code_index = rate_code_all_options.index(rate_code_default) if rate_code_default in rate_code_all_options else 0
+        selected_rate_code = st.selectbox(
+            "Select Rate Code",
+            options=rate_code_all_options,
+            index=initial_rate_code_index,
+            key=f'rate_code_filter_{selected_resort}'
+        )
+
+    # Reset Filters Button
+    if st.button("Reset Filters"):
+        reset_filters(selected_resort)
+        # No need for st.experimental_rerun()
+
+    # Process and display data
+    if not resort_df.empty:
+        resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        filtered_df = resort_df[
+            (resort_df['Arrival Date Short'].dt.date >= check_in_start) &
+            (resort_df['Arrival Date Short'].dt.date <= check_in_end) &
+            (resort_df['Departure Date Short'].dt.date >= check_out_start) &
+            (resort_df['Departure Date Short'].dt.date <= check_out_end)
+        ]
+
+        # Apply Total Price filter
+        if 'Total Price' in filtered_df.columns:
+            filtered_df = filtered_df[
+                (filtered_df['Total Price'] >= total_price_range[0]) &
+                (filtered_df['Total Price'] <= total_price_range[1])
+            ]
+
+        # Apply Rate Code filter
+        if selected_rate_code != "All" and 'Rate Code Name' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Rate Code Name'] == selected_rate_code]
+
+        if not filtered_df.empty:
+            # Prepare display DataFrame
+            display_df = filtered_df.rename(columns={
+                'Name': 'Guest Name',
+                'Arrival Date Short': 'Check In',
+                'Departure Date Short': 'Check Out',
+                'Rate Code Name': 'Rate Code',
+                'Total Price': 'Price'
+            })
+        
+            # Ensure required columns are present
+            required_columns = [
+                'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
+                'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name'
             ]
             for col in required_columns:
                 if col not in display_df.columns:
