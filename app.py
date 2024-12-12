@@ -480,6 +480,15 @@ def fetch_communication_info(guest_df, headers):
 
     return statuses, dates, durations, agent_names
 
+# Helper function to sanitize keys
+import re
+
+def sanitize_key(key):
+    """
+    Sanitize the key by replacing non-alphanumeric characters with underscores.
+    """
+    return re.sub(r'\W+', '_', key)
+
 # Main Marketing Tab Content
 with tab2:
     st.title("🏖️ Marketing Information by Resort")
@@ -489,6 +498,9 @@ with tab2:
         "Select Resort",
         options=sorted(df['Market'].unique())
     )
+
+    # Sanitize the resort name for use in session_state keys
+    sanitized_resort = sanitize_key(selected_resort)
 
     # Filter for selected resort
     resort_df = df[df['Market'] == selected_resort].copy()
@@ -509,11 +521,11 @@ with tab2:
         min_check_in = today
         max_check_out = today
 
-    # Define unique keys for date inputs based on the selected resort
-    check_in_start_key = f'check_in_start_input_{selected_resort}'
-    check_in_end_key = f'check_in_end_input_{selected_resort}'
-    check_out_start_key = f'check_out_start_input_{selected_resort}'
-    check_out_end_key = f'check_out_end_input_{selected_resort}'
+    # Define unique keys for date inputs based on the sanitized resort name
+    check_in_start_key = f'check_in_start_input_{sanitized_resort}'
+    check_in_end_key = f'check_in_end_input_{sanitized_resort}'
+    check_out_start_key = f'check_out_start_input_{sanitized_resort}'
+    check_out_end_key = f'check_out_end_input_{sanitized_resort}'
 
     # Initialize date inputs in session_state if not already present
     if check_in_start_key not in st.session_state:
@@ -552,7 +564,7 @@ with tab2:
         )
 
     with col3:
-        reset_button = st.button("Reset Dates", key=f'reset_button_{selected_resort}')
+        reset_button = st.button("Reset Dates", key=f'reset_button_{sanitized_resort}')
         if reset_button:
             # Reset the date inputs to min_check_in and max_check_out
             st.session_state[check_in_start_key] = min_check_in
@@ -602,11 +614,11 @@ with tab2:
                         display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
 
             # Add Select All checkbox
-            select_all = st.checkbox("Select All", key=f'select_all_{selected_resort}')
+            select_all = st.checkbox("Select All", key=f'select_all_{sanitized_resort}')
             display_df['Select'] = select_all
 
             # Fetch Communication Info Button
-            if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
+            if st.button("Fetch Communication Info", key=f'fetch_info_{sanitized_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
@@ -682,7 +694,7 @@ with tab2:
                 },
                 hide_index=True,
                 use_container_width=True,
-                key=f"guest_editor_{selected_resort}"
+                key=f"guest_editor_{sanitized_resort}"
             )
         else:
             st.warning("No data available for the selected date range.")
