@@ -187,7 +187,7 @@ def get_last_communication_info(phone_number, headers):
 
 def fetch_communication_info(guest_df, headers):
     """
-    Fetch communication statuses, dates, durations, and agent names for all guests in the DataFrame.
+     statuses, dates, durations, and agent names for all guests in the DataFrame.
     """
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
@@ -627,7 +627,7 @@ with tab2:
                     # Update session state and display DataFrame
                     for phone, status, date, duration, agent in zip(
                         display_df['Phone Number'], statuses, dates, durations, agent_names):
-                        st.session_state['communication_data'][phone] = {  # Changed from dot notation
+                        st.session_state['communication_data'][phone] = {
                             'status': status,
                             'date': date,
                             'duration': duration,
@@ -641,32 +641,16 @@ with tab2:
                     
                     # Convert phone numbers to string type explicitly
                     display_df['Phone Number'] = display_df['Phone Number'].astype(str)
-
-                with st.spinner('Fetching communication information...'):
-                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
-                    
-                    # Update session state and display DataFrame
-                    for phone, status, date, duration, agent in zip(
-                        display_df['Phone Number'], statuses, dates, durations, agent_names):
-                        st.session_state.communication_data[phone] = {
-                            'status': status,
-                            'date': date,
-                            'duration': duration,
-                            'agent': agent
-                        }
-                        
-                    display_df['Communication Status'] = statuses
-                    display_df['Last Communication Date'] = dates
-                    display_df['Call Duration (seconds)'] = durations
-                    display_df['Agent Name'] = agent_names
-
-            # Reorder columns
+            
+            # Reorder columns (moved outside the button click condition)
             display_df = display_df[[
                 'Select', 'Guest Name', 'Check In', 'Check Out', 
                 'Phone Number', 'Communication Status', 
                 'Last Communication Date', 'Call Duration (seconds)', 
                 'Agent Name'
             ]]
+
+           
 
             # Display the interactive data editor
             edited_df = st.data_editor(
