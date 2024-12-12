@@ -393,46 +393,27 @@ def reset_filters():
         resort_df = df[df['Market'] == selected_resort].copy()
         
         if not resort_df.empty:
-            # Convert dates to datetime
-            resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'])
-            resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'])
+            # Get the full date range for this resort
+            min_arrival = pd.to_datetime(resort_df['Arrival Date Short']).min()
+            max_departure = pd.to_datetime(resort_df['Departure Date Short']).max()
             
-            # Get min and max dates
-            min_arrival = resort_df['Arrival Date Short'].min()
-            max_departure = resort_df['Departure Date Short'].max()
+            # Set the default dates to the full range
+            st.session_state['default_dates'] = {
+                'check_in_start': min_arrival.date(),
+                'check_in_end': max_departure.date(),
+                'check_out_start': min_arrival.date(),
+                'check_out_end': max_departure.date()
+            }
             
-            if pd.notnull(min_arrival) and pd.notnull(max_departure):
-                # Update session state with new date ranges
-                st.session_state['default_dates'] = {
-                    'check_in_start': min_arrival.date(),
-                    'check_in_end': max_departure.date(),
-                    'check_out_start': min_arrival.date(),
-                    'check_out_end': max_departure.date()
-                }
-            else:
-                # Fallback to today if no valid dates
-                today = pd.to_datetime('today').date()
-                st.session_state['default_dates'] = {
-                    'check_in_start': today,
-                    'check_in_end': today,
-                    'check_out_start': today,
-                    'check_out_end': today
-                }
-    
-    # Clear all date input widget states
-    date_keys = [
-        'check_in_start_input',
-        'check_in_end_input',
-        'check_out_start_input',
-        'check_out_end_input'
-    ]
-    
-    for key in date_keys:
-        if key in st.session_state:
-            del st.session_state[key]
+            # Explicitly set the date input values
+            st.session_state['check_in_start_input'] = min_arrival.date()
+            st.session_state['check_in_end_input'] = max_departure.date()
+            st.session_state['check_out_start_input'] = min_arrival.date()
+            st.session_state['check_out_end_input'] = max_departure.date()
     
     # Force a rerun of the app
     st.rerun()
+
 
 
 
