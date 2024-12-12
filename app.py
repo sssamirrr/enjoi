@@ -91,25 +91,7 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
-def format_phone_number(phone):
-    """
-    Format phone numbers to the standard format: +1XXXXXXXXXX
-    """
-    if pd.isna(phone) or phone == 'No Data':
-        return 'No Data'
-    
-    # Remove any non-digit characters
-    phone = ''.join(filter(str.isdigit, str(phone)))
-    
-    # Format based on length
-    if len(phone) == 10:
-        return f"+1{phone}"
-    elif len(phone) == 11 and phone.startswith('1'):
-        return f"+{phone}"
-    elif len(phone) == 12 and phone.startswith('+1'):
-        return phone
-    else:
-        return 'Invalid Number'
+
 
 def rate_limited_request(url, headers, params, request_type='get'):
     """
