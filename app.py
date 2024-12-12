@@ -187,7 +187,7 @@ def get_last_communication_info(phone_number, headers):
 
 def fetch_communication_info(guest_df, headers):
     """
-     statuses, dates, durations, and agent names for all guests in the DataFrame.
+    Fetch communication statuses, dates, durations, and agent names for all guests in the DataFrame.
     """
     if 'Phone Number' not in guest_df.columns:
         st.error("The column 'Phone Number' is missing in the DataFrame.")
@@ -377,17 +377,13 @@ def cleanup_phone_number(phone):
     return 'No Data'
 
 def reset_filters():
-    # Load default dates from session state
     default_dates = st.session_state['default_dates']
-    
-    # Reset date inputs to default values
-    st.session_state['check_in_start_input'] = default_dates['check_in_start']
-    st.session_state['check_in_end_input'] = default_dates['check_in_end']
-    st.session_state['check_out_start_input'] = default_dates['check_out_start']
-    st.session_state['check_out_end_input'] = default_dates['check_out_end']
-    
-    # No need to reset communication data; it remains untouched.
-
+    for key, value in default_dates.items():
+        if key in st.session_state:
+            del st.session_state[key]
+    st.session_state.update(default_dates)
+    st.session_state['communication_data'] = {}  # Changed from dot notation
+    st.rerun()
 
 
 def rate_limited_request(url, headers, params, request_type='get'):
@@ -556,8 +552,10 @@ with tab2:
 
     with col3:
         if st.button("Reset Dates"):
-            reset_filters()  # Call the updated reset_filters function
-
+            if 'default_dates' in st.session_state:
+                reset_filters()
+            else:
+                st.warning("Default dates are not available.")
 
     # Process and display data
     if not resort_df.empty:
@@ -629,7 +627,7 @@ with tab2:
                     # Update session state and display DataFrame
                     for phone, status, date, duration, agent in zip(
                         display_df['Phone Number'], statuses, dates, durations, agent_names):
-                        st.session_state['communication_data'][phone] = {
+                        st.session_state['communication_data'][phone] = {  # Changed from dot notation
                             'status': status,
                             'date': date,
                             'duration': duration,
@@ -643,16 +641,32 @@ with tab2:
                     
                     # Convert phone numbers to string type explicitly
                     display_df['Phone Number'] = display_df['Phone Number'].astype(str)
-            
-            # Reorder columns (moved outside the button click condition)
+
+                with st.spinner('Fetching communication information...'):
+                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+                    
+                    # Update session state and display DataFrame
+                    for phone, status, date, duration, agent in zip(
+                        display_df['Phone Number'], statuses, dates, durations, agent_names):
+                        st.session_state.communication_data[phone] = {
+                            'status': status,
+                            'date': date,
+                            'duration': duration,
+                            'agent': agent
+                        }
+                        
+                    display_df['Communication Status'] = statuses
+                    display_df['Last Communication Date'] = dates
+                    display_df['Call Duration (seconds)'] = durations
+                    display_df['Agent Name'] = agent_names
+
+            # Reorder columns
             display_df = display_df[[
                 'Select', 'Guest Name', 'Check In', 'Check Out', 
                 'Phone Number', 'Communication Status', 
                 'Last Communication Date', 'Call Duration (seconds)', 
                 'Agent Name'
             ]]
-
-           
 
             # Display the interactive data editor
             edited_df = st.data_editor(
