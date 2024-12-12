@@ -219,137 +219,264 @@ tab1, tab2, tab3 = st.tabs(["Dashboard", "Marketing", "Tour Prediction"])
 ############################################
 # Dashboard Tab
 ############################################
-with tab1:
-    st.title("🏨 Hotel Reservations Dashboard")
-    st.markdown("Real-time analysis of hotel reservations")
+############################################
+# Marketing Tab
+############################################
 
-    # Filters
-    col1, col2, col3 = st.columns(3)
+with tab2:
+    st.title("🏖️ Marketing Information by Resort")
+
     
+    # Resort selection
+    selected_resort = st.selectbox(
+        "Select Resort",
+        options=sorted(df['Market'].unique())
+    )
+
+    # Filter for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
+    st.subheader(f"Guest Information for {selected_resort}")
+
+    # Initialize session states
+    if 'default_dates' not in st.session_state:
+        st.session_state['default_dates'] = {}
+
+    if 'communication_data' not in st.session_state:
+        st.session_state.communication_data = {
+            'statuses': {},
+            'dates': {},
+            'durations': {},
+            'agent_names': {}
+        }
+
+    # Set default dates to the earliest check-in and latest check-out
+    if not resort_df.empty:
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        arrival_dates = arrival_dates.dropna()
+        departure_dates = departure_dates.dropna()
+
+        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
+        max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
+
+        st.session_state['default_dates'] = {
+            'check_in_start': min_check_in,
+            'check_in_end': max_check_out,
+            'check_out_start': min_check_in,
+            'check_out_end': max_check_out,
+        }
+    else:
+        min_check_in = pd.to_datetime('today').date()
+        max_check_out = pd.to_datetime('today').date()
+        st.session_state['default_dates'] = {
+            'check_in_start': min_check_in,
+            'check_in_end': max_check_out,
+            'check_out_start': min_check_in,
+            'check_out_end': max_check_out,
+        }
+
+    # Date filters
+    col1, col2, col3 = st.columns([0.4, 0.4, 0.2])
     with col1:
-        selected_hotel = st.multiselect(
-            "Select Hotel",
-            options=sorted(df['Market'].unique()),
-            default=[]
+        check_in_start = st.date_input(
+            "Check In Date (Start)",
+            value=st.session_state.get('check_in_start_input', st.session_state['default_dates']['check_in_start']),
+            key='check_in_start_input'
         )
+        st.session_state['check_in_start'] = check_in_start
+
+        check_in_end = st.date_input(
+            "Check In Date (End)",
+            value=st.session_state.get('check_in_end_input', st.session_state['default_dates']['check_in_end']),
+            key='check_in_end_input'
+        )
+        st.session_state['check_in_end'] = check_in_end
 
     with col2:
-        min_date = pd.to_datetime(df['Arrival Date Short']).min()
-        max_date = pd.to_datetime(df['Arrival Date Short']).max()
-        date_range = st.date_input(
-            "Select Date Range",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date
+        check_out_start = st.date_input(
+            "Check Out Date (Start)",
+            value=st.session_state.get('check_out_start_input', st.session_state['default_dates']['check_out_start']),
+            key='check_out_start_input'
         )
+        st.session_state['check_out_start'] = check_out_start
+
+        check_out_end = st.date_input(
+            "Check Out Date (End)",
+            value=st.session_state.get('check_out_end_input', st.session_state['default_dates']['check_out_end']),
+            key='check_out_end_input'
+        )
+        st.session_state['check_out_end'] = check_out_end
 
     with col3:
-        selected_rate_codes = st.multiselect(
-            "Select Rate Codes",
-            options=sorted(df['Rate Code Name'].unique()),
-            default=[]
-        )
+        col3_1, col3_2 = st.columns(2)
+        with col3_1:
+            if st.button("Reset Dates"):
+                if 'default_dates' in st.session_state:
+                    reset_filters()
+                else:
+                    st.warning("Default dates are not available.")
+        with col3_2:
+            if st.button("Clear Cache"):
+                st.session_state.communication_data = {
+                    'statuses': {},
+                    'dates': {},
+                    'durations': {},
+                    'agent_names': {}
+                }
+                st.rerun()
 
-    # Filter data
-    filtered_df = df.copy()
-    
-    if selected_hotel:
-        filtered_df = filtered_df[filtered_df['Market'].isin(selected_hotel)]
-    
-    if isinstance(date_range, tuple) and len(date_range) == 2:
-        filtered_df = filtered_df[
-            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date >= date_range[0]) &
-            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date <= date_range[1])
+    # Proceed only if resort_df is not empty
+    if not resort_df.empty:
+        # Convert date columns to datetime
+        resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        # Filter the DataFrame based on the selected date ranges
+        filtered_df = resort_df[
+            (resort_df['Arrival Date Short'].dt.date >= st.session_state['check_in_start']) &
+            (resort_df['Arrival Date Short'].dt.date <= st.session_state['check_in_end']) &
+            (resort_df['Departure Date Short'].dt.date >= st.session_state['check_out_start']) &
+            (resort_df['Departure Date Short'].dt.date <= st.session_state['check_out_end'])
+        ].copy()
+
+        # Ensure required columns are present
+        columns_needed = ['Name', 'Arrival Date Short', 'Departure Date Short', 'Phone Number']
+        for col in columns_needed:
+            if col not in filtered_df.columns:
+                filtered_df[col] = 'No Data'
+
+        # Prepare display DataFrame
+        filtered_df = filtered_df.rename(columns={
+            'Name': 'Guest Name',
+            'Arrival Date Short': 'Check In',
+            'Departure Date Short': 'Check Out'
+        })
+
+        display_df = filtered_df[['Guest Name', 'Check In', 'Check Out', 'Phone Number']].copy()
+        display_df['Phone Number'] = display_df['Phone Number'].apply(format_phone_number)
+
+        # Apply stored communication data if available
+        display_df['Communication Status'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['statuses'].get(x, 'Not Checked'))
+        display_df['Last Communication Date'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['dates'].get(x))
+        display_df['Call Duration (seconds)'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['durations'].get(x))
+        display_df['Agent Name'] = display_df['Phone Number'].apply(
+            lambda x: st.session_state.communication_data['agent_names'].get(x))
+
+        # Add "Select All" checkbox
+        select_all = st.checkbox("Select All")
+        display_df['Select'] = select_all
+
+        # Create a button to trigger fetching communication info
+        if st.button("Fetch Communication Info"):
+            if not OPENPHONE_API_KEY:
+                st.error("Please configure the OpenPhone API key first.")
+            else:
+                headers = {
+                    "Authorization": OPENPHONE_API_KEY,
+                    "Content-Type": "application/json"
+                }
+
+                # Show a progress indicator
+                with st.spinner('Fetching communication information...'):
+                    # Fetch communication statuses and dates
+                    statuses, dates, durations, agent_names = fetch_communication_info(display_df, headers)
+                    
+                    # Store the results in session state using phone numbers as keys
+                    for idx, phone in enumerate(display_df['Phone Number']):
+                        st.session_state.communication_data['statuses'][phone] = statuses[idx]
+                        st.session_state.communication_data['dates'][phone] = dates[idx]
+                        st.session_state.communication_data['durations'][phone] = durations[idx]
+                        st.session_state.communication_data['agent_names'][phone] = agent_names[idx]
+
+                    # Update display_df with new data
+                    display_df['Communication Status'] = statuses
+                    display_df['Last Communication Date'] = dates
+                    display_df['Call Duration (seconds)'] = durations
+                    display_df['Agent Name'] = agent_names
+                    
+                st.success('Communication information updated successfully!')
+
+        # Ensure all required columns exist before reordering
+        required_columns = [
+            'Select', 'Guest Name', 'Check In', 'Check Out', 
+            'Phone Number', 'Communication Status', 
+            'Last Communication Date', 'Call Duration (seconds)', 
+            'Agent Name'
         ]
-    
-    if selected_rate_codes:
-        filtered_df = filtered_df[filtered_df['Rate Code Name'].isin(selected_rate_codes)]
 
-    # Metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Reservations", len(filtered_df))
-    with col2:
-        average_nights = filtered_df['# Nights'].mean()
-        st.metric("Average Nights", f"{average_nights:.1f}" if not math.isnan(average_nights) else "0")
-    with col3:
-        total_room_nights = filtered_df['# Nights'].sum()
-        st.metric("Total Room Nights", f"{total_room_nights:,.0f}")
-    with col4:
-        unique_guests = filtered_df['Name'].nunique()
-        st.metric("Unique Guests", unique_guests)
+        for col in required_columns:
+            if col not in display_df.columns:
+                display_df[col] = None
 
-    # Charts
-    col1, col2 = st.columns(2)
+        # Reorder columns
+        display_df = display_df[required_columns]
 
-    with col1:
-        # Reservations by Hotel using groupby
-        reservations_by_hotel = filtered_df.groupby('Market').size().reset_index(name='Reservations')
-        reservations_by_hotel = reservations_by_hotel.rename(columns={'Market': 'Hotel'})
-        
-        # Conditional Plotting
-        if reservations_by_hotel.empty:
-            st.warning("No reservation data available for the selected filters.")
-        else:
-            fig_hotels = px.bar(
-                reservations_by_hotel,
-                x='Hotel',
-                y='Reservations',
-                labels={'Hotel': 'Hotel', 'Reservations': 'Reservations'},
-                title='Reservations by Hotel'
-            )
-            st.plotly_chart(fig_hotels, use_container_width=True)
-
-    with col2:
-        # Length of Stay Distribution
-        fig_los = px.histogram(
-            filtered_df,
-            x='# Nights',
-            title='Length of Stay Distribution'
+        # Interactive data editor
+        edited_df = st.data_editor(
+            display_df,
+            column_config={
+                "Select": st.column_config.CheckboxColumn(
+                    "Select",
+                    help="Select or deselect this guest",
+                    default=select_all
+                ),
+                "Guest Name": st.column_config.TextColumn(
+                    "Guest Name",
+                    help="Guest's full name"
+                ),
+                "Check In": st.column_config.DateColumn(
+                    "Check In",
+                    help="Check-in date"
+                ),
+                "Check Out": st.column_config.DateColumn(
+                    "Check Out",
+                    help="Check-out date"
+                ),
+                "Phone Number": st.column_config.TextColumn(
+                    "Phone Number",
+                    help="Guest's phone number"
+                ),
+                "Communication Status": st.column_config.TextColumn(
+                    "Communication Status",
+                    help="Last communication status with the guest",
+                    disabled=True
+                ),
+                "Last Communication Date": st.column_config.TextColumn(
+                    "Last Communication Date",
+                    help="Date and time of the last communication with the guest",
+                    disabled=True
+                ),
+                "Call Duration (seconds)": st.column_config.NumberColumn(
+                    "Call Duration",
+                    help="Duration of the last call in seconds",
+                    disabled=True
+                ),
+                "Agent Name": st.column_config.TextColumn(
+                    "Agent Name",
+                    help="Name of the agent who handled the communication",
+                    disabled=True
+                )
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="guest_editor"
         )
-        st.plotly_chart(fig_los, use_container_width=True)
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Rate Code Distribution
-        fig_rate = px.pie(
-            filtered_df,
-            names='Rate Code Name',
-            title='Rate Code Distribution'
-        )
-        st.plotly_chart(fig_rate, use_container_width=True)
-
-    with col2:
-        # Arrivals by Date
-        daily_arrivals = filtered_df['Arrival Date Short'].value_counts().sort_index()
-        
-        if daily_arrivals.empty:
-            st.warning("No arrival data available for the selected filters.")
-        else:
-            fig_arrivals = px.line(
-                x=daily_arrivals.index,
-                y=daily_arrivals.values,
-                labels={'x': 'Date', 'y': 'Arrivals'},
-                title='Arrivals by Date'
+        # Add a download button for the filtered data
+        if not display_df.empty:
+            csv = display_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Data as CSV",
+                data=csv,
+                file_name=f"{selected_resort}_guest_data.csv",
+                mime="text/csv",
             )
-            st.plotly_chart(fig_arrivals, use_container_width=True)
-
-
-# Function to reset filters to defaults
-def reset_filters():
-    default_dates = st.session_state['default_dates']
-    for key, value in default_dates.items():
-        if key in st.session_state:
-            del st.session_state[key]  # Delete the existing key to allow widget reinitialization
-    st.session_state.update(default_dates)  # Update with the default values
-
-
-import pandas as pd
-import requests
-import time
-import json
+    else:
+        st.write("No data available for the selected resort and date range.")
 
 ############################################
 # Marketing Tab
