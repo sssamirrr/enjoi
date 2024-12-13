@@ -148,6 +148,12 @@ def run_text_campaign(filtered_df, campaign_type):
     if filtered_df.empty:
         st.warning("No data matches the selected filters.")
     else:
+        # Calculate per-owner value
+        if 'Points' in filtered_df.columns:
+            filtered_df['Value ($)'] = filtered_df['Points'] * 0.20  # Adjust the multiplier as needed
+        else:
+            filtered_df['Value ($)'] = 0
+
         st.dataframe(filtered_df)
 
     # **Debugging Outputs**
@@ -178,9 +184,8 @@ def run_text_campaign(filtered_df, campaign_type):
             avg_points = 'N/A'
         st.metric("Average Points", avg_points)
     with metrics_cols[3]:
-        if 'Points' in filtered_df.columns:
-            total_points = filtered_df['Points'].sum()
-            total_value = total_points * 0.20 if pd.notna(total_points) else 0
+        if 'Value ($)' in filtered_df.columns:
+            total_value = filtered_df['Value ($)'].sum()
         else:
             total_value = 0
         st.metric("Total Value", f"${total_value:,.2f}")
@@ -321,6 +326,12 @@ def run_email_campaign(filtered_df, campaign_type):
     if filtered_df.empty:
         st.warning("No data matches the selected filters.")
     else:
+        # Calculate per-owner value
+        if 'Points' in filtered_df.columns:
+            filtered_df['Value ($)'] = filtered_df['Points'] * 0.20  # Adjust the multiplier as needed
+        else:
+            filtered_df['Value ($)'] = 0
+
         st.dataframe(filtered_df)
 
     # **Debugging Outputs**
@@ -351,9 +362,8 @@ def run_email_campaign(filtered_df, campaign_type):
             avg_points = 'N/A'
         st.metric("Average Points", avg_points)
     with metrics_cols[3]:
-        if 'Points' in filtered_df.columns:
-            total_points = filtered_df['Points'].sum()
-            total_value = total_points * 0.20 if pd.notna(total_points) else 0
+        if 'Value ($)' in filtered_df.columns:
+            total_value = filtered_df['Value ($)'].sum()
         else:
             total_value = 0
         st.metric("Total Value", f"${total_value:,.2f}")
