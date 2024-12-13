@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from datetime import datetime
 import gspread
 from google.oauth2 import service_account
 import time
-import requests
 import phonenumbers
 import logging
 from logging.handlers import RotatingFileHandler
@@ -158,106 +156,99 @@ def run_owner_marketing_tab(owner_df):
     else:
         st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
-    # **Removed the display of Raw Owner Sheets Data**
-    # st.subheader("Owner Sheets Data")
-    # st.dataframe(owner_df)
-
     # Campaign Type Selection
     campaign_tabs = st.tabs(["�� Text Message Campaign", "�� Email Campaign"])
 
-    # **Apply filters once and share across tabs**
-    with st.expander("�� Filters", expanded=True):
-        col1, col2, col3 = st.columns(3)
-
-        # Column 1 Filters
-        with col1:
-            selected_states = []
-            if 'State' in owner_df.columns:
-                states = sorted(owner_df['State'].dropna().unique().tolist())
-                selected_states = st.multiselect(
-                    'Select States',
-                    states,
-                    key='states'
-                )
-
-            selected_unit = 'All'
-            if 'Unit' in owner_df.columns:
-                units = ['All'] + sorted(owner_df['Unit'].dropna().unique().tolist())
-                selected_unit = st.selectbox(
-                    'Unit Type',
-                    units,
-                    key='unit'
-                )
-
-        # Column 2 Filters
-        with col2:
-            sale_date_min = owner_df['Sale Date'].min().date() if 'Sale Date' in owner_df.columns else datetime.today().date()
-            sale_date_max = owner_df['Sale Date'].max().date() if 'Sale Date' in owner_df.columns else datetime.today().date()
-            date_range = st.date_input(
-                'Sale Date Range',
-                value=(sale_date_min, sale_date_max),
-                key='dates'
-            )
-
-        # Column 3 Filters (FICO)
-        with col3:
-            fico_range = (300, 850)
-            if 'Primary FICO' in owner_df.columns:
-                valid_fico = owner_df['Primary FICO'].dropna()
-                if not valid_fico.empty:
-                    min_fico = max(300, int(valid_fico.min()))
-                    max_fico = min(850, int(valid_fico.max()))
-                    fico_range = st.slider(
-                        'FICO Score Range',
-                        min_value=300,
-                        max_value=850,
-                        value=(min_fico, max_fico),
-                        key='fico'
-                    )
-                else:
-                    fico_range = st.slider(
-                        'FICO Score Range',
-                        min_value=300,
-                        max_value=850,
-                        value=(300, 850),
-                        key='fico'
-                    )
-
-    # **Apply filters to the data once**
-    filtered_df = owner_df.copy()
-
-    if selected_states:
-        filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
-
-    if selected_unit != 'All':
-        filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
-
-    if isinstance(date_range, tuple) and len(date_range) == 2:
-        filtered_df = filtered_df[
-            (filtered_df['Sale Date'].dt.date >= date_range[0]) &
-            (filtered_df['Sale Date'].dt.date <= date_range[1])
-        ]
-
-    if 'Primary FICO' in filtered_df.columns:
-        filtered_df = filtered_df[
-            (filtered_df['Primary FICO'] >= fico_range[0]) &
-            (filtered_df['Primary FICO'] <= fico_range[1])
-        ]
-
-    # **Display Filtered Data as a Table**
-    st.subheader("Filtered Owner Sheets Data")
-    if filtered_df.empty:
-        st.warning("No data matches the selected filters.")
-    else:
-        st.dataframe(filtered_df)
-
-    # **Now, loop over the campaign tabs without filtering by 'Campaign Type'**
+    # Now, loop over the campaign tabs
     for idx, campaign_type in enumerate(["Text", "Email"]):
         with campaign_tabs[idx]:
             st.header(f"{campaign_type} Campaign Management")
 
-            # **Use the filtered data directly without filtering by 'Campaign Type'**
-            campaign_filtered_df = filtered_df.copy()
+            # Apply filters inside the tab
+            with st.expander("�� Filters", expanded=True):
+                col1, col2, col3 = st.columns(3)
+
+                # Column 1 Filters
+                with col1:
+                    selected_states = []
+                    if 'State' in owner_df.columns:
+                        states = sorted(owner_df['State'].dropna().unique().tolist())
+                        selected_states = st.multiselect(
+                            'Select States',
+                            states,
+                            key=f'states_{campaign_type}'
+                        )
+
+                    selected_unit = 'All'
+                    if 'Unit' in owner_df.columns:
+                        units = ['All'] + sorted(owner_df['Unit'].dropna().unique().tolist())
+                        selected_unit = st.selectbox(
+                            'Unit Type',
+                            units,
+                            key=f'unit_{campaign_type}'
+                        )
+
+                # Column 2 Filters
+                with col2:
+                    sale_date_min = owner_df['Sale Date'].min().date() if 'Sale Date' in owner_df.columns else datetime.today().date()
+                    sale_date_max = owner_df['Sale Date'].max().date() if 'Sale Date' in owner_df.columns else datetime.today().date()
+                    date_range = st.date_input(
+                        'Sale Date Range',
+                        value=(sale_date_min, sale_date_max),
+                        key=f'dates_{campaign_type}'
+                    )
+
+                # Column 3 Filters (FICO)
+                with col3:
+                    fico_range = (300, 850)
+                    if 'Primary FICO' in owner_df.columns:
+                        valid_fico = owner_df['Primary FICO'].dropna()
+                        if not valid_fico.empty:
+                            min_fico = max(300, int(valid_fico.min()))
+                            max_fico = min(850, int(valid_fico.max()))
+                            fico_range = st.slider(
+                                'FICO Score Range',
+                                min_value=300,
+                                max_value=850,
+                                value=(min_fico, max_fico),
+                                key=f'fico_{campaign_type}'
+                            )
+                        else:
+                            fico_range = st.slider(
+                                'FICO Score Range',
+                                min_value=300,
+                                max_value=850,
+                                value=(300, 850),
+                                key=f'fico_{campaign_type}'
+                            )
+
+            # Apply filters to the data
+            campaign_filtered_df = owner_df.copy()
+
+            if selected_states:
+                campaign_filtered_df = campaign_filtered_df[campaign_filtered_df['State'].isin(selected_states)]
+
+            if selected_unit != 'All':
+                campaign_filtered_df = campaign_filtered_df[campaign_filtered_df['Unit'] == selected_unit]
+
+            if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
+                campaign_filtered_df = campaign_filtered_df[
+                    (campaign_filtered_df['Sale Date'].dt.date >= date_range[0]) &
+                    (campaign_filtered_df['Sale Date'].dt.date <= date_range[1])
+                ]
+
+            if 'Primary FICO' in campaign_filtered_df.columns:
+                campaign_filtered_df = campaign_filtered_df[
+                    (campaign_filtered_df['Primary FICO'] >= fico_range[0]) &
+                    (campaign_filtered_df['Primary FICO'] <= fico_range[1])
+                ]
+
+            # Display Filtered Data as a Table
+            st.subheader("Filtered Owner Sheets Data")
+            if campaign_filtered_df.empty:
+                st.warning("No data matches the selected filters.")
+            else:
+                st.dataframe(campaign_filtered_df)
 
             # Display metrics
             metrics_cols = st.columns(4)
@@ -333,20 +324,20 @@ def run_owner_marketing_tab(owner_df):
                 template_choice = st.selectbox(
                     "Select Email Template",
                     list(email_templates.keys()),
-                    key='email_template'
+                    key=f'email_template_{campaign_type}'
                 )
 
                 subject = st.text_input(
                     "Email Subject",
                     value=email_templates[template_choice]["subject"],
-                    key='email_subject'
+                    key=f'email_subject_{campaign_type}'
                 )
 
                 body = st.text_area(
                     "Email Body",
                     value=email_templates[template_choice]["body"],
                     height=200,
-                    key='email_body'
+                    key=f'email_body_{campaign_type}'
                 )
 
             else:
@@ -359,14 +350,14 @@ def run_owner_marketing_tab(owner_df):
                 template_choice = st.selectbox(
                     "Select Text Template",
                     list(text_templates.keys()),
-                    key='text_template'
+                    key=f'text_template_{campaign_type}'
                 )
 
                 message = st.text_area(
                     "Message Text",
                     value=text_templates[template_choice],
                     height=100,
-                    key='sms_message'
+                    key=f'sms_message_{campaign_type}'
                 )
 
             # Preview Section
