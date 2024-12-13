@@ -252,6 +252,13 @@ def run_owner_marketing_tab(owner_df):
                     (filtered_df['Primary FICO'] <= fico_range[1])
                 ]
 
+            # **Display Filtered Data as a Table**
+            st.subheader("Filtered Owner Sheets Data")
+            if filtered_df.empty:
+                st.warning("No data matches the selected filters.")
+            else:
+                st.dataframe(filtered_df)
+
             # Display metrics
             metrics_cols = st.columns(4)
             with metrics_cols[0]:
