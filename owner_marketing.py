@@ -159,8 +159,9 @@ def run_owner_marketing_tab(owner_df):
         st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
     # **Display the Owner Sheets Table**
-    st.subheader("Owner Sheets Data")
-    st.dataframe(owner_df)
+    # Removed as per user request
+    # st.subheader("Owner Sheets Data")
+    # st.dataframe(owner_df)
 
     # Campaign Type Selection
     campaign_tabs = st.tabs(["📱 Text Message Campaign", "📧 Email Campaign"])
