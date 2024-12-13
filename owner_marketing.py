@@ -255,86 +255,42 @@ def run_owner_marketing_tab(owner_df):
                         # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
 
-            # First, add the ZIP code cleaning function
             def clean_zip_code(zip_code):
                 """Clean and validate ZIP code"""
                 if pd.isna(zip_code):
                     return None
-                # Convert to string and keep only digits
                 zip_str = str(zip_code)
                 zip_digits = ''.join(filter(str.isdigit, zip_str))
-                # Take first 5 digits only
                 return zip_digits[:5] if len(zip_digits) >= 5 else None
 
-            # Debug Information
-            st.write("Debug Information:")
-            st.write(f"Total records: {len(campaign_filtered_df)}")
-
             if 'Zip Code' in campaign_filtered_df.columns:
-                st.write(f"Records with ZIP codes: {campaign_filtered_df['Zip Code'].notna().sum()}")
-                
-                # Clean ZIP codes
+                # Clean and prepare ZIP codes
                 campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
-                
-                # Remove invalid ZIP codes
                 campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
-                
-                # Show sample ZIP codes
-                st.write("Sample ZIP codes:")
-                st.write(campaign_filtered_df['Zip Code'].head())
 
-                if campaign_filtered_df['Zip Code'].notna().sum() == 0:
-                    st.warning("No valid ZIP codes found in the filtered data")
-                else:
-                    # Geocode ZIP codes
-                    with st.spinner("Geocoding ZIP codes..."):
+                if not campaign_filtered_df.empty:
+                    try:
+                        # Geocode ZIP codes
                         nomi = pgeocode.Nominatim('us')
+                        geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'].tolist())
                         
-                        # Create empty columns for coordinates
-                        campaign_filtered_df['Latitude'] = None
-                        campaign_filtered_df['Longitude'] = None
-                        
-                        # Geocode each valid ZIP code
-                        for idx, row in campaign_filtered_df.iterrows():
-                            try:
-                                location = nomi.query_postal_code(row['Zip Code'])
-                                campaign_filtered_df.at[idx, 'Latitude'] = location['latitude']
-                                campaign_filtered_df.at[idx, 'Longitude'] = location['longitude']
-                            except Exception as e:
-                                st.warning(f"Could not geocode ZIP code {row['Zip Code']}: {str(e)}")
-                                continue
+                        # Create map data
+                        map_data = pd.DataFrame({
+                            'lat': geocode_df['latitude'],
+                            'lon': geocode_df['longitude']
+                        }).dropna()
 
-                        # Drop rows with missing coordinates
-                        m                        # Drop rows with missing coordinates
-                        map_df = campaign_filtered_df.dropna(subset=['Latitude', 'Longitude'])
-                        
-                        if not map_df.empty:
-                            # Convert coordinates to numeric values
-                            map_df['Latitude'] = pd.to_numeric(map_df['Latitude'], errors='coerce')
-                            map_df['Longitude'] = pd.to_numeric(map_df['Longitude'], errors='coerce')
-                            
-                            # Drop any rows where conversion to numeric failed
-                            map_df = map_df.dropna(subset=['Latitude', 'Longitude'])
-                            
-                            # Create a DataFrame in the format Streamlit expects
-                            map_data = pd.DataFrame({
-                                'lat': map_df['Latitude'],
-                                'lon': map_df['Longitude']
-                            })
-                            
-                            # Display the map
+                        if not map_data.empty:
                             st.map(map_data)
                             st.info(f"Showing {len(map_data)} locations on the map")
-                            
-                            # Display coordinate ranges for debugging
-                            st.write("Coordinate Ranges:")
-                            st.write(f"Latitude: {map_data['lat'].min():.4f} to {map_data['lat'].max():.4f}")
-                            st.write(f"Longitude: {map_data['lon'].min():.4f} to {map_data['lon'].max():.4f}")
                         else:
-                            st.info("No valid geographic data available to display the map")
-
+                            st.info("No valid coordinates available for mapping")
+                    except Exception as e:
+                        st.error(f"Error creating map: {str(e)}")
+                else:
+                    st.info("No valid ZIP codes available for mapping")
             else:
-                st.info("Zip Code data is not available to display the map.")
+                st.info("ZIP Code data is not available to display the map")
 
             # Display metrics
             metrics_cols = st.columns(4)
