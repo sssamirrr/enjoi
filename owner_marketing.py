@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from datetime import datetime
 import gspread
 from google.oauth2 import service_account
 import time
-import requests
 import phonenumbers
 import logging
 from logging.handlers import RotatingFileHandler
@@ -158,14 +156,7 @@ def run_owner_marketing_tab(owner_df):
     else:
         st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
-    # **Removed the display of Raw Owner Sheets Data**
-    # st.subheader("Owner Sheets Data")
-    # st.dataframe(owner_df)
-
-    # Campaign Type Selection
-    campaign_tabs = st.tabs(["Text Message Campaign", "Email Campaign"])
-
-    # **Apply filters once and share across tabs**
+    # **Moved the filters to the top**
     with st.expander("Filters", expanded=True):
         col1, col2, col3 = st.columns(3)
 
@@ -244,20 +235,22 @@ def run_owner_marketing_tab(owner_df):
             (filtered_df['Primary FICO'] <= fico_range[1])
         ]
 
-    # **Now, loop over the campaign tabs without filtering by 'Campaign Type'**
+    # **Display Filtered Data as a Table**
+    st.subheader("Filtered Owner Sheets Data")
+    if filtered_df.empty:
+        st.warning("No data matches the selected filters.")
+    else:
+        st.dataframe(filtered_df)
+
+    # **Now, proceed with the campaign tabs**
+    campaign_tabs = st.tabs(["Text Message Campaign", "Email Campaign"])
+
     for idx, campaign_type in enumerate(["Text", "Email"]):
         with campaign_tabs[idx]:
             st.header(f"{campaign_type} Campaign Management")
 
-            # **Use the filtered data directly without filtering by 'Campaign Type'**
+            # Use the filtered data
             campaign_filtered_df = filtered_df.copy()
-
-            # **Display Filtered Data as a Table within the Tab**
-            st.subheader("Filtered Owner Sheets Data")
-            if campaign_filtered_df.empty:
-                st.warning("No data matches the selected filters.")
-            else:
-                st.dataframe(campaign_filtered_df)
 
             # Display metrics
             metrics_cols = st.columns(4)
@@ -474,7 +467,7 @@ def run_owner_marketing_tab(owner_df):
                         )
 
 def run_minimal_app():
-    st.title("Owner Marketing Dashboard")
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
     owner_df = get_owner_sheet_data()
     if not owner_df.empty:
         run_owner_marketing_tab(owner_df)
@@ -482,5 +475,4 @@ def run_minimal_app():
         st.error("No owner data available to display.")
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
     run_minimal_app()
