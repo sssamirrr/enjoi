@@ -305,13 +305,34 @@ def run_owner_marketing_tab(owner_df):
                                 continue
 
                         # Drop rows with missing coordinates
+                        m                        # Drop rows with missing coordinates
                         map_df = campaign_filtered_df.dropna(subset=['Latitude', 'Longitude'])
                         
                         if not map_df.empty:
-                            st.map(map_df[['Latitude', 'Longitude']])
-                            st.info(f"Showing {len(map_df)} locations on the map")
+                            # Convert coordinates to numeric values
+                            map_df['Latitude'] = pd.to_numeric(map_df['Latitude'], errors='coerce')
+                            map_df['Longitude'] = pd.to_numeric(map_df['Longitude'], errors='coerce')
+                            
+                            # Drop any rows where conversion to numeric failed
+                            map_df = map_df.dropna(subset=['Latitude', 'Longitude'])
+                            
+                            # Create a DataFrame in the format Streamlit expects
+                            map_data = pd.DataFrame({
+                                'lat': map_df['Latitude'],
+                                'lon': map_df['Longitude']
+                            })
+                            
+                            # Display the map
+                            st.map(map_data)
+                            st.info(f"Showing {len(map_data)} locations on the map")
+                            
+                            # Display coordinate ranges for debugging
+                            st.write("Coordinate Ranges:")
+                            st.write(f"Latitude: {map_data['lat'].min():.4f} to {map_data['lat'].max():.4f}")
+                            st.write(f"Longitude: {map_data['lon'].min():.4f} to {map_data['lon'].max():.4f}")
                         else:
                             st.info("No valid geographic data available to display the map")
+
             else:
                 st.info("Zip Code data is not available to display the map.")
 
