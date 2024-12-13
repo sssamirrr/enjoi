@@ -1,3 +1,68 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import time
+import requests
+from datetime import datetime
+import gspread
+from google.oauth2 import service_account
+import plotly.express as px
+
+@st.cache_resource
+def get_owner_sheet_data():
+    """
+    Fetch owner data from Google Sheets.
+    Returns a pandas DataFrame containing owner information.
+    """
+    try:
+        # Create credentials
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly"
+            ],
+        )
+
+        # Create gspread client
+        client = gspread.authorize(credentials)
+        
+        # Open the spreadsheet - Updated to match your secrets.toml
+        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]  # Changed to "owners_sheets"
+        sheet = client.open_by_key(sheet_key)
+        
+        # Get the first worksheet
+        worksheet = sheet.get_worksheet(0)
+        
+        # Get all records
+        data = worksheet.get_all_records()
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Basic data cleaning
+        if 'Sale Date' in df.columns:
+            df['Sale Date'] = pd.to_datetime(df['Sale Date'], errors='coerce')
+        
+        if 'Maturity Date' in df.columns:
+            df['Maturity Date'] = pd.to_datetime(df['Maturity Date'], errors='coerce')
+            
+        if 'Phone Number' in df.columns:
+            df['Phone Number'] = df['Phone Number'].astype(str)
+            
+        if 'Points' in df.columns:
+            df['Points'] = pd.to_numeric(df['Points'], errors='coerce')
+            
+        if 'Primary FICO' in df.columns:
+            df['Primary FICO'] = pd.to_numeric(df['Primary FICO'], errors='coerce')
+
+        return df
+
+    except Exception as e:
+        st.error(f"Error accessing Google Sheet: {str(e)}")
+        print(f"Full error: {str(e)}")
+        return pd.DataFrame()
+
 def run_owner_marketing_tab(owner_df):
     """Main function to run the owner marketing dashboard"""
     st.header("🏠 Owner Marketing Dashboard")
