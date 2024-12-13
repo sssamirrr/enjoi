@@ -163,10 +163,10 @@ def run_owner_marketing_tab(owner_df):
     # st.dataframe(owner_df)
 
     # Campaign Type Selection
-    campaign_tabs = st.tabs(["�� Text Message Campaign", "�� Email Campaign"])
+    campaign_tabs = st.tabs(["Text Message Campaign", "Email Campaign"])
 
     # **Apply filters once and share across tabs**
-    with st.expander("�� Filters", expanded=True):
+    with st.expander("Filters", expanded=True):
         col1, col2, col3 = st.columns(3)
 
         # Column 1 Filters
@@ -244,13 +244,6 @@ def run_owner_marketing_tab(owner_df):
             (filtered_df['Primary FICO'] <= fico_range[1])
         ]
 
-    # **Display Filtered Data as a Table**
-    st.subheader("Filtered Owner Sheets Data")
-    if filtered_df.empty:
-        st.warning("No data matches the selected filters.")
-    else:
-        st.dataframe(filtered_df)
-
     # **Now, loop over the campaign tabs without filtering by 'Campaign Type'**
     for idx, campaign_type in enumerate(["Text", "Email"]):
         with campaign_tabs[idx]:
@@ -258,6 +251,13 @@ def run_owner_marketing_tab(owner_df):
 
             # **Use the filtered data directly without filtering by 'Campaign Type'**
             campaign_filtered_df = filtered_df.copy()
+
+            # **Display Filtered Data as a Table within the Tab**
+            st.subheader("Filtered Owner Sheets Data")
+            if campaign_filtered_df.empty:
+                st.warning("No data matches the selected filters.")
+            else:
+                st.dataframe(campaign_filtered_df)
 
             # Display metrics
             metrics_cols = st.columns(4)
