@@ -1,68 +1,3 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import time
-import requests
-from datetime import datetime
-import gspread
-from google.oauth2 import service_account
-import plotly.express as px
-
-@st.cache_resource
-def get_owner_sheet_data():
-    """
-    Fetch owner data from Google Sheets.
-    Returns a pandas DataFrame containing owner information.
-    """
-    try:
-        # Create credentials
-        credentials = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
-                "https://www.googleapis.com/auth/drive.readonly"
-            ],
-        )
-
-        # Create gspread client
-        client = gspread.authorize(credentials)
-        
-        # Open the spreadsheet - Updated to match your secrets.toml
-        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]  # Changed to "owners_sheets"
-        sheet = client.open_by_key(sheet_key)
-        
-        # Get the first worksheet
-        worksheet = sheet.get_worksheet(0)
-        
-        # Get all records
-        data = worksheet.get_all_records()
-        
-        # Convert to DataFrame
-        df = pd.DataFrame(data)
-        
-        # Basic data cleaning
-        if 'Sale Date' in df.columns:
-            df['Sale Date'] = pd.to_datetime(df['Sale Date'], errors='coerce')
-        
-        if 'Maturity Date' in df.columns:
-            df['Maturity Date'] = pd.to_datetime(df['Maturity Date'], errors='coerce')
-            
-        if 'Phone Number' in df.columns:
-            df['Phone Number'] = df['Phone Number'].astype(str)
-            
-        if 'Points' in df.columns:
-            df['Points'] = pd.to_numeric(df['Points'], errors='coerce')
-            
-        if 'Primary FICO' in df.columns:
-            df['Primary FICO'] = pd.to_numeric(df['Primary FICO'], errors='coerce')
-
-        return df
-
-    except Exception as e:
-        st.error(f"Error accessing Google Sheet: {str(e)}")
-        print(f"Full error: {str(e)}")
-        return pd.DataFrame()
-
 def run_owner_marketing_tab(owner_df):
     """Main function to run the owner marketing dashboard"""
     st.header("🏠 Owner Marketing Dashboard")
@@ -93,9 +28,11 @@ def run_owner_marketing_tab(owner_df):
                     st.metric("Avg Points - Campaign B", f"{avg_points.get('B', 0):,.0f}")
 
         with campaign_metrics[1]:
+            # Add response rate metrics here when implemented
             st.info("Response rate tracking will be implemented based on message interaction data")
             
         with campaign_metrics[2]:
+            # Add conversion analysis here when implemented
             st.info("Conversion analysis will be implemented based on sales/upgrade data")
 
     # Filters Section
@@ -150,162 +87,56 @@ def run_owner_marketing_tab(owner_df):
 
     # Add Select column
     filtered_df.insert(0, 'Select', False)
-    
-    # Add this right before the st.data_editor call
-    # Data type validation and conversion
-    for col in filtered_df.columns:
-        if col in ['Sale Date', 'Maturity Date']:
-            filtered_df[col] = pd.to_datetime(filtered_df[col], errors='coerce')
-        elif col in ['Primary FICO', 'Points', 'Closing Costs', 'Equity']:
-            filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce')
-        elif col in ['Phone Number', 'Email Address', 'Address', 'City', 'State', 'Zip Code', 'Account ID', 'First Name', 'Last Name', 'Unit']:
-            filtered_df[col] = filtered_df[col].astype(str)
-        elif col == 'Campaign':
-            filtered_df[col] = filtered_df[col].astype(str)
-        elif col == 'Select':
-            filtered_df[col] = filtered_df[col].astype(bool)
-    
-    # Wrap your data_editor in a try-except block
-    try:
-        edited_df = st.data_editor(
-            filtered_df,
-            column_config={
-                # Your existing column_config...
-            },
-            column_order=[
-                # Your existing column_order...
-            ],
-            hide_index=True,
-            use_container_width=True
-        )
-    except Exception as e:
-        st.error(f"Error in data editor: {str(e)}")
-        st.write("DataFrame Info:")
-        st.write(filtered_df.dtypes)
-        edited_df = filtered_df.copy()
 
-    
     # Create the editable dataframe
     edited_df = st.data_editor(
         filtered_df,
         column_config={
             "Select": st.column_config.CheckboxColumn("Select", help="Select owner for communication"),
-            "Campaign": st.column_config.SelectboxColumn(
-                "Campaign",
-                help="A/B Test Campaign Assignment",
-                width="medium",
-                options=["A", "B"],
-                required=True
-            ),
-            "Account ID": st.column_config.TextColumn("Account ID", width="medium"),
-            "Last Name": st.column_config.TextColumn("Last Name", width="medium"),
-            "First Name": st.column_config.TextColumn("First Name", width="medium"),
-            "Unit": st.column_config.TextColumn("Unit", width="small"),
+            "Campaign": st.column_config.TextColumn("Campaign", help="A/B Test Campaign"),
+            "Account ID": st.column_config.TextColumn("Account ID"),
+            "Last Name": st.column_config.TextColumn("Last Name"),
+            "First Name": st.column_config.TextColumn("First Name"),
+            "Unit": st.column_config.TextColumn("Unit"),
             "Sale Date": st.column_config.DateColumn("Sale Date"),
             "Address": st.column_config.TextColumn("Address"),
             "City": st.column_config.TextColumn("City"),
-            "State": st.column_config.TextColumn("State", width="small"),
+            "State": st.column_config.TextColumn("State"),
             "Zip Code": st.column_config.TextColumn("Zip Code"),
-            "Primary FICO": st.column_config.NumberColumn(
-                "Primary FICO",
-                help="Credit Score",
-                min_value=300,
-                max_value=850,
-                step=1,
-                format="%d"
-            ),
+            "Primary FICO": st.column_config.NumberColumn("Primary FICO"),
             "Maturity Date": st.column_config.DateColumn("Maturity Date"),
-            "Closing Costs": st.column_config.NumberColumn(
-                "Closing Costs",
-                help="Total closing costs",
-                format="$%.2f"
-            ),
+            "Closing Costs": st.column_config.NumberColumn("Closing Costs", format="$%.2f"),
             "Phone Number": st.column_config.TextColumn("Phone Number"),
             "Email Address": st.column_config.TextColumn("Email Address"),
-            "Points": st.column_config.NumberColumn(
-                "Points",
-                help="Membership points",
-                format="%d"
-            ),
-            "Equity": st.column_config.NumberColumn(
-                "Equity",
-                help="Current equity",
-                format="$%.2f"
-            )
+            "Points": st.column_config.NumberColumn("Points"),
+            "Equity": st.column_config.NumberColumn("Equity", format="$%.2f")
         },
-        column_order=[
-            "Select",
-            "Campaign",
-            "Account ID",
-            "Last Name",
-            "First Name",
-            "Unit",
-            "Sale Date",
-            "Address",
-            "City",
-            "State",
-            "Zip Code",
-            "Primary FICO",
-            "Maturity Date",
-            "Closing Costs",
-            "Phone Number",
-            "Email Address",
-            "Points",
-            "Equity"
-        ],
         hide_index=True,
         use_container_width=True
     )
 
     # Campaign Performance Metrics
     st.subheader("Campaign Performance Metrics")
-    campaign_stats_cols = st.columns(4)
-    
-    with campaign_stats_cols[0]:
-        total_selected = len(edited_df[edited_df['Select']])
-        st.metric("Total Selected", total_selected)
+    if 'Campaign' in edited_df.columns:
+        metric_cols = st.columns(4)
         
-    with campaign_stats_cols[1]:
-        selected_a = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'A')])
-        st.metric("Selected Campaign A", selected_a)
-        
-    with campaign_stats_cols[2]:
-        selected_b = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'B')])
-        st.metric("Selected Campaign B", selected_b)
-        
-    with campaign_stats_cols[3]:
-        if total_selected > 0:
-            balance = abs(selected_a - selected_b)
-            st.metric("Campaign Balance", balance, 
-                     delta=f"{'Balanced' if balance == 0 else 'Unbalanced'}")
-
-    # Campaign Distribution Chart
-    st.subheader("Campaign Distribution")
-    campaign_chart_cols = st.columns(2)
-    
-    with campaign_chart_cols[0]:
-        # Campaign distribution pie chart
-        campaign_counts = edited_df['Campaign'].value_counts()
-        fig_pie = px.pie(
-            values=campaign_counts.values,
-            names=campaign_counts.index,
-            title="Campaign Distribution",
-            color_discrete_sequence=['#1f77b4', '#ff7f0e']
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
-        
-    with campaign_chart_cols[1]:
-        # Average points by campaign bar chart
-        avg_points = edited_df.groupby('Campaign')['Points'].mean().reset_index()
-        fig_bar = px.bar(
-            avg_points,
-            x='Campaign',
-            y='Points',
-            title="Average Points by Campaign",
-            color='Campaign',
-            color_discrete_sequence=['#1f77b4', '#ff7f0e']
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        with metric_cols[0]:
+            total_selected = len(edited_df[edited_df['Select']])
+            st.metric("Total Selected", total_selected)
+            
+        with metric_cols[1]:
+            selected_a = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'A')])
+            st.metric("Selected Campaign A", selected_a)
+            
+        with metric_cols[2]:
+            selected_b = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'B')])
+            st.metric("Selected Campaign B", selected_b)
+            
+        with metric_cols[3]:
+            if total_selected > 0:
+                balance = abs(selected_a - selected_b)
+                st.metric("Campaign Balance", balance, 
+                         delta=f"{'Balanced' if balance == 0 else 'Unbalanced'}")
 
     # Message Templates Section with Campaign-specific messages
     st.markdown("---")
@@ -337,6 +168,8 @@ def run_owner_marketing_tab(owner_df):
             with st.spinner("Sending messages..."):
                 for _, owner in selected_owners.iterrows():
                     try:
+                        # Here you would implement your actual message sending logic
+                        # Make sure to use the appropriate template based on the campaign
                         campaign_specific_message = message_text
                         if owner['Campaign'] == 'A':
                             # Modify message for Campaign A
@@ -353,8 +186,3 @@ def run_owner_marketing_tab(owner_df):
         st.info("Please select owners to send campaign messages")
 
     return edited_df
-
-if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    owner_df = get_owner_sheet_data()
-    run_owner_marketing_tab(owner_df)
