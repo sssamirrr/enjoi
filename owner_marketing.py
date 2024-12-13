@@ -70,12 +70,18 @@ def get_owner_sheet_data():
         return pd.DataFrame()
 
 def is_valid_email(email):
-    """Basic email validation."""
-    return isinstance(email, str) and "@" in email and "." in email.split("@")[-1]
+    """Enhanced email validation using regex."""
+    import re
+    regex = r'^\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    return isinstance(email, str) and re.fullmatch(regex, email) is not None
 
 def is_valid_phone(phone):
-    """Check if phone number is valid after formatting."""
-    return phone is not None
+    """Enhanced phone validation using phonenumbers."""
+    try:
+        parsed_phone = phonenumbers.parse(phone, "US")
+        return phonenumbers.is_valid_number(parsed_phone)
+    except phonenumbers.NumberParseException:
+        return False
 
 def format_phone_number(phone):
     """Format phone number to E.164 format"""
@@ -164,10 +170,6 @@ def run_owner_marketing_tab(owner_df):
     for idx, campaign_type in enumerate(["Text", "Email"]):
         with campaign_tabs[idx]:
             st.header(f"{campaign_type} Campaign Management")
-
-            # Raw Data Preview (for debugging purposes)
-            st.subheader("Raw Data Preview")
-            st.dataframe(owner_df.head())
 
             # Filters Section
             with st.expander("📊 Filters", expanded=True):
@@ -268,11 +270,14 @@ def run_owner_marketing_tab(owner_df):
                 st.dataframe(filtered_df)
 
             # **Debugging Outputs**
-            st.write(f"### Debugging Information for {campaign_type} Campaign")
-            st.write(f"Total records after 'Campaign Type' filter: {len(owner_df[owner_df['Campaign Type'] == campaign_type])}")
-            st.write(f"Total records after all filters: {len(filtered_df)}")
-            st.write("### Unique Campaign Types in Data:")
-            st.write(owner_df['Campaign Type'].unique())
+            # Optionally, you can provide a checkbox to toggle debugging info
+            show_debug = st.checkbox("Show Debugging Information", key=f'{campaign_type}_debug')
+            if show_debug:
+                st.write(f"### Debugging Information for {campaign_type} Campaign")
+                st.write(f"Total records after 'Campaign Type' filter: {len(owner_df[owner_df['Campaign Type'] == campaign_type])}")
+                st.write(f"Total records after all filters: {len(filtered_df)}")
+                st.write("### Unique Campaign Types in Data:")
+                st.write(owner_df['Campaign Type'].unique())
 
             # Display metrics
             metrics_cols = st.columns(4)
