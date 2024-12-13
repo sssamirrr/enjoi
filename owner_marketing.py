@@ -242,13 +242,20 @@ def run_owner_marketing_tab(owner_df):
             with metrics_cols[0]:
                 st.metric("Total Owners", len(filtered_df))
             with metrics_cols[1]:
-                avg_fico = int(filtered_df['Primary FICO'].mean()) if 'Primary FICO' in filtered_df.columns else 'N/A'
+                if 'Primary FICO' in filtered_df.columns:
+                    mean_fico = filtered_df['Primary FICO'].mean()
+                    if pd.notna(mean_fico):
+                        avg_fico = int(mean_fico)
+                    else:
+                        avg_fico = 'N/A'
+                else:
+                    avg_fico = 'N/A'
                 st.metric("Average FICO", avg_fico)
             with metrics_cols[2]:
-                avg_points = int(filtered_df['Points'].mean()) if 'Points' in filtered_df.columns else 'N/A'
+                avg_points = int(filtered_df['Points'].mean()) if 'Points' in filtered_df.columns and pd.notna(filtered_df['Points'].mean()) else 'N/A'
                 st.metric("Average Points", avg_points)
             with metrics_cols[3]:
-                total_value = filtered_df['Points'].sum() * 0.20 if 'Points' in filtered_df.columns else 0
+                total_value = filtered_df['Points'].sum() * 0.20 if 'Points' in filtered_df.columns and pd.notna(filtered_df['Points'].sum()) else 0
                 st.metric("Total Value", f"${total_value:,.2f}")
 
             # Campaign Setup
