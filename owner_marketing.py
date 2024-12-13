@@ -251,9 +251,7 @@ def run_owner_marketing_tab(owner_df):
             else:
                 st.dataframe(campaign_filtered_df)
 
-                        # **Add Map of Owners' Locations**
-            st.subheader("Map of Owner Locations")
-            
+                        
             # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
             
