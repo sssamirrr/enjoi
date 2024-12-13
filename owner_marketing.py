@@ -7,23 +7,19 @@ from google.oauth2 import service_account
 import time
 import requests
 import phonenumbers
-# import logging
-# from logging.handlers import RotatingFileHandler
+import logging
+from logging.handlers import RotatingFileHandler
 
-# Toggle for Demo Mode via Sidebar
-if 'demo_mode' not in st.session_state:
-    st.session_state.demo_mode = True  # Default to Demo Mode
+# Define a global flag for demo mode
+DEMO_MODE = True  # Set to False to enable live functionality
 
-DEMO_MODE = st.sidebar.checkbox("Enable Demo Mode", value=st.session_state.demo_mode)
-st.session_state.demo_mode = DEMO_MODE  # Update session state
-
-# # Setup logging with rotation to manage log file sizes
-# logger = logging.getLogger()
-# logger.setLevel(logging.INFO)
-# handler = RotatingFileHandler('campaign.log', maxBytes=1000000, backupCount=5)
-# formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
-# handler.setFormatter(formatter)
-# logger.addHandler(handler)
+# Setup logging with rotation to manage log file sizes
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+handler = RotatingFileHandler('campaign.log', maxBytes=1000000, backupCount=5)
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 # Cache data fetching to improve performance
 @st.cache_data(ttl=600)
@@ -50,7 +46,7 @@ def get_owner_sheet_data():
 
         if df.empty:
             st.warning("The Google Sheet is empty. Please ensure it contains data.")
-            # logger.warning("Fetched data from Google Sheet is empty.")
+            logger.warning("Fetched data from Google Sheet is empty.")
 
         # Data Cleaning
         for date_col in ['Sale Date', 'Maturity Date']:
@@ -66,29 +62,18 @@ def get_owner_sheet_data():
 
         if 'Campaign Type' not in df.columns:
             df['Campaign Type'] = 'Text'  # Default campaign type
-        else:
-            # Normalize 'Campaign Type' to title case and strip spaces
-            df['Campaign Type'] = df['Campaign Type'].astype(str).str.strip().str.title()
 
         return df
 
     except gspread.exceptions.SpreadsheetNotFound:
         st.error("Google Sheet not found. Please check the sheet key and permissions.")
-        # logger.error("Google Sheet not found. Check the sheet key and permissions.")
+        logger.error("Google Sheet not found. Check the sheet key and permissions.")
         return pd.DataFrame()
 
     except Exception as e:
         st.error(f"Error accessing Google Sheet: {str(e)}")
-        # logger.error(f"Google Sheet Access Error: {str(e)}")
+        logger.error(f"Google Sheet Access Error: {str(e)}")
         return pd.DataFrame()
-
-def is_valid_email(email):
-    """Basic email validation."""
-    return isinstance(email, str) and "@" in email and "." in email.split("@")[-1]
-
-def is_valid_phone(phone):
-    """Check if phone number is valid after formatting."""
-    return phone is not None
 
 def format_phone_number(phone):
     """Format phone number to E.164 format"""
@@ -102,11 +87,10 @@ def format_phone_number(phone):
 
 def send_email(recipient, subject, body):
     """
-    Function to send an email.
+    Mock function to simulate sending an email.
     """
     if DEMO_MODE:
-        # logger.info(f"Demo Mode: Pretended to send email to {recipient} with subject '{subject}'.")
-        st.info(f"Demo Mode: Pretended to send email to {recipient} with subject '{subject}'.")
+        logger.info(f"Demo Mode: Pretended to send email to {recipient} with subject '{subject}'.")
         return True
     else:
         # Live email sending logic using SendGrid
@@ -123,25 +107,22 @@ def send_email(recipient, subject, body):
             )
             response = sg.send(email)
             if response.status_code in [200, 202]:
-                # logger.info(f"Email sent to {recipient}")
-                st.success(f"Email sent to {recipient}")
+                logger.info(f"Email sent to {recipient}")
                 return True
             else:
-                # logger.error(f"Failed to send email to {recipient}: {response.status_code}")
-                st.error(f"Failed to send email to {recipient}: {response.status_code}")
+                logger.error(f"Failed to send email to {recipient}: {response.status_code}")
                 return False
         except Exception as e:
             st.error(f"Error sending email to {recipient}: {str(e)}")
-            # logger.error(f"SendGrid Error for {recipient}: {str(e)}")
+            logger.error(f"SendGrid Error for {recipient}: {str(e)}")
             return False
 
 def send_text_message(phone_number, message):
     """
-    Function to send a text message.
+    Mock function to simulate sending a text message.
     """
     if DEMO_MODE:
-        # logger.info(f"Demo Mode: Pretended to send SMS to {phone_number} with message '{message}'.")
-        st.info(f"Demo Mode: Pretended to send SMS to {phone_number} with message '{message}'.")
+        logger.info(f"Demo Mode: Pretended to send SMS to {phone_number} with message '{message}'.")
         return True
     else:
         # Live SMS sending logic using Twilio
@@ -158,16 +139,14 @@ def send_text_message(phone_number, message):
                 to=phone_number
             )
             if msg.sid:
-                # logger.info(f"SMS sent to {phone_number}")
-                st.success(f"SMS sent to {phone_number}")
+                logger.info(f"SMS sent to {phone_number}")
                 return True
             else:
-                # logger.error(f"Failed to send SMS to {phone_number}")
-                st.error(f"Failed to send SMS to {phone_number}")
+                logger.error(f"Failed to send SMS to {phone_number}")
                 return False
         except Exception as e:
             st.error(f"Error sending SMS to {phone_number}: {str(e)}")
-            # logger.error(f"Twilio Error for {phone_number}: {str(e)}")
+            logger.error(f"Twilio Error for {phone_number}: {str(e)}")
             return False
 
 def run_owner_marketing_tab(owner_df):
@@ -179,7 +158,11 @@ def run_owner_marketing_tab(owner_df):
     else:
         st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
-    # **Campaign Type Selection**
+    # **Display the Owner Sheets Table**
+    st.subheader("Owner Sheets Data")
+    st.dataframe(owner_df)
+
+    # Campaign Type Selection
     campaign_tabs = st.tabs(["📱 Text Message Campaign", "📧 Email Campaign"])
 
     for idx, campaign_type in enumerate(["Text", "Email"]):
@@ -275,13 +258,6 @@ def run_owner_marketing_tab(owner_df):
                 st.warning("No data matches the selected filters.")
             else:
                 st.dataframe(filtered_df)
-
-            # **Debugging Outputs**
-            st.write(f"### Debugging Information for {campaign_type} Campaign")
-            st.write(f"Total records after 'Campaign Type' filter: {len(owner_df[owner_df['Campaign Type'] == campaign_type])}")
-            st.write(f"Total records after all filters: {len(filtered_df)}")
-            st.write("### Unique Campaign Types in Data:")
-            st.write(owner_df['Campaign Type'].unique())
 
             # Display metrics
             metrics_cols = st.columns(4)
@@ -442,20 +418,18 @@ def run_owner_marketing_tab(owner_df):
                         try:
                             if campaign_type == "Email":
                                 recipient_email = row['Email']
-                                if is_valid_email(recipient_email):
+                                if pd.notna(recipient_email) and '@' in recipient_email and '.' in recipient_email.split('@')[-1]:
                                     personalized_subject = subject.format(first_name=row['First Name'])
                                     personalized_body = body.format(first_name=row['First Name'])
                                     success = send_email(recipient_email, personalized_subject, personalized_body)
                                 else:
-                                    st.warning(f"Invalid email address for {row['First Name']}: {recipient_email}")
                                     success = False
                             else:
                                 phone = format_phone_number(row['Phone Number'])
-                                if is_valid_phone(phone):
+                                if phone:
                                     personalized_message = message.format(first_name=row['First Name'])
                                     success = send_text_message(phone, personalized_message)
                                 else:
-                                    st.warning(f"Invalid phone number for {row['First Name']}: {row['Phone Number']}")
                                     success = False
 
                             if success:
@@ -476,7 +450,7 @@ def run_owner_marketing_tab(owner_df):
 
                         except Exception as e:
                             st.error(f"Error processing row {idx}: {str(e)}")
-                            # logger.error(f"Error processing row {idx}: {str(e)}")
+                            logger.error(f"Error processing row {idx}: {str(e)}")
                             fail_count += 1
 
                     # Final summary
