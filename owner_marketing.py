@@ -254,6 +254,9 @@ def run_owner_marketing_tab(owner_df):
             # **Add Map of Owners' Locations**
                         # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
+ 
+            # Create a toggle for the map
+            show_map = st.expander("Show/Hide Owners Map", expanded=False)
 
             def clean_zip_code(zip_code):
                 """Clean and validate ZIP code"""
