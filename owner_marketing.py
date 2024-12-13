@@ -252,21 +252,66 @@ def run_owner_marketing_tab(owner_df):
                 st.dataframe(campaign_filtered_df)
 
             # **Add Map of Owners' Locations**
+                        # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
-            if 'Zip Code' in campaign_filtered_df.columns:
-                # Geocode Zip Codes to Latitude and Longitude
-                nomi = pgeocode.Nominatim('us')
-                campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].astype(str)
-                geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'])
-                campaign_filtered_df['Latitude'] = geocode_df['latitude']
-                campaign_filtered_df['Longitude'] = geocode_df['longitude']
 
-                # Drop rows with missing coordinates
-                map_df = campaign_filtered_df.dropna(subset=['Latitude', 'Longitude'])
-                if not map_df.empty:
-                    st.map(map_df[['Latitude', 'Longitude']])
+            # First, add the ZIP code cleaning function
+            def clean_zip_code(zip_code):
+                """Clean and validate ZIP code"""
+                if pd.isna(zip_code):
+                    return None
+                # Convert to string and keep only digits
+                zip_str = str(zip_code)
+                zip_digits = ''.join(filter(str.isdigit, zip_str))
+                # Take first 5 digits only
+                return zip_digits[:5] if len(zip_digits) >= 5 else None
+
+            # Debug Information
+            st.write("Debug Information:")
+            st.write(f"Total records: {len(campaign_filtered_df)}")
+
+            if 'Zip Code' in campaign_filtered_df.columns:
+                st.write(f"Records with ZIP codes: {campaign_filtered_df['Zip Code'].notna().sum()}")
+                
+                # Clean ZIP codes
+                campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
+                
+                # Remove invalid ZIP codes
+                campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
+                
+                # Show sample ZIP codes
+                st.write("Sample ZIP codes:")
+                st.write(campaign_filtered_df['Zip Code'].head())
+
+                if campaign_filtered_df['Zip Code'].notna().sum() == 0:
+                    st.warning("No valid ZIP codes found in the filtered data")
                 else:
-                    st.info("No valid geographic data available to display the map.")
+                    # Geocode ZIP codes
+                    with st.spinner("Geocoding ZIP codes..."):
+                        nomi = pgeocode.Nominatim('us')
+                        
+                        # Create empty columns for coordinates
+                        campaign_filtered_df['Latitude'] = None
+                        campaign_filtered_df['Longitude'] = None
+                        
+                        # Geocode each valid ZIP code
+                        for idx, row in campaign_filtered_df.iterrows():
+                            try:
+                                location = nomi.query_postal_code(row['Zip Code'])
+                                campaign_filtered_df.at[idx, 'Latitude'] = location['latitude']
+                                campaign_filtered_df.at[idx, 'Longitude'] = location['longitude']
+                            except Exception as e:
+                                st.warning(f"Could not geocode ZIP code {row['Zip Code']}: {str(e)}")
+                                continue
+
+                        # Drop rows with missing coordinates
+                        map_df = campaign_filtered_df.dropna(subset=['Latitude', 'Longitude'])
+                        
+                        if not map_df.empty:
+                            st.map(map_df[['Latitude', 'Longitude']])
+                            st.info(f"Showing {len(map_df)} locations on the map")
+                        else:
+                            st.info("No valid geographic data available to display the map")
             else:
                 st.info("Zip Code data is not available to display the map.")
 
