@@ -1,69 +1,7 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from datetime import datetime
-import gspread
-from google.oauth2 import service_account
 import time
-import requests
-
-@st.cache_resource
-def get_owner_sheet_data():
-    """
-    Fetch owner data from Google Sheets.
-    Returns a pandas DataFrame containing owner information.
-    """
-    try:
-        # Create credentials
-        credentials = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
-                "https://www.googleapis.com/auth/drive.readonly"
-            ],
-        )
-
-        # Create gspread client
-        client = gspread.authorize(credentials)
-        
-        # Open the spreadsheet
-        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
-        sheet = client.open_by_key(sheet_key)
-        
-        # Get the first worksheet
-        worksheet = sheet.get_worksheet(0)
-        
-        # Get all records
-        data = worksheet.get_all_records()
-        
-        # Convert to DataFrame
-        df = pd.DataFrame(data)
-        
-        # Basic data cleaning
-        if 'Sale Date' in df.columns:
-            df['Sale Date'] = pd.to_datetime(df['Sale Date'], errors='coerce')
-        
-        if 'Maturity Date' in df.columns:
-            df['Maturity Date'] = pd.to_datetime(df['Maturity Date'], errors='coerce')
-            
-        if 'Phone Number' in df.columns:
-            df['Phone Number'] = df['Phone Number'].astype(str)
-            
-        if 'Points' in df.columns:
-            df['Points'] = pd.to_numeric(df['Points'], errors='coerce')
-            
-        if 'Primary FICO' in df.columns:
-            df['Primary FICO'] = pd.to_numeric(df['Primary FICO'], errors='coerce')
-
-        # Ensure Campaign Type column exists
-        if 'Campaign Type' not in df.columns:
-            df['Campaign Type'] = 'Text'  # Default campaign type
-
-        return df
-
-    except Exception as e:
-        st.error(f"Error accessing Google Sheet: {str(e)}")
-        return pd.DataFrame()
 
 def format_phone_number(phone):
     """Format phone number to E.164 format"""
@@ -112,6 +50,9 @@ def run_owner_marketing_tab(owner_df):
         with campaign_tabs[idx]:
             st.header(f"{campaign_type} Campaign Management")
             
+            # Create initial filtered_df
+            filtered_df = owner_df.copy()
+            
             # Filters Section
             with st.expander("📊 Filters", expanded=True):
                 col1, col2, col3 = st.columns(3)
@@ -144,12 +85,9 @@ def run_owner_marketing_tab(owner_df):
                             key=f'{campaign_type}_dates'
                         )
                 
-                
-                 # For the FICO score slider section
                 with col3:
                     if 'Primary FICO' in owner_df.columns:
-                        # Remove any NaN values and ensure numeric values
-                        valid_fico = filtered_df['Primary FICO'].dropna()
+                        valid_fico = owner_df['Primary FICO'].dropna()
                         
                         if not valid_fico.empty:
                             try:
@@ -166,17 +104,14 @@ def run_owner_marketing_tab(owner_df):
                             'FICO Score Range',
                             min_value=300,
                             max_value=850,
-                            value=(min_fico, max_fico)
+                            value=(min_fico, max_fico),
+                            key=f'{campaign_type}_fico'
                         )
 
-
             # Apply filters
-            filtered_df = owner_df.copy()
-            
             # Filter by campaign type
             filtered_df = filtered_df[filtered_df['Campaign Type'] == campaign_type]
             
-            # Apply other filters
             if selected_states:
                 filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
             
@@ -200,13 +135,13 @@ def run_owner_marketing_tab(owner_df):
             with metrics_cols[0]:
                 st.metric("Total Owners", len(filtered_df))
             with metrics_cols[1]:
-                st.metric("Average FICO", 
-                         int(filtered_df['Primary FICO'].mean()))
+                avg_fico = int(filtered_df['Primary FICO'].mean()) if not filtered_df['Primary FICO'].empty else 0
+                st.metric("Average FICO", avg_fico)
             with metrics_cols[2]:
-                st.metric("Average Points", 
-                         int(filtered_df['Points'].mean()))
+                avg_points = int(filtered_df['Points'].mean()) if not filtered_df['Points'].empty else 0
+                st.metric("Average Points", avg_points)
             with metrics_cols[3]:
-                total_value = filtered_df['Points'].sum() * 0.20  # Example value calculation
+                total_value = filtered_df['Points'].sum() * 0.20 if not filtered_df['Points'].empty else 0
                 st.metric("Total Value", f"${total_value:,.2f}")
 
             # Campaign Setup
@@ -376,5 +311,5 @@ def run_owner_marketing_tab(owner_df):
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Owner Marketing", layout="wide")
-    owner_df = get_owner_sheet_data()
+    owner_df = pd.DataFrame()  # Replace with your data loading logic
     run_owner_marketing_tab(owner_df)
