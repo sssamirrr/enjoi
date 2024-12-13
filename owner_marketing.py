@@ -6,7 +6,11 @@ import gspread
 from google.oauth2 import service_account
 import time
 import requests
+import phonenumbers
+import logging
 
+# Define a global flag for demo mode
+DEMO_MODE = True  # Set to False to enable live functionality
 
 # Setup logging
 logging.basicConfig(
@@ -72,55 +76,76 @@ def format_phone_number(phone):
 
 def send_email(recipient, subject, body):
     """
-    Send email using SendGrid.
+    Mock function to simulate sending an email.
     """
-    try:
-        sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid_api_key"])
-        email = Mail(
-            from_email=st.secrets["sendgrid_from_email"],
-            to_emails=recipient,
-            subject=subject,
-            plain_text_content=body
-        )
-        response = sg.send(email)
-        if response.status_code in [200, 202]:
-            logging.info(f"Email sent to {recipient}")
-            return True
-        else:
-            logging.error(f"Failed to send email to {recipient}: {response.status_code}")
+    if DEMO_MODE:
+        logging.info(f"Demo Mode: Pretended to send email to {recipient} with subject '{subject}'.")
+        return True
+    else:
+        # Live email sending logic using SendGrid
+        try:
+            import sendgrid
+            from sendgrid.helpers.mail import Mail
+
+            sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid_api_key"])
+            email = Mail(
+                from_email=st.secrets["sendgrid_from_email"],
+                to_emails=recipient,
+                subject=subject,
+                plain_text_content=body
+            )
+            response = sg.send(email)
+            if response.status_code in [200, 202]:
+                logging.info(f"Email sent to {recipient}")
+                return True
+            else:
+                logging.error(f"Failed to send email to {recipient}: {response.status_code}")
+                return False
+        except Exception as e:
+            st.error(f"Error sending email to {recipient}: {str(e)}")
+            logging.error(f"SendGrid Error for {recipient}: {str(e)}")
             return False
-    except Exception as e:
-        st.error(f"Error sending email to {recipient}: {str(e)}")
-        logging.error(f"SendGrid Error for {recipient}: {str(e)}")
-        return False
 
 def send_text_message(phone_number, message):
     """
-    Send text message using Twilio.
+    Mock function to simulate sending a text message.
     """
-    try:
-        client = Client(
-            st.secrets["twilio_account_sid"],
-            st.secrets["twilio_auth_token"]
-        )
-        msg = client.messages.create(
-            body=message,
-            from_=st.secrets["twilio_phone_number"],
-            to=phone_number
-        )
-        if msg.sid:
-            logging.info(f"SMS sent to {phone_number}")
-            return True
-        else:
-            logging.error(f"Failed to send SMS to {phone_number}")
+    if DEMO_MODE:
+        logging.info(f"Demo Mode: Pretended to send SMS to {phone_number} with message '{message}'.")
+        return True
+    else:
+        # Live SMS sending logic using Twilio
+        try:
+            from twilio.rest import Client
+
+            client = Client(
+                st.secrets["twilio_account_sid"],
+                st.secrets["twilio_auth_token"]
+            )
+            msg = client.messages.create(
+                body=message,
+                from_=st.secrets["twilio_phone_number"],
+                to=phone_number
+            )
+            if msg.sid:
+                logging.info(f"SMS sent to {phone_number}")
+                return True
+            else:
+                logging.error(f"Failed to send SMS to {phone_number}")
+                return False
+        except Exception as e:
+            st.error(f"Error sending SMS to {phone_number}: {str(e)}")
+            logging.error(f"Twilio Error for {phone_number}: {str(e)}")
             return False
-    except Exception as e:
-        st.error(f"Error sending SMS to {phone_number}: {str(e)}")
-        logging.error(f"Twilio Error for {phone_number}: {str(e)}")
-        return False
 
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
+
+    # Display Demo Mode Notification
+    if DEMO_MODE:
+        st.warning("**Demo Mode Enabled:** No real emails or SMS messages will be sent.")
+    else:
+        st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
     # Campaign Type Selection
     campaign_tabs = st.tabs(["📱 Text Message Campaign", "📧 Email Campaign"])
@@ -322,7 +347,6 @@ def run_owner_marketing_tab(owner_df):
             st.subheader("Campaign Execution")
 
             if st.button(f"Launch {campaign_type} Campaign", key=f'launch_{campaign_type}'):
-
                 if filtered_df.empty:
                     st.warning("No data available for the selected filters.")
                     return
@@ -351,7 +375,7 @@ def run_owner_marketing_tab(owner_df):
                         try:
                             if campaign_type == "Email":
                                 recipient_email = row['Email']  # Directly use the email without validation
-                                if pd.notna(recipient_email) and '@' in recipient_email:
+                                if pd.notna(recipient_email) and '@' in recipient_email and '.' in recipient_email.split('@')[-1]:
                                     personalized_subject = subject.format(first_name=row['First Name'])
                                     personalized_body = body.format(first_name=row['First Name'])
                                     success = send_email(recipient_email, personalized_subject, personalized_body)
