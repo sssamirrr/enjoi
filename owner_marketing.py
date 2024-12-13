@@ -251,49 +251,45 @@ def run_owner_marketing_tab(owner_df):
             else:
                 st.dataframe(campaign_filtered_df)
 
-            # **Add Map of Owners' Locations**
                         # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
- 
+            
+            # **Add Map of Owners' Locations**
+            st.subheader("Map of Owner Locations")
+            
             # Create a toggle for the map
             show_map = st.expander("Show/Hide Owners Map", expanded=False)
+            
+            with show_map:  # Everything related to the map should be inside this block
+                if 'Zip Code' in campaign_filtered_df.columns:
+                    # Clean and prepare ZIP codes
+                    campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
+                    campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
 
-            def clean_zip_code(zip_code):
-                """Clean and validate ZIP code"""
-                if pd.isna(zip_code):
-                    return None
-                zip_str = str(zip_code)
-                zip_digits = ''.join(filter(str.isdigit, zip_str))
-                return zip_digits[:5] if len(zip_digits) >= 5 else None
+                    if not campaign_filtered_df.empty:
+                        try:
+                            # Geocode ZIP codes
+                            nomi = pgeocode.Nominatim('us')
+                            geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'].tolist())
+                            
+                            # Create map data
+                            map_data = pd.DataFrame({
+                                'lat': geocode_df['latitude'],
+                                'lon': geocode_df['longitude']
+                            }).dropna()
 
-            if 'Zip Code' in campaign_filtered_df.columns:
-                # Clean and prepare ZIP codes
-                campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
-                campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
-
-                if not campaign_filtered_df.empty:
-                    try:
-                        # Geocode ZIP codes
-                        nomi = pgeocode.Nominatim('us')
-                        geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'].tolist())
-                        
-                        # Create map data
-                        map_data = pd.DataFrame({
-                            'lat': geocode_df['latitude'],
-                            'lon': geocode_df['longitude']
-                        }).dropna()
-
-                        if not map_data.empty:
-                            st.map(map_data)
-                            st.info(f"Showing {len(map_data)} locations on the map")
-                        else:
-                            st.info("No valid coordinates available for mapping")
-                    except Exception as e:
-                        st.error(f"Error creating map: {str(e)}")
+                            if not map_data.empty:
+                                st.map(map_data)
+                                st.info(f"Showing {len(map_data)} locations on the map")
+                            else:
+                                st.info("No valid coordinates available for mapping")
+                        except Exception as e:
+                            st.error(f"Error creating map: {str(e)}")
+                    else:
+                        st.info("No valid ZIP codes available for mapping")
                 else:
-                    st.info("No valid ZIP codes available for mapping")
-            else:
-                st.info("ZIP Code data is not available to display the map")
+                    st.info("ZIP Code data is not available to display the map")
+
 
             # Display metrics
             metrics_cols = st.columns(4)
