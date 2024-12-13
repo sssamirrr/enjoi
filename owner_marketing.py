@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import time
-import requests
+import plotly.express as px
 from datetime import datetime
 import gspread
 from google.oauth2 import service_account
-import plotly.express as px
+import time
+import requests
 
 @st.cache_resource
 def get_owner_sheet_data():
@@ -27,8 +26,8 @@ def get_owner_sheet_data():
         # Create gspread client
         client = gspread.authorize(credentials)
         
-        # Open the spreadsheet - Updated to match your secrets.toml
-        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]  # Changed to "owners_sheets"
+        # Open the spreadsheet
+        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
         sheet = client.open_by_key(sheet_key)
         
         # Get the first worksheet
@@ -56,198 +55,308 @@ def get_owner_sheet_data():
         if 'Primary FICO' in df.columns:
             df['Primary FICO'] = pd.to_numeric(df['Primary FICO'], errors='coerce')
 
+        # Ensure Campaign Type column exists
+        if 'Campaign Type' not in df.columns:
+            df['Campaign Type'] = 'Text'  # Default campaign type
+
         return df
 
     except Exception as e:
         st.error(f"Error accessing Google Sheet: {str(e)}")
-        print(f"Full error: {str(e)}")
         return pd.DataFrame()
 
+def format_phone_number(phone):
+    """Format phone number to E.164 format"""
+    if pd.isna(phone):
+        return None
+    # Remove any non-numeric characters
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    return None
+
+def send_email(recipient, subject, body):
+    """
+    Send email using your email service provider
+    Implement your email sending logic here
+    """
+    try:
+        # Add your email sending logic here
+        return True
+    except Exception as e:
+        st.error(f"Error sending email: {str(e)}")
+        return False
+
+def send_text_message(phone_number, message):
+    """
+    Send text message using your SMS service provider
+    Implement your SMS sending logic here
+    """
+    try:
+        # Add your SMS sending logic here
+        return True
+    except Exception as e:
+        st.error(f"Error sending text message: {str(e)}")
+        return False
+
 def run_owner_marketing_tab(owner_df):
-    """Main function to run the owner marketing dashboard"""
-    st.header("🏠 Owner Marketing Dashboard")
-
-    if owner_df.empty:
-        st.warning("No owner data available.")
-        return
-
-    # Create Campaign Analysis section
-    st.subheader("Campaign Analysis")
-    if 'Campaign' in owner_df.columns:
-        campaign_metrics = st.tabs(["Campaign Overview", "Response Rates", "Conversion Analysis"])
-        
-        with campaign_metrics[0]:
-            col1, col2 = st.columns(2)
+    st.title("Owner Marketing Dashboard")
+    
+    # Campaign Type Selection
+    campaign_tabs = st.tabs(["📱 Text Message Campaign", "📧 Email Campaign"])
+    
+    # Process each campaign type
+    for idx, campaign_type in enumerate(["Text", "Email"]):
+        with campaign_tabs[idx]:
+            st.header(f"{campaign_type} Campaign Management")
             
-            with col1:
-                # Campaign distribution
-                campaign_dist = owner_df['Campaign'].value_counts()
-                st.metric("Campaign A Count", campaign_dist.get('A', 0))
-                st.metric("Campaign B Count", campaign_dist.get('B', 0))
+            # Filters Section
+            with st.expander("📊 Filters", expanded=True):
+                col1, col2, col3 = st.columns(3)
                 
-            with col2:
-                # Average metrics by campaign
-                if 'Points' in owner_df.columns:
-                    avg_points = owner_df.groupby('Campaign')['Points'].mean()
-                    st.metric("Avg Points - Campaign A", f"{avg_points.get('A', 0):,.0f}")
-                    st.metric("Avg Points - Campaign B", f"{avg_points.get('B', 0):,.0f}")
+                with col1:
+                    if 'State' in owner_df.columns:
+                        states = sorted(owner_df['State'].unique().tolist())
+                        selected_states = st.multiselect(
+                            'Select States',
+                            states,
+                            key=f'{campaign_type}_states'
+                        )
+                    
+                    if 'Unit' in owner_df.columns:
+                        units = ['All'] + sorted(owner_df['Unit'].unique().tolist())
+                        selected_unit = st.selectbox(
+                            'Unit Type',
+                            units,
+                            key=f'{campaign_type}_unit'
+                        )
+                
+                with col2:
+                    if 'Sale Date' in owner_df.columns:
+                        date_range = st.date_input(
+                            'Sale Date Range',
+                            value=(
+                                owner_df['Sale Date'].min().date(),
+                                owner_df['Sale Date'].max().date()
+                            ),
+                            key=f'{campaign_type}_dates'
+                        )
+                
+                with col3:
+                    if 'Primary FICO' in owner_df.columns:
+                        fico_range = st.slider(
+                            'FICO Score Range',
+                            300, 850, (500, 850),
+                            key=f'{campaign_type}_fico'
+                        )
 
-        with campaign_metrics[1]:
-            # Add response rate metrics here when implemented
-            st.info("Response rate tracking will be implemented based on message interaction data")
+            # Apply filters
+            filtered_df = owner_df.copy()
             
-        with campaign_metrics[2]:
-            # Add conversion analysis here when implemented
-            st.info("Conversion analysis will be implemented based on sales/upgrade data")
+            # Filter by campaign type
+            filtered_df = filtered_df[filtered_df['Campaign Type'] == campaign_type]
+            
+            # Apply other filters
+            if selected_states:
+                filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
+            
+            if selected_unit != 'All':
+                filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
+            
+            if isinstance(date_range, tuple) and len(date_range) == 2:
+                filtered_df = filtered_df[
+                    (filtered_df['Sale Date'].dt.date >= date_range[0]) &
+                    (filtered_df['Sale Date'].dt.date <= date_range[1])
+                ]
+            
+            if 'Primary FICO' in filtered_df.columns:
+                filtered_df = filtered_df[
+                    (filtered_df['Primary FICO'] >= fico_range[0]) &
+                    (filtered_df['Primary FICO'] <= fico_range[1])
+                ]
 
-    # Filters Section
-    st.subheader("Filter Owners")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if 'Unit' in owner_df.columns:
-            unit_types = ['All'] + sorted(owner_df['Unit'].unique().tolist())
-            selected_unit = st.selectbox('Unit Type', unit_types)
-        
-        if 'State' in owner_df.columns:
-            states = ['All'] + sorted(owner_df['State'].unique().tolist())
-            selected_state = st.selectbox('State', states)
+            # Display metrics
+            metrics_cols = st.columns(4)
+            with metrics_cols[0]:
+                st.metric("Total Owners", len(filtered_df))
+            with metrics_cols[1]:
+                st.metric("Average FICO", 
+                         int(filtered_df['Primary FICO'].mean()))
+            with metrics_cols[2]:
+                st.metric("Average Points", 
+                         int(filtered_df['Points'].mean()))
+            with metrics_cols[3]:
+                total_value = filtered_df['Points'].sum() * 0.20  # Example value calculation
+                st.metric("Total Value", f"${total_value:,.2f}")
 
-    with col2:
-        if 'Sale Date' in owner_df.columns:
-            date_range = st.date_input(
-                'Sale Date Range',
-                value=(
-                    owner_df['Sale Date'].min().date(),
-                    owner_df['Sale Date'].max().date()
+            # Campaign Setup
+            st.subheader("Campaign Setup")
+            
+            # A/B Testing setup
+            col1, col2 = st.columns(2)
+            with col1:
+                ab_split = st.slider(
+                    "A/B Testing Split (A:B)",
+                    0, 100, 50,
+                    key=f'{campaign_type}_split'
                 )
-            )
+            with col2:
+                st.metric("Group A Size", f"{len(filtered_df) * ab_split // 100}")
+                st.metric("Group B Size", f"{len(filtered_df) * (100-ab_split) // 100}")
 
-    with col3:
-        if 'Primary FICO' in owner_df.columns:
-            fico_range = st.slider(
-                'FICO Score Range',
-                min_value=300,
-                max_value=850,
-                value=(500, 850)
-            )
-
-    with col4:
-        if 'Campaign' in owner_df.columns:
-            campaigns = ['All'] + sorted(owner_df['Campaign'].unique().tolist())
-            selected_campaign = st.selectbox('Campaign', campaigns)
-
-    # Apply filters
-    filtered_df = owner_df.copy()
-    
-    if selected_unit != 'All':
-        filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
-    
-    if selected_state != 'All':
-        filtered_df = filtered_df[filtered_df['State'] == selected_state]
-    
-    if selected_campaign != 'All':
-        filtered_df = filtered_df[filtered_df['Campaign'] == selected_campaign]
-
-    # Add Select column
-    filtered_df.insert(0, 'Select', False)
-
-    # Create the editable dataframe
-    edited_df = st.data_editor(
-        filtered_df,
-        column_config={
-            "Select": st.column_config.CheckboxColumn("Select", help="Select owner for communication"),
-            "Campaign": st.column_config.TextColumn("Campaign", help="A/B Test Campaign"),
-            "Account ID": st.column_config.TextColumn("Account ID"),
-            "Last Name": st.column_config.TextColumn("Last Name"),
-            "First Name": st.column_config.TextColumn("First Name"),
-            "Unit": st.column_config.TextColumn("Unit"),
-            "Sale Date": st.column_config.DateColumn("Sale Date"),
-            "Address": st.column_config.TextColumn("Address"),
-            "City": st.column_config.TextColumn("City"),
-            "State": st.column_config.TextColumn("State"),
-            "Zip Code": st.column_config.TextColumn("Zip Code"),
-            "Primary FICO": st.column_config.NumberColumn("Primary FICO"),
-            "Maturity Date": st.column_config.DateColumn("Maturity Date"),
-            "Closing Costs": st.column_config.NumberColumn("Closing Costs", format="$%.2f"),
-            "Phone Number": st.column_config.TextColumn("Phone Number"),
-            "Email Address": st.column_config.TextColumn("Email Address"),
-            "Points": st.column_config.NumberColumn("Points"),
-            "Equity": st.column_config.NumberColumn("Equity", format="$%.2f")
-        },
-        hide_index=True,
-        use_container_width=True
-    )
-
-    # Campaign Performance Metrics
-    st.subheader("Campaign Performance Metrics")
-    if 'Campaign' in edited_df.columns:
-        metric_cols = st.columns(4)
-        
-        with metric_cols[0]:
-            total_selected = len(edited_df[edited_df['Select']])
-            st.metric("Total Selected", total_selected)
+            # Message Templates
+            st.subheader("Message Templates")
             
-        with metric_cols[1]:
-            selected_a = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'A')])
-            st.metric("Selected Campaign A", selected_a)
+            if campaign_type == "Email":
+                # Email specific templates
+                email_templates = {
+                    "Welcome": {
+                        "subject": "Welcome to Our Premium Ownership Family",
+                        "body": "Dear {first_name},\n\nWelcome to..."
+                    },
+                    "Upgrade Offer": {
+                        "subject": "Exclusive Upgrade Opportunity",
+                        "body": "Dear {first_name},\n\nAs a valued member..."
+                    },
+                    "Custom": {
+                        "subject": "",
+                        "body": ""
+                    }
+                }
+                
+                template_choice = st.selectbox(
+                    "Select Email Template",
+                    list(email_templates.keys()),
+                    key='email_template'
+                )
+                
+                subject = st.text_input(
+                    "Email Subject",
+                    value=email_templates[template_choice]["subject"]
+                )
+                
+                message = st.text_area(
+                    "Email Body",
+                    value=email_templates[template_choice]["body"],
+                    height=200
+                )
+                
+            else:
+                # Text message specific templates
+                text_templates = {
+                    "Welcome": "Welcome to our premium ownership family! Reply STOP to opt out.",
+                    "Upgrade": "Exclusive upgrade opportunity available! Reply STOP to opt out.",
+                    "Custom": ""
+                }
+                
+                template_choice = st.selectbox(
+                    "Select Text Template",
+                    list(text_templates.keys()),
+                    key='text_template'
+                )
+                
+                message = st.text_area(
+                    "Message Text",
+                    value=text_templates[template_choice],
+                    height=100
+                )
+
+            # Preview Section
+            st.subheader("Campaign Preview")
+            preview_cols = st.columns(2)
+            with preview_cols[0]:
+                st.write("Group A Preview:")
+                if campaign_type == "Email":
+                    st.info(f"Subject: {subject}\n\n{message}")
+                else:
+                    st.info(message)
             
-        with metric_cols[2]:
-            selected_b = len(edited_df[(edited_df['Select']) & (edited_df['Campaign'] == 'B')])
-            st.metric("Selected Campaign B", selected_b)
+            with preview_cols[1]:
+                st.write("Group B Preview:")
+                if campaign_type == "Email":
+                    st.info(f"Subject: {subject}\n\n{message}")
+                else:
+                    st.info(message)
+
+            # Campaign Execution
+            st.subheader("Campaign Execution")
             
-        with metric_cols[3]:
-            if total_selected > 0:
-                balance = abs(selected_a - selected_b)
-                st.metric("Campaign Balance", balance, 
-                         delta=f"{'Balanced' if balance == 0 else 'Unbalanced'}")
-
-    # Message Templates Section with Campaign-specific messages
-    st.markdown("---")
-    st.subheader("Campaign Message Templates")
-
-    templates = {
-        "Campaign A - Welcome": "Welcome to our premium timeshare family! We're excited to have you with us.",
-        "Campaign A - Offer": "As a valued premium member, we have a special upgrade opportunity for you.",
-        "Campaign B - Welcome": "Welcome to our timeshare community! We're glad you're here.",
-        "Campaign B - Offer": "We'd like to present you with an exclusive upgrade opportunity.",
-        "Custom Message": ""
-    }
-
-    template_choice = st.selectbox("Select Message Template", list(templates.keys()))
-    message_text = st.text_area(
-        "Customize Your Message",
-        value=templates[template_choice],
-        height=100
-    )
-
-    # Send Messages Section with Campaign tracking
-    selected_owners = edited_df[edited_df['Select']]
-    if len(selected_owners) > 0:
-        st.write(f"Selected {len(selected_owners)} owners for communication")
-        campaign_breakdown = selected_owners['Campaign'].value_counts()
-        st.write(f"Campaign A: {campaign_breakdown.get('A', 0)}, Campaign B: {campaign_breakdown.get('B', 0)}")
-        
-        if st.button("Send Campaign Messages"):
-            with st.spinner("Sending messages..."):
-                for _, owner in selected_owners.iterrows():
-                    try:
-                        # Here you would implement your actual message sending logic
-                        # Make sure to use the appropriate template based on the campaign
-                        campaign_specific_message = message_text
-                        if owner['Campaign'] == 'A':
-                            # Modify message for Campaign A
-                            pass
-                        else:
-                            # Modify message for Campaign B
-                            pass
+            if st.button(f"Launch {campaign_type} Campaign", 
+                        key=f'launch_{campaign_type}'):
+                
+                # Split the dataset for A/B testing
+                filtered_df['Group'] = 'A'
+                b_size = len(filtered_df) * (100-ab_split) // 100
+                filtered_df.iloc[:b_size, filtered_df.columns.get_loc('Group')] = 'B'
+                
+                # Execute campaign
+                with st.spinner(f"Sending {campaign_type} messages..."):
+                    success_count = 0
+                    fail_count = 0
+                    
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for idx, row in filtered_df.iterrows():
+                        try:
+                            if campaign_type == "Email":
+                                success = send_email(
+                                    row['Email'],
+                                    subject.format(first_name=row['First Name']),
+                                    message.format(first_name=row['First Name'])
+                                )
+                            else:
+                                phone = format_phone_number(row['Phone Number'])
+                                if phone:
+                                    success = send_text_message(
+                                        phone,
+                                        message.format(first_name=row['First Name'])
+                                    )
+                                else:
+                                    success = False
                             
-                        st.success(f"Campaign {owner['Campaign']} message sent to {owner['First Name']} {owner['Last Name']}")
-                        time.sleep(0.5)
-                    except Exception as e:
-                        st.error(f"Failed to send message to {owner['First Name']} {owner['Last Name']}: {str(e)}")
-    else:
-        st.info("Please select owners to send campaign messages")
+                            if success:
+                                success_count += 1
+                            else:
+                                fail_count += 1
+                                
+                            # Update progress
+                            progress = (idx + 1) / len(filtered_df)
+                            progress_bar.progress(progress)
+                            status_text.text(
+                                f"Processing: {idx + 1}/{len(filtered_df)} "
+                                f"({success_count} successful, {fail_count} failed)"
+                            )
+                            
+                            time.sleep(0.1)  # Simulate processing time
+                            
+                        except Exception as e:
+                            st.error(f"Error processing row {idx}: {str(e)}")
+                            fail_count += 1
+                    
+                    # Final summary
+                    st.success(
+                        f"Campaign completed: {success_count} successful, "
+                        f"{fail_count} failed"
+                    )
 
-    return edited_df
+                    # Save campaign results
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{campaign_type}_campaign_{timestamp}.csv"
+                    filtered_df.to_csv(filename, index=False)
+                    
+                    # Offer download of results
+                    with open(filename, 'rb') as f:
+                        st.download_button(
+                            label="Download Campaign Results",
+                            data=f,
+                            file_name=filename,
+                            mime="text/csv"
+                        )
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    owner_df = get_owner_sheet_data()
+    run_owner_marketing_tab(owner_df)
