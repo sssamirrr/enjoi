@@ -7,8 +7,7 @@ from google.oauth2 import service_account
 import time
 import requests
 import phonenumbers
-import logging
-from logging.handlers import RotatingFileHandler
+
 
 # Toggle for Demo Mode via Sidebar
 if 'demo_mode' not in st.session_state:
