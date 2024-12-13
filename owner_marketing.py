@@ -6,11 +6,7 @@ import gspread
 from google.oauth2 import service_account
 import time
 import requests
-import phonenumbers
-import sendgrid
-from sendgrid.helpers.mail import Mail
-from twilio.rest import Client
-import logging
+
 
 # Setup logging
 logging.basicConfig(
