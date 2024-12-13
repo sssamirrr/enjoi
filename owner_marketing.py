@@ -7,19 +7,7 @@ from google.oauth2 import service_account
 import time
 import requests
 import phonenumbers
-import logging
-from logging.handlers import RotatingFileHandler
-
-# Define a global flag for demo mode
-DEMO_MODE = True  # Set to False to enable live functionality
-
-# Setup logging with rotation to manage log file sizes
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-handler = RotatingFileHandler('campaign.log', maxBytes=1000000, backupCount=5)
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+import re
 
 # Cache data fetching to improve performance
 @st.cache_data(ttl=600)
@@ -46,7 +34,6 @@ def get_owner_sheet_data():
 
         if df.empty:
             st.warning("The Google Sheet is empty. Please ensure it contains data.")
-            logger.warning("Fetched data from Google Sheet is empty.")
 
         # Data Cleaning
         for date_col in ['Sale Date', 'Maturity Date']:
@@ -62,18 +49,32 @@ def get_owner_sheet_data():
 
         if 'Campaign Type' not in df.columns:
             df['Campaign Type'] = 'Text'  # Default campaign type
+        else:
+            # Normalize 'Campaign Type' to title case and strip spaces
+            df['Campaign Type'] = df['Campaign Type'].astype(str).str.strip().str.title()
 
         return df
 
     except gspread.exceptions.SpreadsheetNotFound:
         st.error("Google Sheet not found. Please check the sheet key and permissions.")
-        logger.error("Google Sheet not found. Check the sheet key and permissions.")
         return pd.DataFrame()
 
     except Exception as e:
         st.error(f"Error accessing Google Sheet: {str(e)}")
-        logger.error(f"Google Sheet Access Error: {str(e)}")
         return pd.DataFrame()
+
+def is_valid_email(email):
+    """Enhanced email validation using regex."""
+    regex = r'^\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    return isinstance(email, str) and re.fullmatch(regex, email) is not None
+
+def is_valid_phone(phone):
+    """Enhanced phone validation using phonenumbers."""
+    try:
+        parsed_phone = phonenumbers.parse(phone, "US")
+        return phonenumbers.is_valid_number(parsed_phone)
+    except phonenumbers.NumberParseException:
+        return False
 
 def format_phone_number(phone):
     """Format phone number to E.164 format"""
@@ -87,83 +88,62 @@ def format_phone_number(phone):
 
 def send_email(recipient, subject, body):
     """
-    Mock function to simulate sending an email.
+    Function to send an email using SendGrid.
     """
-    if DEMO_MODE:
-        logger.info(f"Demo Mode: Pretended to send email to {recipient} with subject '{subject}'.")
-        return True
-    else:
-        # Live email sending logic using SendGrid
-        try:
-            import sendgrid
-            from sendgrid.helpers.mail import Mail
+    # Live email sending logic using SendGrid
+    try:
+        import sendgrid
+        from sendgrid.helpers.mail import Mail
 
-            sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid_api_key"])
-            email = Mail(
-                from_email=st.secrets["sendgrid_from_email"],
-                to_emails=recipient,
-                subject=subject,
-                plain_text_content=body
-            )
-            response = sg.send(email)
-            if response.status_code in [200, 202]:
-                logger.info(f"Email sent to {recipient}")
-                return True
-            else:
-                logger.error(f"Failed to send email to {recipient}: {response.status_code}")
-                return False
-        except Exception as e:
-            st.error(f"Error sending email to {recipient}: {str(e)}")
-            logger.error(f"SendGrid Error for {recipient}: {str(e)}")
+        sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid_api_key"])
+        email = Mail(
+            from_email=st.secrets["sendgrid_from_email"],
+            to_emails=recipient,
+            subject=subject,
+            plain_text_content=body
+        )
+        response = sg.send(email)
+        if response.status_code in [200, 202]:
+            st.success(f"Email sent to {recipient}")
+            return True
+        else:
+            st.error(f"Failed to send email to {recipient}: {response.status_code}")
             return False
+    except Exception as e:
+        st.error(f"Error sending email to {recipient}: {str(e)}")
+        return False
 
 def send_text_message(phone_number, message):
     """
-    Mock function to simulate sending a text message.
+    Function to send a text message using Twilio.
     """
-    if DEMO_MODE:
-        logger.info(f"Demo Mode: Pretended to send SMS to {phone_number} with message '{message}'.")
-        return True
-    else:
-        # Live SMS sending logic using Twilio
-        try:
-            from twilio.rest import Client
+    # Live SMS sending logic using Twilio
+    try:
+        from twilio.rest import Client
 
-            client = Client(
-                st.secrets["twilio_account_sid"],
-                st.secrets["twilio_auth_token"]
-            )
-            msg = client.messages.create(
-                body=message,
-                from_=st.secrets["twilio_phone_number"],
-                to=phone_number
-            )
-            if msg.sid:
-                logger.info(f"SMS sent to {phone_number}")
-                return True
-            else:
-                logger.error(f"Failed to send SMS to {phone_number}")
-                return False
-        except Exception as e:
-            st.error(f"Error sending SMS to {phone_number}: {str(e)}")
-            logger.error(f"Twilio Error for {phone_number}: {str(e)}")
+        client = Client(
+            st.secrets["twilio_account_sid"],
+            st.secrets["twilio_auth_token"]
+        )
+        msg = client.messages.create(
+            body=message,
+            from_=st.secrets["twilio_phone_number"],
+            to=phone_number
+        )
+        if msg.sid:
+            st.success(f"SMS sent to {phone_number}")
+            return True
+        else:
+            st.error(f"Failed to send SMS to {phone_number}")
             return False
+    except Exception as e:
+        st.error(f"Error sending SMS to {phone_number}: {str(e)}")
+        return False
 
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    # Display Demo Mode Notification
-    if DEMO_MODE:
-        st.warning("**Demo Mode Enabled:** No real emails or SMS messages will be sent.")
-    else:
-        st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
-
-    # **Display the Owner Sheets Table**
-    # Removed as per user request
-    # st.subheader("Owner Sheets Data")
-    # st.dataframe(owner_df)
-
-    # Campaign Type Selection
+    # **Campaign Type Selection**
     campaign_tabs = st.tabs(["📱 Text Message Campaign", "📧 Email Campaign"])
 
     for idx, campaign_type in enumerate(["Text", "Email"]):
@@ -233,25 +213,33 @@ def run_owner_marketing_tab(owner_df):
 
             # Filter by campaign type
             filtered_df = filtered_df[filtered_df['Campaign Type'] == campaign_type]
+            st.write(f"After Campaign Type filter: {len(filtered_df)} records")
 
             # Apply other filters
             if selected_states:
                 filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
+                st.write(f"After States filter: {len(filtered_df)} records")
 
             if selected_unit != 'All':
                 filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
+                st.write(f"After Unit Type filter: {len(filtered_df)} records")
 
             if isinstance(date_range, tuple) and len(date_range) == 2:
                 filtered_df = filtered_df[
                     (filtered_df['Sale Date'].dt.date >= date_range[0]) &
                     (filtered_df['Sale Date'].dt.date <= date_range[1])
                 ]
+                st.write(f"After Sale Date Range filter: {len(filtered_df)} records")
 
             if 'Primary FICO' in filtered_df.columns:
                 filtered_df = filtered_df[
-                    (filtered_df['Primary FICO'] >= fico_range[0]) &
-                    (filtered_df['Primary FICO'] <= fico_range[1])
+                    (
+                        (filtered_df['Primary FICO'] >= fico_range[0]) &
+                        (filtered_df['Primary FICO'] <= fico_range[1])
+                    )
+                    | filtered_df['Primary FICO'].isna()
                 ]
+                st.write(f"After FICO Score Range filter: {len(filtered_df)} records")
 
             # **Display Filtered Data as a Table**
             st.subheader("Filtered Owner Sheets Data")
@@ -259,6 +247,16 @@ def run_owner_marketing_tab(owner_df):
                 st.warning("No data matches the selected filters.")
             else:
                 st.dataframe(filtered_df)
+
+            # **Debugging Outputs**
+            # Optional: Provide a checkbox to toggle debugging info
+            show_debug = st.checkbox("Show Debugging Information", key=f'{campaign_type}_debug')
+            if show_debug:
+                st.write(f"### Debugging Information for {campaign_type} Campaign")
+                st.write(f"Total records after 'Campaign Type' filter: {len(owner_df[owner_df['Campaign Type'] == campaign_type])}")
+                st.write(f"Total records after all filters: {len(filtered_df)}")
+                st.write("### Unique Campaign Types in Data:")
+                st.write(owner_df['Campaign Type'].unique())
 
             # Display metrics
             metrics_cols = st.columns(4)
@@ -307,181 +305,4 @@ def run_owner_marketing_tab(owner_df):
                     key=f'{campaign_type}_split'
                 )
             with col2:
-                group_a_size = len(filtered_df) * ab_split // 100
-                group_b_size = len(filtered_df) * (100 - ab_split) // 100
-                st.metric("Group A Size", f"{group_a_size}")
-                st.metric("Group B Size", f"{group_b_size}")
-
-            # Message Templates
-            st.subheader("Message Templates")
-
-            if campaign_type == "Email":
-                email_templates = {
-                    "Welcome": {
-                        "subject": "Welcome to Our Premium Ownership Family",
-                        "body": "Dear {first_name},\n\nWelcome to our exclusive community..."
-                    },
-                    "Upgrade Offer": {
-                        "subject": "Exclusive Upgrade Opportunity",
-                        "body": "Dear {first_name},\n\nAs a valued member, we are excited to offer you..."
-                    },
-                    "Custom": {
-                        "subject": "",
-                        "body": ""
-                    }
-                }
-
-                template_choice = st.selectbox(
-                    "Select Email Template",
-                    list(email_templates.keys()),
-                    key='email_template'
-                )
-
-                subject = st.text_input(
-                    "Email Subject",
-                    value=email_templates[template_choice]["subject"],
-                    key='email_subject'
-                )
-
-                body = st.text_area(
-                    "Email Body",
-                    value=email_templates[template_choice]["body"],
-                    height=200,
-                    key='email_body'
-                )
-
-            else:
-                text_templates = {
-                    "Welcome": "Welcome to our premium ownership family! Reply STOP to opt out.",
-                    "Upgrade": "Exclusive upgrade opportunity available! Reply STOP to opt out.",
-                    "Custom": ""
-                }
-
-                template_choice = st.selectbox(
-                    "Select Text Template",
-                    list(text_templates.keys()),
-                    key='text_template'
-                )
-
-                message = st.text_area(
-                    "Message Text",
-                    value=text_templates[template_choice],
-                    height=100,
-                    key='sms_message'
-                )
-
-            # Preview Section
-            st.subheader("Campaign Preview")
-            preview_cols = st.columns(2)
-            with preview_cols[0]:
-                st.write("Group A Preview:")
-                if campaign_type == "Email":
-                    st.info(f"Subject: {subject}\n\n{body}")
-                else:
-                    st.info(message)
-
-            with preview_cols[1]:
-                st.write("Group B Preview:")
-                if campaign_type == "Email":
-                    st.info(f"Subject: {subject}\n\n{body}")
-                else:
-                    st.info(message)
-
-            # Campaign Execution
-            st.subheader("Campaign Execution")
-
-            if st.button(f"Launch {campaign_type} Campaign", key=f'launch_{campaign_type}'):
-                if filtered_df.empty:
-                    st.warning("No data available for the selected filters.")
-                    return
-
-                # Split the dataset for A/B testing
-                filtered_df = filtered_df.sample(frac=1).reset_index(drop=True)  # Shuffle the DataFrame
-                split_index = group_a_size
-                group_a = filtered_df.iloc[:split_index].copy()
-                group_b = filtered_df.iloc[split_index:].copy()
-
-                # Combine groups with labels
-                group_a['Group'] = 'A'
-                group_b['Group'] = 'B'
-                campaign_df = pd.concat([group_a, group_b], ignore_index=True)
-
-                # Execute campaign
-                with st.spinner(f"Sending {campaign_type} messages..."):
-                    success_count = 0
-                    fail_count = 0
-
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-
-                    total = len(campaign_df)
-                    for idx, row in campaign_df.iterrows():
-                        try:
-                            if campaign_type == "Email":
-                                recipient_email = row['Email']
-                                if pd.notna(recipient_email) and '@' in recipient_email and '.' in recipient_email.split('@')[-1]:
-                                    personalized_subject = subject.format(first_name=row['First Name'])
-                                    personalized_body = body.format(first_name=row['First Name'])
-                                    success = send_email(recipient_email, personalized_subject, personalized_body)
-                                else:
-                                    success = False
-                            else:
-                                phone = format_phone_number(row['Phone Number'])
-                                if phone:
-                                    personalized_message = message.format(first_name=row['First Name'])
-                                    success = send_text_message(phone, personalized_message)
-                                else:
-                                    success = False
-
-                            if success:
-                                success_count += 1
-                            else:
-                                fail_count += 1
-
-                            # Update progress
-                            progress = (idx + 1) / total
-                            progress_bar.progress(progress)
-                            status_text.text(
-                                f"Processing: {idx + 1}/{total} "
-                                f"({success_count} successful, {fail_count} failed)"
-                            )
-
-                            # Optional: Remove sleep in production
-                            time.sleep(0.05)
-
-                        except Exception as e:
-                            st.error(f"Error processing row {idx}: {str(e)}")
-                            logger.error(f"Error processing row {idx}: {str(e)}")
-                            fail_count += 1
-
-                    # Final summary
-                    st.success(
-                        f"Campaign completed: {success_count} successful, "
-                        f"{fail_count} failed"
-                    )
-
-                    # Save campaign results
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"{campaign_type}_campaign_{timestamp}.csv"
-                    campaign_df.to_csv(filename, index=False)
-
-                    # Offer download of results
-                    with open(filename, 'rb') as f:
-                        st.download_button(
-                            label="Download Campaign Results",
-                            data=f,
-                            file_name=filename,
-                            mime="text/csv"
-                        )
-
-def run_minimal_app():
-    st.title("Owner Marketing Dashboard")
-    owner_df = get_owner_sheet_data()
-    if not owner_df.empty:
-        run_owner_marketing_tab(owner_df)
-    else:
-        st.error("No owner data available to display.")
-
-if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    run_minimal_app()
+           
