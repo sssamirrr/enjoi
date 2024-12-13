@@ -150,7 +150,41 @@ def run_owner_marketing_tab(owner_df):
 
     # Add Select column
     filtered_df.insert(0, 'Select', False)
+    
+    # Add this right before the st.data_editor call
+    # Data type validation and conversion
+    for col in filtered_df.columns:
+        if col in ['Sale Date', 'Maturity Date']:
+            filtered_df[col] = pd.to_datetime(filtered_df[col], errors='coerce')
+        elif col in ['Primary FICO', 'Points', 'Closing Costs', 'Equity']:
+            filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce')
+        elif col in ['Phone Number', 'Email Address', 'Address', 'City', 'State', 'Zip Code', 'Account ID', 'First Name', 'Last Name', 'Unit']:
+            filtered_df[col] = filtered_df[col].astype(str)
+        elif col == 'Campaign':
+            filtered_df[col] = filtered_df[col].astype(str)
+        elif col == 'Select':
+            filtered_df[col] = filtered_df[col].astype(bool)
+    
+    # Wrap your data_editor in a try-except block
+    try:
+        edited_df = st.data_editor(
+            filtered_df,
+            column_config={
+                # Your existing column_config...
+            },
+            column_order=[
+                # Your existing column_order...
+            ],
+            hide_index=True,
+            use_container_width=True
+        )
+    except Exception as e:
+        st.error(f"Error in data editor: {str(e)}")
+        st.write("DataFrame Info:")
+        st.write(filtered_df.dtypes)
+        edited_df = filtered_df.copy()
 
+    
     # Create the editable dataframe
     edited_df = st.data_editor(
         filtered_df,
