@@ -6,7 +6,6 @@ import gspread
 from google.oauth2 import service_account
 import time
 import requests
-from email_validator import validate_email, EmailNotValidError
 import phonenumbers
 import sendgrid
 from sendgrid.helpers.mail import Mail
@@ -65,14 +64,8 @@ def get_owner_sheet_data():
         logging.error(f"Google Sheet Access Error: {str(e)}")
         return pd.DataFrame()
 
-def validate_email_address(email):
-    try:
-        valid = validate_email(email)
-        return valid.email
-    except EmailNotValidError:
-        return None
-
 def format_phone_number(phone):
+    """Format phone number to E.164 format"""
     try:
         parsed_phone = phonenumbers.parse(phone, "US")
         if phonenumbers.is_valid_number(parsed_phone):
@@ -361,8 +354,8 @@ def run_owner_marketing_tab(owner_df):
                     for idx, row in campaign_df.iterrows():
                         try:
                             if campaign_type == "Email":
-                                recipient_email = validate_email_address(row['Email'])
-                                if recipient_email:
+                                recipient_email = row['Email']  # Directly use the email without validation
+                                if pd.notna(recipient_email) and '@' in recipient_email:
                                     personalized_subject = subject.format(first_name=row['First Name'])
                                     personalized_body = body.format(first_name=row['First Name'])
                                     success = send_email(recipient_email, personalized_subject, personalized_body)
