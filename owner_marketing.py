@@ -7,6 +7,7 @@ import time
 import phonenumbers
 import logging
 from logging.handlers import RotatingFileHandler
+import pgeocode  # For geocoding ZIP codes to latitude and longitude
 
 # Define a global flag for demo mode
 DEMO_MODE = True  # Set to False to enable live functionality
@@ -157,7 +158,7 @@ def run_owner_marketing_tab(owner_df):
         st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
     # Campaign Type Selection
-    campaign_tabs = st.tabs([" Text Message Campaign", " Email Campaign"])
+    campaign_tabs = st.tabs(["�� Text Message Campaign", "�� Email Campaign"])
 
     # Now, loop over the campaign tabs
     for idx, campaign_type in enumerate(["Text", "Email"]):
@@ -165,7 +166,7 @@ def run_owner_marketing_tab(owner_df):
             st.header(f"{campaign_type} Campaign Management")
 
             # Apply filters inside the tab
-            with st.expander(" Filters", expanded=True):
+            with st.expander("�� Filters", expanded=True):
                 col1, col2, col3 = st.columns(3)
 
                 # Column 1 Filters
@@ -249,6 +250,25 @@ def run_owner_marketing_tab(owner_df):
                 st.warning("No data matches the selected filters.")
             else:
                 st.dataframe(campaign_filtered_df)
+
+            # **Add Map of Owners' Locations**
+            st.subheader("Map of Owner Locations")
+            if 'Zip Code' in campaign_filtered_df.columns:
+                # Geocode Zip Codes to Latitude and Longitude
+                nomi = pgeocode.Nominatim('us')
+                campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].astype(str)
+                geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'])
+                campaign_filtered_df['Latitude'] = geocode_df['latitude']
+                campaign_filtered_df['Longitude'] = geocode_df['longitude']
+
+                # Drop rows with missing coordinates
+                map_df = campaign_filtered_df.dropna(subset=['Latitude', 'Longitude'])
+                if not map_df.empty:
+                    st.map(map_df[['Latitude', 'Longitude']])
+                else:
+                    st.info("No valid geographic data available to display the map.")
+            else:
+                st.info("Zip Code data is not available to display the map.")
 
             # Display metrics
             metrics_cols = st.columns(4)
