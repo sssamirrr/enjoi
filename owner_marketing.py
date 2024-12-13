@@ -165,7 +165,7 @@ def run_owner_marketing_tab(owner_df):
         st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
     # Campaign Type Selection
-    campaign_tabs = st.tabs(["�� Text Message Campaign", "�� Email Campaign"])
+    campaign_tabs = st.tabs([" \U0001F4F1 Text Message Campaign", " \U0001F4E9 Email Campaign"])
 
     # Now, loop over the campaign tabs
     for idx, campaign_type in enumerate(["Text", "Email"]):
@@ -173,7 +173,7 @@ def run_owner_marketing_tab(owner_df):
             st.header(f"{campaign_type} Campaign Management")
 
             # Apply filters inside the tab
-            with st.expander("�� Filters", expanded=True):
+            with st.expander(" \u2699\ufe0f", expanded=True):
                 col1, col2, col3 = st.columns(3)
 
                 # Column 1 Filters
