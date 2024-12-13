@@ -83,7 +83,14 @@ def format_phone_number(phone):
     except phonenumbers.NumberParseException:
         pass
     return None
-
+# Add this function here
+def clean_zip_code(zip_code):
+    """Clean and validate ZIP code"""
+    if pd.isna(zip_code):
+        return None
+    zip_str = str(zip_code)
+    zip_digits = ''.join(filter(str.isdigit, zip_str))
+    return zip_digits[:5] if len(zip_digits) >= 5 else None
 def send_email(recipient, subject, body):
     """
     Mock function to simulate sending an email.
