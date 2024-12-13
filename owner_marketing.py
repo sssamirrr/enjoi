@@ -7,7 +7,8 @@ from google.oauth2 import service_account
 import time
 import requests
 import phonenumbers
-
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Toggle for Demo Mode via Sidebar
 if 'demo_mode' not in st.session_state:
@@ -440,4 +441,66 @@ def run_owner_marketing_tab(owner_df):
                                     personalized_body = body.format(first_name=row['First Name'])
                                     success = send_email(recipient_email, personalized_subject, personalized_body)
                                 else:
-                                    st.warning(f"Invalid email address for {row['First Nam
+                                    st.warning(f"Invalid email address for {row['First Name']}: {recipient_email}")
+                                    success = False
+                            else:
+                                phone = format_phone_number(row['Phone Number'])
+                                if is_valid_phone(phone):
+                                    personalized_message = message.format(first_name=row['First Name'])
+                                    success = send_text_message(phone, personalized_message)
+                                else:
+                                    st.warning(f"Invalid phone number for {row['First Name']}: {row['Phone Number']}")
+                                    success = False
+
+                            if success:
+                                success_count += 1
+                            else:
+                                fail_count += 1
+
+                            # Update progress
+                            progress = (idx + 1) / total
+                            progress_bar.progress(progress)
+                            status_text.text(
+                                f"Processing: {idx + 1}/{total} "
+                                f"({success_count} successful, {fail_count} failed)"
+                            )
+
+                            # Optional: Remove sleep in production
+                            time.sleep(0.05)
+
+                        except Exception as e:
+                            st.error(f"Error processing row {idx}: {str(e)}")
+                            logger.error(f"Error processing row {idx}: {str(e)}")
+                            fail_count += 1
+
+                    # Final summary
+                    st.success(
+                        f"Campaign completed: {success_count} successful, "
+                        f"{fail_count} failed"
+                    )
+
+                    # Save campaign results
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{campaign_type}_campaign_{timestamp}.csv"
+                    campaign_df.to_csv(filename, index=False)
+
+                    # Offer download of results
+                    with open(filename, 'rb') as f:
+                        st.download_button(
+                            label="Download Campaign Results",
+                            data=f,
+                            file_name=filename,
+                            mime="text/csv"
+                        )
+
+def run_minimal_app():
+    st.title("Owner Marketing Dashboard")
+    owner_df = get_owner_sheet_data()
+    if not owner_df.empty:
+        run_owner_marketing_tab(owner_df)
+    else:
+        st.error("No owner data available to display.")
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    run_minimal_app()
