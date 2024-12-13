@@ -144,28 +144,31 @@ def run_owner_marketing_tab(owner_df):
                             key=f'{campaign_type}_dates'
                         )
                 
+                
+                 # For the FICO score slider section
                 with col3:
                     if 'Primary FICO' in owner_df.columns:
-                        try:
-                            min_fico = int(filtered_df['Primary FICO'].min())
-                            max_fico = int(filtered_df['Primary FICO'].max())
-                            default_min = max(300, min_fico)
-                            default_max = min(850, max_fico)
+                        # Remove any NaN values and ensure numeric values
+                        valid_fico = filtered_df['Primary FICO'].dropna()
+                        
+                        if not valid_fico.empty:
+                            try:
+                                min_fico = max(300, int(valid_fico.min()))
+                                max_fico = min(850, int(valid_fico.max()))
+                            except:
+                                min_fico = 300
+                                max_fico = 850
+                        else:
+                            min_fico = 300
+                            max_fico = 850
                             
-                            fico_range = st.slider(
-                                'FICO Score Range',
-                                min_value=300,
-                                max_value=850,
-                                value=(default_min, default_max)
-                            )
-                        except:
-                            # If there's an error, use default FICO range
-                            fico_range = st.slider(
-                                'FICO Score Range',
-                                min_value=300,
-                                max_value=850,
-                                value=(500, 850)
-                            )
+                        fico_range = st.slider(
+                            'FICO Score Range',
+                            min_value=300,
+                            max_value=850,
+                            value=(min_fico, max_fico)
+                        )
+
 
             # Apply filters
             filtered_df = owner_df.copy()
