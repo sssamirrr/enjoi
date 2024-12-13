@@ -4,3 +4,6 @@ plotly
 gspread
 google-auth
 oauth2client
+phonenumbers
+sendgrid
+twilio
