@@ -146,11 +146,26 @@ def run_owner_marketing_tab(owner_df):
                 
                 with col3:
                     if 'Primary FICO' in owner_df.columns:
-                        fico_range = st.slider(
-                            'FICO Score Range',
-                            300, 850, (500, 850),
-                            key=f'{campaign_type}_fico'
-                        )
+                        try:
+                            min_fico = int(filtered_df['Primary FICO'].min())
+                            max_fico = int(filtered_df['Primary FICO'].max())
+                            default_min = max(300, min_fico)
+                            default_max = min(850, max_fico)
+                            
+                            fico_range = st.slider(
+                                'FICO Score Range',
+                                min_value=300,
+                                max_value=850,
+                                value=(default_min, default_max)
+                            )
+                        except:
+                            # If there's an error, use default FICO range
+                            fico_range = st.slider(
+                                'FICO Score Range',
+                                min_value=300,
+                                max_value=850,
+                                value=(500, 850)
+                            )
 
             # Apply filters
             filtered_df = owner_df.copy()
