@@ -27,8 +27,8 @@ def get_owner_sheet_data():
         # Create gspread client
         client = gspread.authorize(credentials)
         
-        # Open the spreadsheet
-        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
+        # Open the spreadsheet - Updated to match your secrets.toml
+        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]  # Changed to "owners_sheets"
         sheet = client.open_by_key(sheet_key)
         
         # Get the first worksheet
