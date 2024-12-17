@@ -745,20 +745,26 @@ with tab2:
 
             # Display the interactive data editor
             # Ensure 'Select' column has proper boolean values
+            # Ensure 'Select' column has proper boolean values
             if 'Select' in display_df.columns:
                 display_df['Select'] = display_df['Select'].fillna(False).astype(bool)
             
-            # Add missing columns if not already in display_df
-            required_columns = ['Communication Status', 'Last Communication Date', 'Call Duration (seconds)',
-                                'Agent Name', 'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts']
-            for col in required_columns:
-                if col not in display_df.columns:
-                    display_df[col] = None
+            # Replace None/NaN with empty strings or defaults for clean display
+            for col in ['Communication Status', 'Last Communication Date', 'Call Duration (seconds)',
+                        'Agent Name', 'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts']:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].fillna('None')
+            
+            # Drop any rows where 'Guest Name' is empty or None
+            display_df = display_df[display_df['Guest Name'].notna()]
+            
+            # Reset index for clean display
+            display_df.reset_index(drop=True, inplace=True)
             
             # Store updated DataFrame in session state
             st.session_state['updated_df'] = display_df
             
-            # Display the interactive data editor
+            # Display the cleaned interactive data editor
             edited_df = st.data_editor(
                 st.session_state['updated_df'],
                 column_config={
@@ -780,8 +786,7 @@ with tab2:
                     "Call Attempts": st.column_config.NumberColumn("Call Attempts", format="%d", disabled=True)
                 },
                 hide_index=True,
-                use_container_width=True,
-                key=f"guest_editor_{selected_resort}"
+                use_container_width=True
             )
 
             # Ensure 'Select' column contains valid boolean values
