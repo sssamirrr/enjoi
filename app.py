@@ -316,6 +316,7 @@ def fetch_communication_info(guest_df, headers):
             missed_calls_list.append(0)
             call_attempts_list.append(0)
 
+    # Return the collected data
     return (
         statuses, dates, durations, agent_names,
         total_messages_list, total_calls_list,
