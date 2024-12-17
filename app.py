@@ -774,32 +774,7 @@ with tab2:
             # Apply cleaning to display_df
             display_df = clean_dataframe(display_df)
             
-            # Display cleaned DataFrame in st.data_editor
-            edited_df = st.data_editor(
-                display_df,
-                column_config={
-                    "Select": st.column_config.CheckboxColumn("Select"),
-                    "Guest Name": st.column_config.TextColumn("Guest Name"),
-                    "Check In": st.column_config.DateColumn("Check In"),
-                    "Check Out": st.column_config.DateColumn("Check Out"),
-                    "Phone Number": st.column_config.TextColumn("Phone Number"),
-                    "Rate Code": st.column_config.TextColumn("Rate Code"),
-                    "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
-                    "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
-                    "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
-                    "Call Duration (seconds)": st.column_config.NumberColumn("Call Duration (seconds)", format="%d", disabled=True),
-                    "Agent Name": st.column_config.TextColumn("Agent Name", disabled=True),
-                    "Total Messages": st.column_config.NumberColumn("Total Messages", format="%d", disabled=True),
-                    "Total Calls": st.column_config.NumberColumn("Total Calls", format="%d", disabled=True),
-                    "Answered Calls": st.column_config.NumberColumn("Answered Calls", format="%d", disabled=True),
-                    "Missed Calls": st.column_config.NumberColumn("Missed Calls", format="%d", disabled=True),
-                    "Call Attempts": st.column_config.NumberColumn("Call Attempts", format="%d", disabled=True)
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-
-            
+                      
             # Drop rows where Guest Name is missing
             display_df = display_df[display_df['Guest Name'].notna()].reset_index(drop=True)
             
