@@ -19,6 +19,10 @@ def init_session_state():
         st.session_state['default_dates'] = {}
     if 'communication_data' not in st.session_state:
         st.session_state['communication_data'] = {}
+    if "reset_trigger" not in st.session_state:
+        st.session_state["reset_trigger"] = False
+    if "updated_df" not in st.session_state:
+        st.session_state["updated_df"] = None
 
 # Call the initialization function
 init_session_state()
