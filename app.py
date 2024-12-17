@@ -748,19 +748,57 @@ with tab2:
             ]
 
             # Display the interactive data editor
-            # Ensure 'Select' column has proper boolean values
-           # Ensure 'Select' column has proper boolean values
-            if 'Select' in display_df.columns:
-                display_df['Select'] = display_df['Select'].fillna(False).astype(bool)
+            # Ensure 'Select' column has proper boolean values           
+            # Clean DataFrame before passing to st.data_editor
+            def clean_dataframe(df):
+                """
+                Cleans the DataFrame by replacing missing values and enforcing consistent data types.
+                """
+                # Replace None/NaN in text columns with 'N/A'
+                for col in df.select_dtypes(include='object').columns:
+                    df[col] = df[col].fillna("N/A").astype(str)
             
-            # Replace missing values with display-friendly defaults
-            for col in display_df.columns:
-                if display_df[col].dtype == 'object':  # For text columns
-                    display_df[col] = display_df[col].fillna("N/A")
-                elif pd.api.types.is_numeric_dtype(display_df[col]):  # For numeric columns
-                    display_df[col] = display_df[col].fillna(0)
-                elif pd.api.types.is_datetime64_any_dtype(display_df[col]):  # For date columns
-                    display_df[col] = display_df[col].fillna(pd.Timestamp("1970-01-01"))
+                # Replace None/NaN in numeric columns with 0
+                for col in df.select_dtypes(include='number').columns:
+                    df[col] = df[col].fillna(0).astype(int)
+            
+                # Replace None/NaN in date columns with a placeholder date
+                for col in df.select_dtypes(include='datetime').columns:
+                    df[col] = df[col].fillna(pd.Timestamp("1970-01-01"))
+            
+                # Ensure 'Select' column is boolean
+                if 'Select' in df.columns:
+                    df['Select'] = df['Select'].fillna(False).astype(bool)
+                return df
+            
+            # Apply cleaning to display_df
+            display_df = clean_dataframe(display_df)
+            
+            # Display cleaned DataFrame in st.data_editor
+            edited_df = st.data_editor(
+                display_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select"),
+                    "Guest Name": st.column_config.TextColumn("Guest Name"),
+                    "Check In": st.column_config.DateColumn("Check In"),
+                    "Check Out": st.column_config.DateColumn("Check Out"),
+                    "Phone Number": st.column_config.TextColumn("Phone Number"),
+                    "Rate Code": st.column_config.TextColumn("Rate Code"),
+                    "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                    "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
+                    "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
+                    "Call Duration (seconds)": st.column_config.NumberColumn("Call Duration (seconds)", format="%d", disabled=True),
+                    "Agent Name": st.column_config.TextColumn("Agent Name", disabled=True),
+                    "Total Messages": st.column_config.NumberColumn("Total Messages", format="%d", disabled=True),
+                    "Total Calls": st.column_config.NumberColumn("Total Calls", format="%d", disabled=True),
+                    "Answered Calls": st.column_config.NumberColumn("Answered Calls", format="%d", disabled=True),
+                    "Missed Calls": st.column_config.NumberColumn("Missed Calls", format="%d", disabled=True),
+                    "Call Attempts": st.column_config.NumberColumn("Call Attempts", format="%d", disabled=True)
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+
             
             # Drop rows where Guest Name is missing
             display_df = display_df[display_df['Guest Name'].notna()].reset_index(drop=True)
