@@ -744,10 +744,15 @@ with tab2:
             ]
 
             # Display the interactive data editor
+            # Display the interactive data editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
-                    "Select": st.column_config.CheckboxColumn("Select", help="Select or deselect this guest"),
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select or deselect this guest",
+                        default=False  # Ensure default value is False
+                    ),
                     "Guest Name": st.column_config.TextColumn("Guest Name"),
                     "Check In": st.column_config.DateColumn("Check In"),
                     "Check Out": st.column_config.DateColumn("Check Out"),
@@ -768,6 +773,20 @@ with tab2:
                 use_container_width=True,
                 key=f"guest_editor_{selected_resort}"
             )
+            
+            # Ensure 'Select' column contains valid boolean values
+            if 'Select' in edited_df.columns:
+                # Map string representations to booleans
+                edited_df['Select'] = edited_df['Select'].map({True: True, False: False, 'True': True, 'False': False})
+                # Fill any NaN values with False
+                edited_df['Select'] = edited_df['Select'].fillna(False)
+                # Ensure the 'Select' column is of boolean data type
+                edited_df['Select'] = edited_df['Select'].astype(bool)
+                # Now select the guests safely
+                selected_guests = edited_df[edited_df['Select']]
+            else:
+                st.error("The 'Select' column is missing from the edited data.")
+
 
         else:
             st.warning("No data available for the selected filters.")
