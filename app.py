@@ -868,6 +868,7 @@ with tab2:
 if selected_rate_codes and 'Rate Code Name' in filtered_df.columns:
     filtered_df = filtered_df[filtered_df['Rate Code Name'].isin(selected_rate_codes)]
 
+
     with st.container():
         # Reset Filters Button
         if st.button("Reset Filters"):
