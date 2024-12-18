@@ -657,13 +657,25 @@ with tab2:
 
         if not display_df.empty:
             # Prepare display DataFrame
-            display_df = display_df.rename(columns={
-                'Name': 'Guest Name',
-                'Arrival Date Short': 'Check In',
-                'Departure Date Short': 'Check Out',
-                'Rate Code Name': 'Rate Code',
-                'Total Price': 'Price'
-            })
+            # Debugging: Log the available columns in the DataFrame
+            st.write("Available columns in display_df:", display_df.columns.tolist())
+            
+            # Reorder columns to include new fields
+            try:
+                display_df = display_df[
+                    [
+                        'Select', 'Guest Name', 'Check In', 'Check Out',
+                        'Phone Number', 'Rate Code', 'Price',
+                        'Communication Status', 'Last Communication Date',
+                        'Call Duration (seconds)', 'Agent Name',
+                        'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+                        'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
+                    ]
+                ]
+            except KeyError as e:
+                st.error(f"Missing columns in display_df: {str(e)}")
+                st.stop()
+
 
             # Ensure required columns are present
             required_columns = [
@@ -770,21 +782,21 @@ with tab2:
                     display_df['Phone Calls Under 40 Seconds'] = short_calls_count
             
                     # Update session state scoped to the selected resort
-                    st.session_state['communication_data'][selected_resort] = {
-                        phone: {
-                            'status': status,
-                            'date': date,
-                            'duration': duration,
-                            'agent': agent,
-                            'total_messages': total_msgs,
-                            'total_calls': total_cls,
-                            'answered_calls': answered_cls,
-                            'missed_calls': missed_cls,
-                            'call_attempts': call_atpts,
-                            'how_many_times_called': calls,
-                            'how_many_texts_after_checkin': texts_after_checkin,
-                            'phone_calls_under_40_sec': short_calls
-                        }
+                    st.session_state['communication_data'][selected_resort][phone] = {
+                        'status': status if status else 'No Status',
+                        'date': date if date else None,
+                        'duration': duration if duration else 0,
+                        'agent': agent if agent else 'Unknown',
+                        'total_messages': total_msgs if total_msgs is not None else 0,
+                        'total_calls': total_cls if total_cls is not None else 0,
+                        'answered_calls': answered_cls if answered_cls is not None else 0,
+                        'missed_calls': missed_cls if missed_cls is not None else 0,
+                        'call_attempts': call_atpts if call_atpts is not None else 0,
+                        'how_many_times_called': calls if calls is not None else 0,
+                        'how_many_texts_after_checkin': texts_after_checkin if texts_after_checkin is not None else 0,
+                        'phone_calls_under_40_sec': short_calls if short_calls is not None else 0
+                    }
+
                         for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, calls, texts_after_checkin, short_calls
                         in zip(
                             display_df['Phone Number'], statuses, dates, durations, agent_names,
@@ -796,16 +808,29 @@ with tab2:
                     st.success("Communication information successfully fetched and updated.")
             
             # Reorder columns to include new fields
-            display_df = display_df[
-                [
-                    'Select', 'Guest Name', 'Check In', 'Check Out',
-                    'Phone Number', 'Rate Code', 'Price',
-                    'Communication Status', 'Last Communication Date',
-                    'Call Duration (seconds)', 'Agent Name',
-                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
-                    'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
-                ]
+            # Prepare display DataFrame
+            display_df = display_df.rename(columns={
+                'Name': 'Guest Name',
+                'Arrival Date Short': 'Check In',
+                'Departure Date Short': 'Check Out',
+                'Rate Code Name': 'Rate Code',
+                'Total Price': 'Price'
+            })
+            
+            # Ensure required columns are present
+            required_columns = [
+                'Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
+                'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
+                'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+                'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
             ]
+            for col in required_columns:
+                if col not in display_df.columns:
+                    display_df[col] = None  # Add missing column with default value
+            
+            # Reorder columns
+            display_df = display_df[required_columns]
+
             
             # Add new columns to the interactive data editor
             edited_df = st.data_editor(
