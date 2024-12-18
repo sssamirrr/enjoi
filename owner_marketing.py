@@ -7,8 +7,8 @@ import time
 import phonenumbers
 import logging
 from logging.handlers import RotatingFileHandler
-import pgeocode  # For geocoding ZIP codes to latitude and longitude
-import requests  # For OpenPhone API integration
+import pgeocode
+import requests
 
 # Define a global flag for demo mode
 DEMO_MODE = True  # Set to False to enable live functionality
@@ -22,13 +22,15 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 # Cache data fetching to improve performance
-@st.cache_data(ttl=600)
 def get_owner_sheet_data():
     """
     Fetch owner data from Google Sheets.
     Returns a pandas DataFrame containing owner information.
     """
     try:
+        # Log the start of the process
+        logger.info("Attempting to fetch data from Google Sheets...")
+
         credentials = service_account.Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=[
@@ -42,11 +44,14 @@ def get_owner_sheet_data():
         sheet = client.open_by_key(sheet_key)
         worksheet = sheet.get_worksheet(0)
         data = worksheet.get_all_records()
-        df = pd.DataFrame(data)
 
-        if df.empty:
+        if not data:
+            logger.warning("Google Sheet is empty.")
             st.warning("The Google Sheet is empty. Please ensure it contains data.")
-            logger.warning("Fetched data from Google Sheet is empty.")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+        logger.info(f"Successfully fetched {len(df)} rows from Google Sheets.")
 
         # Data Cleaning
         for date_col in ['Sale Date', 'Maturity Date']:
@@ -65,6 +70,7 @@ def get_owner_sheet_data():
         df['Last Communication Date'] = ""
         df['Total Calls'] = 0
         df['Total Messages'] = 0
+        df['Select'] = False
 
         return df
 
@@ -92,7 +98,9 @@ def fetch_openphone_data(phone_number):
     params = {"participants": [phone_number], "maxResults": 50}
 
     try:
+        logger.info(f"Fetching OpenPhone data for {phone_number}...")
         response = requests.get(url, headers=headers, params=params)
+
         if response.status_code == 200:
             data = response.json().get('data', [])
             total_calls = len([d for d in data if d.get("type") == "call"])
@@ -115,7 +123,7 @@ def fetch_openphone_data(phone_number):
                 "Total Messages": 0
             }
     except Exception as e:
-        logger.error(f"Error fetching OpenPhone data: {str(e)}")
+        logger.error(f"Error fetching OpenPhone data for {phone_number}: {str(e)}")
         return {
             "Last Communication Status": "Error",
             "Last Communication Date": None,
@@ -141,13 +149,14 @@ def update_communication_info(df, selected_rows):
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    # Allow users to select rows for communication updates
-    owner_df["Select"] = False
-    edited_df = st.experimental_data_editor(owner_df)
+    # Interactive table for editing
+    st.subheader("Owner Data")
+    for i in range(len(owner_df)):
+        owner_df.at[i, 'Select'] = st.checkbox(f"Select Row {i+1}", key=f"row_{i}")
 
     # Button to update communication info
     if st.button("Update Communication Info"):
-        selected_rows = edited_df.index[edited_df["Select"]].tolist()
+        selected_rows = [i for i in range(len(owner_df)) if owner_df.at[i, 'Select']]
         if not selected_rows:
             st.warning("No rows selected. Please select rows to update.")
         else:
