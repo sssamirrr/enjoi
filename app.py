@@ -1,6 +1,5 @@
 import streamlit as st
-# This must be the first Streamlit command
-st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
+
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
