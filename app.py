@@ -389,9 +389,22 @@ with tab1:
         )
 
     with col3:
+        # New code
+        if 'Rate Code Name' not in df.columns:
+            st.error("The 'Rate Code Name' column is missing.")
+            st.stop()
+        elif df['Rate Code Name'].isnull().all():
+            st.warning("The 'Rate Code Name' column has no valid data.")
+            options = []
+        else:
+            # Convert to strings and handle nulls
+            df['Rate Code Name'] = df['Rate Code Name'].astype(str)
+            df['Rate Code Name'] = df['Rate Code Name'].replace('nan', None).fillna('Unknown')
+            options = sorted(df['Rate Code Name'].unique())
+        
         selected_rate_codes = st.multiselect(
             "Select Rate Codes",
-            options=sorted(df['Rate Code Name'].unique()),
+            options=options,
             default=[]
         )
 
