@@ -864,9 +864,12 @@ with tab2:
             key=f'rate_code_filter_{selected_resort}'
         )
         
-        # Apply Rate Code filter
+        # Update the filtering logic
         if selected_rate_codes and 'Rate Code Name' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Rate Code Name'].isin(selected_rate_codes)]
+
+        
+        
 
 
 
