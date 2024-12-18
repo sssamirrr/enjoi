@@ -19,10 +19,6 @@ def init_session_state():
         st.session_state['default_dates'] = {}
     if 'communication_data' not in st.session_state:
         st.session_state['communication_data'] = {}
-    if "reset_trigger" not in st.session_state:
-        st.session_state["reset_trigger"] = False
-    if "updated_df" not in st.session_state:
-        st.session_state["updated_df"] = None
 
 # Call the initialization function
 init_session_state()
@@ -749,25 +745,22 @@ with tab2:
 
             # Display the interactive data editor
             # Ensure 'Select' column has proper boolean values
-           # Ensure 'Select' column has proper boolean values
             if 'Select' in display_df.columns:
                 display_df['Select'] = display_df['Select'].fillna(False).astype(bool)
             
-            # Replace missing values with display-friendly defaults
-            for col in display_df.columns:
-                if display_df[col].dtype == 'object':  # For text columns
-                    display_df[col] = display_df[col].fillna("N/A")
-                elif pd.api.types.is_numeric_dtype(display_df[col]):  # For numeric columns
-                    display_df[col] = display_df[col].fillna(0)
-                elif pd.api.types.is_datetime64_any_dtype(display_df[col]):  # For date columns
-                    display_df[col] = display_df[col].fillna(pd.Timestamp("1970-01-01"))
+            # Add missing columns if not already in display_df
+            required_columns = ['Communication Status', 'Last Communication Date', 'Call Duration (seconds)',
+                                'Agent Name', 'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts']
+            for col in required_columns:
+                if col not in display_df.columns:
+                    display_df[col] = None
             
-            # Drop rows where Guest Name is missing
-            display_df = display_df[display_df['Guest Name'].notna()].reset_index(drop=True)
+            # Store updated DataFrame in session state
+            st.session_state['updated_df'] = display_df
             
-            # Display cleaned data in the interactive data editor
+            # Display the interactive data editor
             edited_df = st.data_editor(
-                display_df,
+                st.session_state['updated_df'],
                 column_config={
                     "Select": st.column_config.CheckboxColumn("Select"),
                     "Guest Name": st.column_config.TextColumn("Guest Name"),
@@ -787,9 +780,9 @@ with tab2:
                     "Call Attempts": st.column_config.NumberColumn("Call Attempts", format="%d", disabled=True)
                 },
                 hide_index=True,
-                use_container_width=True
+                use_container_width=True,
+                key=f"guest_editor_{selected_resort}"
             )
-
 
             # Ensure 'Select' column contains valid boolean values
             if 'Select' in edited_df.columns:
