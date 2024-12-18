@@ -4,7 +4,7 @@ import streamlit as st  # Import Streamlit first
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
 # Now import other modules
-import openphone  # Ensure this does not execute any Streamlit commands
+from openphone import init_session_state, get_google_sheet_data
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
