@@ -822,6 +822,7 @@ with tab2:
                             'phone_calls_under_40_sec': short_calls if short_calls is not None else 0
                         })
 
+
             
                     st.success("Communication information successfully fetched and updated.")
             
