@@ -763,80 +763,81 @@ with tab2:
 
             # **Fetch Communication Info Button**
             # Fetch Communication Info Button
-            # Inside the Fetch Communication Info button handler:
-               if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
-                    headers = {
-                        "Authorization": OPENPHONE_API_KEY,
-                        "Content-Type": "application/json"
-                    }
-                
-                    with st.spinner('Fetching communication information...'):
-                        (
-                            statuses, dates, durations, agent_names,
-                            total_messages_list, total_calls_list,
-                            answered_calls_list, missed_calls_list, call_attempts_list
-                        ) = fetch_communication_info(display_df, headers)
-                
-                        # Initialize lists for new column data
-                        calls_before_checkin_list = []
-                        texts_before_checkin_list = []
-                        calls_after_checkin_list = []
-                        texts_after_checkin_list = []
-                        short_calls_list = []
-                        total_calls_list = []
-                
-                        # Process each guest's communication data
-                        for idx, row in display_df.iterrows():
-                            # Communication logic (skipped here for brevity)
-                            ...
-                            # Append results
-                            calls_before_checkin_list.append(calls_before_checkin)
-                            texts_before_checkin_list.append(texts_before_checkin)
-                            calls_after_checkin_list.append(calls_after_checkin)
-                            texts_after_checkin_list.append(texts_after_checkin)
-                            short_calls_list.append(short_calls)
-                            total_calls_list.append(total_calls)
-                
-                        # Verify and update the DataFrame
-                        if all(len(lst) == len(display_df) for lst in [calls_before_checkin_list, texts_before_checkin_list, calls_after_checkin_list, texts_after_checkin_list, short_calls_list, total_calls_list]):
-                            display_df['Calls Before Check-In'] = calls_before_checkin_list
-                            display_df['Texts Before Check-In'] = texts_before_checkin_list
-                            display_df['Calls On/After Check-In'] = calls_after_checkin_list
-                            display_df['Texts On/After Check-In'] = texts_after_checkin_list
-                            display_df['Phone Calls Under 40 Seconds'] = short_calls_list
-                            display_df['How Many Times Called'] = total_calls_list
-                
-                            # Add the updated Data Editor
-                            st.subheader("Updated Communication Metrics")
-                            edited_df = st.data_editor(
-                                display_df,
-                                use_container_width=True,
-                                hide_index=True,
-                                column_config={
-                                    "Calls Before Check-In": st.column_config.NumberColumn(
-                                        "Calls Before Check-In", format="%d"
-                                    ),
-                                    "Texts Before Check-In": st.column_config.NumberColumn(
-                                        "Texts Before Check-In", format="%d"
-                                    ),
-                                    "Calls On/After Check-In": st.column_config.NumberColumn(
-                                        "Calls On/After Check-In", format="%d"
-                                    ),
-                                    "Texts On/After Check-In": st.column_config.NumberColumn(
-                                        "Texts On/After Check-In", format="%d"
-                                    ),
-                                    "Phone Calls Under 40 Seconds": st.column_config.NumberColumn(
-                                        "Phone Calls Under 40 Seconds", format="%d"
-                                    ),
-                                    "How Many Times Called": st.column_config.NumberColumn(
-                                        "How Many Times Called", format="%d"
-                                    ),
-                                },
-                            )
-                
-                            st.success("Communication information successfully fetched and updated.")
-                        else:
-                            st.error("Data length mismatch. Please try again.")
+                     # **Fetch Communication Info Button**
+             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
+                 headers = {
+                     "Authorization": OPENPHONE_API_KEY,
+                     "Content-Type": "application/json"
+                 }
+    
+                 with st.spinner('Fetching communication information...'):
+                     (
+                         statuses, dates, durations, agent_names,
+                         total_messages_list, total_calls_list,
+                         answered_calls_list, missed_calls_list, call_attempts_list
+                     ) = fetch_communication_info(display_df, headers)
+    
+                     # Initialize lists for new column data
+                     calls_before_checkin_list = []
+                     texts_before_checkin_list = []
+                     calls_after_checkin_list = []
+                     texts_after_checkin_list = []
+                     short_calls_list = []
+                     total_calls_list = []
+    
+                     # Process each guest's communication data
+                     for idx, row in display_df.iterrows():
+                         # Communication logic (skipped here for brevity)
+                         ...
+                         # Append results
+                         calls_before_checkin_list.append(calls_before_checkin)
+                         texts_before_checkin_list.append(texts_before_checkin)
+                         calls_after_checkin_list.append(calls_after_checkin)
+                         texts_after_checkin_list.append(texts_after_checkin)
+                         short_calls_list.append(short_calls)
+                         total_calls_list.append(total_calls)
+    
+                     # Verify and update the DataFrame
+                     if all(len(lst) == len(display_df) for lst in [calls_before_checkin_list, texts_before_checkin_list, calls_after_checkin_list, texts_after_checkin_list, short_calls_list, total_calls_list]):
+                         display_df['Calls Before Check-In'] = calls_before_checkin_list
+                         display_df['Texts Before Check-In'] = texts_before_checkin_list
+                         display_df['Calls On/After Check-In'] = calls_after_checkin_list
+                         display_df['Texts On/After Check-In'] = texts_after_checkin_list
+                         display_df['Phone Calls Under 40 Seconds'] = short_calls_list
+                         display_df['How Many Times Called'] = total_calls_list
+    
+                         # Add the updated Data Editor
+                         st.subheader("Updated Communication Metrics")
+                         edited_df = st.data_editor(
+                             display_df,
+                             use_container_width=True,
+                             hide_index=True,
+                             column_config={
+                                 "Calls Before Check-In": st.column_config.NumberColumn(
+                                     "Calls Before Check-In", format="%d"
+                                 ),
+                                 "Texts Before Check-In": st.column_config.NumberColumn(
+                                     "Texts Before Check-In", format="%d"
+                                 ),
+                                 "Calls On/After Check-In": st.column_config.NumberColumn(
+                                     "Calls On/After Check-In", format="%d"
+                                 ),
+                                 "Texts On/After Check-In": st.column_config.NumberColumn(
+                                     "Texts On/After Check-In", format="%d"
+                                 ),
+                                 "Phone Calls Under 40 Seconds": st.column_config.NumberColumn(
+                                     "Phone Calls Under 40 Seconds", format="%d"
+                                 ),
+                                 "How Many Times Called": st.column_config.NumberColumn(
+                                     "How Many Times Called", format="%d"
+                                 ),
+                             },
+                         )
+    
+                         st.success("Communication information successfully fetched and updated.")
+                     else:
+                         st.error("Data length mismatch. Please try again.")
+
 
 
             
