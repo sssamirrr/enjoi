@@ -1,10 +1,4 @@
-import streamlit as st  # Import Streamlit first
-
-# Set the page configuration as the first command
-st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
-
-# Now import other modules
-import openphone 
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
@@ -13,7 +7,7 @@ from google.oauth2 import service_account
 import math
 import requests
 import time
-import owner_marketing  # Ensure this module is also free of Streamlit commands
+import owner_marketing  # Ensure owner_marketing.py is in the same directory or adjust the path accordingly
 
 
 
@@ -30,6 +24,8 @@ def init_session_state():
 init_session_state()
 
 
+# Set page configuration
+st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
 # Add CSS for optional styling (can be customized or removed)
 st.markdown("""
@@ -779,7 +775,7 @@ def get_communication_info(phone_number, headers, arrival_date):
 
 # Main Tab2 Content
 with tab2:
-    st.title("�� Marketing Information by Resort")
+    st.title("   Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -855,23 +851,12 @@ with tab2:
             total_price_range = (0, 0)  # Default range if no valid data
 
         # Dropdown for Rate Code
-        # Multiselect for Rate Code
         rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
-        selected_rate_codes = st.multiselect(
-            "Select Rate Code(s)",
-            options=rate_code_options,
-            default=rate_code_options,  # Default to all options selected
+        selected_rate_code = st.selectbox(
+            "Select Rate Code",
+            options=["All"] + rate_code_options,
             key=f'rate_code_filter_{selected_resort}'
         )
-        
-        # Update the filtering logic
-        if selected_rate_codes and 'Rate Code Name' in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df['Rate Code Name'].isin(selected_rate_codes)]
-
-        
-        
-
-
 
     with st.container():
         # Reset Filters Button
@@ -1377,11 +1362,59 @@ with tab5:
     with col3:
         st.metric("Recovery Rate", "---")
 with tab6:
-    try:
-        from openphone import run_openphone_tab
-        run_openphone_tab()
-    except Exception as e:
-        st.error(f"Error in OpenPhone tab: {str(e)}")
+    st.header("OpenPhone Stats")
+    # Add OpenPhone Stats content
+    
+    # Date filter
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Start Date")
+    with col2:
+        end_date = st.date_input("End Date")
+        
+    # Overview metrics
+    st.subheader("Call Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Calls", "---")
+    with col2:
+        st.metric("Answered Calls", "---")
+    with col3:
+        st.metric("Missed Calls", "---")
+    with col4:
+        st.metric("Answer Rate", "---%")
+        
+    # Detailed statistics
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Call Volume by Hour")
+        # Placeholder for hourly call volume chart
+        st.info("Hourly call volume chart coming soon...")
+        
+    with col2:
+        st.subheader("Call Volume by Day")
+        # Placeholder for daily call volume chart
+        st.info("Daily call volume chart coming soon...")
+        
+    # Call details table
+    st.subheader("Recent Calls")
+    call_data = {
+        "Date": [],
+        "Time": [],
+        "Phone Number": [],
+        "Duration": [],
+        "Status": [],
+        "Agent": []
+    }
+    st.dataframe(call_data)
+    
+    # Download section
+    st.download_button(
+        label="Download Call Data",
+        data="",  # Add your CSV data here
+        file_name="openphone_stats.csv",
+        mime="text/csv",
+    )
 ############################################
 # Raw Data Viewer
 ############################################
