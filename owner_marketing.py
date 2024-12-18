@@ -166,4 +166,26 @@ def run_owner_marketing_tab(owner_df):
     if campaign_type == "Text":
         message_template = st.text_area("Text Message", "Welcome to our premium ownership program!")
     else:
-        subject = st.text_input("Email Sub
+        subject = st.text_input("Email Subject", "Welcome to Our Program")
+        email_body = st.text_area("Email Body", "Dear Customer,\n\nWelcome to our program!")
+
+    if st.button("Send Campaign"):
+        for idx in selected_rows:
+            if campaign_type == "Text":
+                phone = filtered_df.at[idx, "Phone Number"]
+                st.write(f"Sending text to {phone}: {message_template}")
+            else:
+                email = filtered_df.at[idx, "Email"]
+                st.write(f"Sending email to {email}: {subject} - {email_body}")
+        st.success("Campaign sent successfully!")
+
+def run_minimal_app():
+    owner_df = get_owner_sheet_data()
+    if not owner_df.empty:
+        run_owner_marketing_tab(owner_df)
+    else:
+        st.error("No owner data available to display.")
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    run_minimal_app()
