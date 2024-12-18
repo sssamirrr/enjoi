@@ -49,6 +49,9 @@ def get_owner_sheet_data():
             st.warning("The Google Sheet is empty. Please ensure it contains data.")
             logger.warning("Fetched data from Google Sheet is empty.")
 
+        # Trim whitespace from column names
+        df.columns = df.columns.str.strip()
+
         # Data Cleaning
         for date_col in ['Sale Date', 'Maturity Date']:
             if date_col in df.columns:
@@ -61,11 +64,12 @@ def get_owner_sheet_data():
         if 'Phone Number' in df.columns:
             df['Phone Number'] = df['Phone Number'].astype(str)
 
-        if 'Campaign Type' not in df.columns:
-            df['Campaign Type'] = 'Text'  # Default campaign type
+        if 'Campaign' not in df.columns:
+            df['Campaign'] = 'Text'  # Default campaign type
 
         # Display DataFrame columns for debugging
         st.write("**DataFrame Columns:**", df.columns.tolist())
+        st.write("**Sample Data:**", df.head())
 
         return df
 
@@ -268,10 +272,12 @@ def run_owner_marketing_tab(owner_df):
                 # Display DataFrame columns for debugging
                 st.write("**DataFrame Columns:**", display_df.columns.tolist())
 
-                # Check if 'Email Address' column exists
-                if 'Email Address' not in display_df.columns:
-                    st.error("The DataFrame does not contain an 'Email Address' column. Please ensure your Google Sheet includes it.")
-                    logger.error("Missing 'Email Address' column in the DataFrame.")
+                # Check if 'Email Address' and 'Phone Number' columns exist
+                required_columns = ['Email Address', 'Phone Number']
+                missing_columns = [col for col in required_columns if col not in display_df.columns]
+                if missing_columns:
+                    st.error(f"The DataFrame is missing the following required columns: {', '.join(missing_columns)}")
+                    logger.error(f"Missing columns: {missing_columns}")
                     st.stop()
 
                 # Create table headers
