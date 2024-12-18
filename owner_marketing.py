@@ -60,16 +60,26 @@ def fetch_openphone_data(phone_number):
     except:
         return {"Last Communication Date": "Error", "Total Calls": 0, "Total Messages": 0}
 
-# Display Map
+# Display Map with Error Handling
 def display_map(df):
+    if 'Zip Code' not in df.columns or df['Zip Code'].dropna().empty:
+        st.warning("No ZIP Code data available to display the map.")
+        return
+    
     nomi = pgeocode.Nominatim('us')
     valid_zips = df['Zip Code'].dropna().unique()
-    zip_data = nomi.query_postal_code(valid_zips)
-    map_data = pd.DataFrame({'lat': zip_data['latitude'], 'lon': zip_data['longitude']}).dropna()
-    if not map_data.empty:
-        st.map(map_data)
-    else:
-        st.warning("No valid ZIP codes for visualization.")
+    try:
+        zip_data = nomi.query_postal_code(valid_zips)
+        if not zip_data.empty:
+            map_data = pd.DataFrame({'lat': zip_data['latitude'], 'lon': zip_data['longitude']}).dropna()
+            if not map_data.empty:
+                st.map(map_data)
+            else:
+                st.warning("No valid coordinates for mapping.")
+        else:
+            st.warning("No valid ZIP codes found.")
+    except Exception as e:
+        st.error(f"Error generating map: {e}")
 
 # Main App Function
 def run_owner_marketing_tab(owner_df):
