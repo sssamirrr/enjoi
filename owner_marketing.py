@@ -79,13 +79,11 @@ def fetch_openphone_data(phone_number):
     """
     Fetch communication data (calls and messages) for a given phone number from OpenPhone.
     """
-    OPENPHONE_API_KEY = st.secrets["openphone_api_key"]
-    headers = {
-        "Authorization": f"Bearer {OPENPHONE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    url = "https://api.openphone.co/v1/calls"
-    params = {"participants": [phone_number], "maxResults": 50}
+    # Replace with your actual OpenPhone API key and number
+    OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+    OPENPHONE_NUMBER = "+18438972426"
+        url = "https://api.openphone.co/v1/calls"
+        params = {"participants": [phone_number], "maxResults": 50}
 
     try:
         logger.info(f"Fetching OpenPhone data for {phone_number}...")
