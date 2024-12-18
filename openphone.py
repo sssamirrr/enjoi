@@ -4,8 +4,8 @@ import plotly.express as px
 from datetime import datetime
 
 def run_openphone_tab():
-    st.header("OpenPhone Operations Dashboard")
-    
+    st.header("Enhanced OpenPhone Operations Dashboard")
+
     # File uploader
     uploaded_file = st.file_uploader("Upload OpenPhone CSV File", type=["csv"])
     if not uploaded_file:
@@ -43,85 +43,62 @@ def run_openphone_tab():
     calls = filtered_data[filtered_data['type'] == 'call']
     messages = filtered_data[filtered_data['type'] == 'message']
 
-    # Response Rate Slider
-    st.subheader("Filter by Call Duration")
-    min_duration = int(calls['duration'].min()) if 'duration' in calls.columns and not calls['duration'].isnull().all() else 0
-    max_duration = int(calls['duration'].max()) if 'duration' in calls.columns and not calls['duration'].isnull().all() else 60
+    # Call and Message Conversion
+    bookings = filtered_data[filtered_data['status'] == 'booked']
+    total_bookings = len(bookings)
+    call_conversion_rate = (len(calls[calls['status'] == 'booked']) / len(calls) * 100) if len(calls) > 0 else 0
+    message_conversion_rate = (len(messages[messages['status'] == 'booked']) / len(messages) * 100) if len(messages) > 0 else 0
 
-    selected_duration = st.slider(
-        "Minimum Call Duration (seconds) for Valid Response",
-        min_value=min_duration,
-        max_value=max_duration,
-        value=min_duration,
-        step=1
-    )
-
-    # Filter calls based on the selected duration
-    if 'duration' in calls.columns:
-        filtered_calls = calls[calls['duration'] >= selected_duration]
-        valid_responses = filtered_calls[filtered_calls['status'] == 'completed']
-    else:
-        st.warning("Duration data not found. Using all answered calls for response rate calculation.")
-        valid_responses = calls[calls['status'] == 'completed']
-
-    # Calculate response rate with filtered calls
-    response_rate_filtered = (len(valid_responses) / len(calls) * 100) if len(calls) > 0 else 0
-
-    # Text Message Response Rate
-    inbound_messages = messages[messages['direction'] == 'incoming']
-    outbound_messages = messages[messages['direction'] == 'outgoing']
-    responded_inbound_messages = inbound_messages[inbound_messages['to'].isin(outbound_messages['from'])]
-    text_response_rate = (
-        len(responded_inbound_messages) / len(inbound_messages) * 100 if len(inbound_messages) > 0 else 0
-    )
+    # Agent Performance with Bookings
+    agent_bookings = bookings.groupby('userId').size().reset_index(name='total_bookings')
+    agent_performance = calls.groupby('userId').size().reset_index(name='total_calls')
+    agent_performance = pd.merge(agent_performance, agent_bookings, on='userId', how='outer').fillna(0)
+    agent_performance['booking_rate'] = (agent_performance['total_bookings'] / agent_performance['total_calls'] * 100).fillna(0)
 
     # Metrics
-    st.subheader("Metrics")
-    col1, col2, col3, col4 = st.columns(4)
+    st.subheader("Key Metrics")
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Calls", len(calls))
+        st.metric("Total Bookings", total_bookings)
     with col2:
-        st.metric("Total Messages", len(messages))
+        st.metric("Call Conversion Rate", f"{call_conversion_rate:.2f}%")
     with col3:
-        st.metric("Answered Calls", len(calls[calls['status'] == 'completed']))
-    with col4:
-        st.metric("Response Rate (Calls)", f"{response_rate_filtered:.2f}%")
+        st.metric("Message Conversion Rate", f"{message_conversion_rate:.2f}%")
 
-    # Text Response Rate Metric
-    st.metric("Response Rate (Texts)", f"{text_response_rate:.2f}%")
-
-    # Call Effectiveness by Hour
-    st.subheader("Call Effectiveness by Hour")
+    # Hourly Trends
+    st.subheader("Hourly Trends")
     calls['hour'] = calls['createdAtPT'].dt.hour
     hourly_stats = calls.groupby(['hour', 'direction']).size().reset_index(name='count')
-    fig = px.bar(hourly_stats, x='hour', y='count', color='direction', barmode='group', title='Calls by Hour')
+    fig = px.bar(hourly_stats, x='hour', y='count', color='direction', barmode='group', title='Call Volume by Hour')
     st.plotly_chart(fig)
 
     # Agent Performance
     st.subheader("Agent Performance")
-    filtered_data['userId'] = filtered_data['userId'].fillna('Unknown')
-    agent_calls = calls.groupby('userId').size().reset_index(name='total_calls')
-    agent_messages = messages.groupby('userId').size().reset_index(name='total_messages')
-
-    agent_performance = pd.merge(agent_calls, agent_messages, on='userId', how='outer').fillna(0)
-    agent_performance['success_rate_calls'] = (
-        calls[calls['status'] == 'completed'].groupby('userId').size().reindex(agent_performance['userId'], fill_value=0)
-    ) / agent_performance['total_calls']
-    agent_performance['success_rate_calls'] = agent_performance['success_rate_calls'].fillna(0) * 100
-
     fig = px.bar(
         agent_performance,
         x='userId',
-        y=['total_calls', 'total_messages'],
-        title="Agent Performance: Calls and Messages",
+        y=['total_calls', 'total_bookings'],
+        title="Agent Performance: Calls and Bookings",
         barmode='group',
     )
     st.plotly_chart(fig)
     st.dataframe(agent_performance.rename(columns={
         'userId': 'Agent',
         'total_calls': 'Total Calls',
-        'total_messages': 'Total Messages',
-        'success_rate_calls': 'Success Rate (%)'
+        'total_bookings': 'Total Bookings',
+        'booking_rate': 'Booking Rate (%)'
     }))
 
-    st.success("Dashboard Ready!")
+    # Heatmap of Call Volume by Time
+    st.subheader("Call Volume Heatmap")
+    calls['day'] = calls['createdAtPT'].dt.day_name()
+    heatmap_data = calls.groupby(['day', 'hour']).size().reset_index(name='count')
+    heatmap_pivot = heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
+    fig = px.imshow(
+        heatmap_pivot,
+        title="Heatmap of Call Volume by Day and Hour",
+        labels=dict(x="Hour", y="Day", color="Volume"),
+    )
+    st.plotly_chart(fig)
+
+    st.success("Enhanced Dashboard Ready!")
