@@ -149,23 +149,23 @@ def run_owner_marketing_tab(owner_df):
     # Access the DataFrame from session state
     df = st.session_state["owner_df"]
 
-    # Display the table with checkboxes
+    # Display the DataFrame
     st.subheader("Owner Data")
-    edited_df = st.experimental_data_editor(df, key="owner_data_editor", use_container_width=True)
+    st.dataframe(df, use_container_width=True)
 
-    # Save edits back to session state
-    st.session_state["owner_df"] = edited_df
+    # Create checkboxes for row selection
+    selected_rows = []
+    for i in range(len(df)):
+        if st.checkbox(f"Select Row {i + 1}", key=f"select_row_{i}"):
+            selected_rows.append(i)
 
     # Button to update communication info
     if st.button("Update Communication Info"):
-        # Filter rows where 'Select' column is True
-        selected_rows = edited_df[edited_df['Select']].index.tolist()
-
         if not selected_rows:
             st.warning("No rows selected. Please select rows to update.")
         else:
             with st.spinner("Fetching communication info..."):
-                updated_df = update_communication_info(edited_df, selected_rows)
+                updated_df = update_communication_info(df, selected_rows)
             st.success("Communication info updated successfully!")
             st.dataframe(updated_df)  # Display updated DataFrame
 
