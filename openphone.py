@@ -67,6 +67,14 @@ def run_openphone_tab():
     # Calculate response rate with filtered calls
     response_rate_filtered = (len(valid_responses) / len(calls) * 100) if len(calls) > 0 else 0
 
+    # Text Message Response Rate
+    inbound_messages = messages[messages['direction'] == 'incoming']
+    outbound_messages = messages[messages['direction'] == 'outgoing']
+    responded_inbound_messages = inbound_messages[inbound_messages['to'].isin(outbound_messages['from'])]
+    text_response_rate = (
+        len(responded_inbound_messages) / len(inbound_messages) * 100 if len(inbound_messages) > 0 else 0
+    )
+
     # Metrics
     st.subheader("Metrics")
     col1, col2, col3, col4 = st.columns(4)
@@ -75,6 +83,4 @@ def run_openphone_tab():
     with col2:
         st.metric("Total Messages", len(messages))
     with col3:
-        st.metric("Answered Calls", len(calls[calls['status'] == 'completed']))
-    with col4:
-        st.metric("Response Rate (Filtered)", f"{response_rate_filtered:.2f}%")
+        st.metric("Answer
