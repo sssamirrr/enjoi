@@ -70,11 +70,6 @@ def get_owner_sheet_data():
         logger.info("Added communication-related columns to the DataFrame.")
         return df
 
-    except gspread.exceptions.SpreadsheetNotFound:
-        st.error("Google Sheet not found. Please check the sheet key and permissions.")
-        logger.error("Google Sheet not found. Check the sheet key and permissions.")
-        return pd.DataFrame()
-
     except Exception as e:
         st.error(f"Error accessing Google Sheet: {str(e)}")
         logger.error(f"Google Sheet Access Error: {str(e)}")
@@ -109,14 +104,6 @@ def fetch_openphone_data(phone_number):
                 "Total Calls": total_calls,
                 "Total Messages": total_messages
             }
-        else:
-            logger.error(f"OpenPhone API error: {response.status_code} - {response.text}")
-            return {
-                "Last Communication Status": "API Error",
-                "Last Communication Date": None,
-                "Total Calls": 0,
-                "Total Messages": 0
-            }
     except Exception as e:
         logger.error(f"Error fetching OpenPhone data for {phone_number}: {str(e)}")
         return {
@@ -142,22 +129,40 @@ def update_communication_info(df, selected_rows):
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    # Ensure the DataFrame is in session state
-    if "owner_df" not in st.session_state:
-        st.session_state["owner_df"] = owner_df.reset_index(drop=True)
+    # Filters
+    st.subheader("Filters")
+    col1, col2, col3 = st.columns(3)
 
-    # Access the DataFrame from session state
-    df = st.session_state["owner_df"]
+    with col1:
+        states = owner_df['State'].dropna().unique()
+        selected_states = st.multiselect("Filter by State", states)
 
-    # Display the DataFrame
+    with col2:
+        min_date, max_date = owner_df['Sale Date'].min(), owner_df['Sale Date'].max()
+        date_range = st.date_input("Filter by Sale Date Range", [min_date, max_date])
+
+    with col3:
+        ficos = owner_df['Primary FICO'].dropna()
+        min_fico, max_fico = st.slider("Filter by FICO Score", int(ficos.min()), int(ficos.max()), (int(ficos.min()), int(ficos.max())))
+
+    # Apply filters
+    filtered_df = owner_df.copy()
+    if selected_states:
+        filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
+    if date_range:
+        filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) &
+                                  (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
+    if 'Primary FICO' in filtered_df.columns:
+        filtered_df = filtered_df[(filtered_df['Primary FICO'] >= min_fico) & (filtered_df['Primary FICO'] <= max_fico)]
+
+    # Display the filtered table
     st.subheader("Owner Data")
-    st.dataframe(df, use_container_width=True)
-
-    # Create checkboxes for row selection
     selected_rows = []
-    for i in range(len(df)):
-        if st.checkbox(f"Select Row {i + 1}", key=f"select_row_{i}"):
+    for i in filtered_df.index:
+        if st.checkbox(f"Select Row {i}", key=f"row_{i}"):
             selected_rows.append(i)
+
+    st.dataframe(filtered_df, use_container_width=True)
 
     # Button to update communication info
     if st.button("Update Communication Info"):
@@ -165,12 +170,11 @@ def run_owner_marketing_tab(owner_df):
             st.warning("No rows selected. Please select rows to update.")
         else:
             with st.spinner("Fetching communication info..."):
-                updated_df = update_communication_info(df, selected_rows)
+                updated_df = update_communication_info(filtered_df, selected_rows)
             st.success("Communication info updated successfully!")
-            st.dataframe(updated_df)  # Display updated DataFrame
+            st.dataframe(updated_df)
 
 def run_minimal_app():
-    st.title("Owner Marketing Dashboard")
     owner_df = get_owner_sheet_data()
     if not owner_df.empty:
         run_owner_marketing_tab(owner_df)
