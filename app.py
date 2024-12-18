@@ -538,6 +538,64 @@ def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min,
 with tab2:
     st.title("📈 Marketing Information by Resort")
 
+    # Add the function definition here
+    def prepare_display_dataframe(df):
+        # Create a copy to avoid modifying the original
+        display_df = df.copy()
+        
+        # Create mapping for column renaming
+        column_mapping = {
+            'Name': 'Guest Name',
+            'Arrival Date Short': 'Check In',
+            'Departure Date Short': 'Check Out',
+            'Rate Code Name': 'Rate Code',
+            'Total Price': 'Price'
+        }
+        
+        # Rename existing columns
+        for old_col, new_col in column_mapping.items():
+            if old_col in display_df.columns:
+                display_df = display_df.rename(columns={old_col: new_col})
+        
+        # Initialize new columns with default values
+        new_columns = {
+            'Select': False,
+            'Communication Status': 'Not Checked',
+            'Last Communication Date': None,
+            'Call Duration (seconds)': 0,
+            'Agent Name': 'Unknown',
+            'Total Messages': 0,
+            'Total Calls': 0,
+            'Answered Calls': 0,
+            'Missed Calls': 0,
+            'Call Attempts': 0,
+            'How Many Times Called': 0,
+            'How Many Times Texted After Check In Date': 0,
+            'Phone Calls Under 40 Seconds': 0
+        }
+        
+        # Add new columns
+        for col_name, default_value in new_columns.items():
+            if col_name not in display_df.columns:
+                display_df[col_name] = default_value
+        
+        # Ensure all required columns are present and in the correct order
+        required_columns = [
+            'Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
+            'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
+            'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+            'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
+        ]
+        
+        # Add any missing columns with None values
+        for col in required_columns:
+            if col not in display_df.columns:
+                display_df[col] = None
+        
+        # Reorder columns
+        return display_df[required_columns]
+
+    
     # Resort selection
     selected_resort = st.selectbox(
         "Select Resort",
@@ -635,6 +693,7 @@ with tab2:
             (resort_df['Departure Date Short'].dt.date >= check_out_start) &
             (resort_df['Departure Date Short'].dt.date <= check_out_end)
         ]
+        display_df = prepare_display_dataframe(filtered_df)
 
         # Apply Total Price filter
         if 'Total Price' in filtered_df.columns:
