@@ -653,14 +653,25 @@ with tab2:
             })
 
             # Ensure required columns are present
+            # Ensure required columns are present and have consistent types
             required_columns = [
-                'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
-                'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
+                'Select', 'Guest Name', 'Check In', 'Check Out',
+                'Phone Number', 'Rate Code', 'Price',
+                'Communication Status', 'Last Communication Date',
+                'Call Duration (seconds)', 'Agent Name',
                 'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
             ]
-            for col in required_columns:
-                if col not in display_df.columns:
-                    display_df[col] = None  # Add missing column with default value
+
+for col in required_columns:
+    if col not in display_df.columns:
+        if col in ['Price', 'Call Duration (seconds)', 'Total Messages', 'Total Calls',
+                   'Answered Calls', 'Missed Calls', 'Call Attempts']:
+            display_df[col] = 0  # Default to 0 for numeric fields
+        elif col == 'Select':
+            display_df[col] = False  # Default to False for selection column
+        else:
+            display_df[col] = 'N/A'  # Default placeholder for text columns
+
 
             # Format phone numbers
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
@@ -750,6 +761,7 @@ with tab2:
             # Display the interactive data editor
             # Ensure 'Select' column has proper boolean values           
             # Clean DataFrame before passing to st.data_editor
+            # Clean the DataFrame to enforce consistency
             def clean_dataframe(df):
                 """
                 Cleans the DataFrame by replacing missing values and enforcing consistent data types.
@@ -757,19 +769,20 @@ with tab2:
                 # Replace None/NaN in text columns with 'N/A'
                 for col in df.select_dtypes(include='object').columns:
                     df[col] = df[col].fillna("N/A").astype(str)
-            
+                
                 # Replace None/NaN in numeric columns with 0
                 for col in df.select_dtypes(include='number').columns:
-                    df[col] = df[col].fillna(0).astype(int)
-            
+                    df[col] = df[col].fillna(0).astype(float)
+                
                 # Replace None/NaN in date columns with a placeholder date
                 for col in df.select_dtypes(include='datetime').columns:
                     df[col] = df[col].fillna(pd.Timestamp("1970-01-01"))
-            
+                
                 # Ensure 'Select' column is boolean
                 if 'Select' in df.columns:
                     df['Select'] = df['Select'].fillna(False).astype(bool)
                 return df
+
             
             # Apply cleaning to display_df
             display_df = clean_dataframe(display_df)
@@ -779,6 +792,10 @@ with tab2:
             display_df = display_df[display_df['Guest Name'].notna()].reset_index(drop=True)
             
             # Display cleaned data in the interactive data editor
+            # Clean the DataFrame before passing to st.data_editor
+            display_df = clean_dataframe(display_df)
+            
+            # Display the interactive data editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
@@ -802,6 +819,7 @@ with tab2:
                 hide_index=True,
                 use_container_width=True
             )
+
 
 
             # Ensure 'Select' column contains valid boolean values
