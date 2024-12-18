@@ -500,10 +500,9 @@ import json
 
 # Helper Functions
 def cleanup_phone_number(phone):
-    """Clean up phone number format"""
+    """Clean up phone number format."""
     if pd.isna(phone):
         return 'No Data'
-    # Remove spaces and non-numeric characters
     phone = ''.join(filter(str.isdigit, str(phone)))
     if len(phone) == 10:
         return f"+1{phone}"
@@ -511,27 +510,25 @@ def cleanup_phone_number(phone):
         return f"+{phone}"
     return 'No Data'
 
-def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max):
+def clean_dataframe(df):
     """
-    Reset filter-related session state variables based on the provided resort and date range.
+    Cleans the DataFrame by replacing missing values and enforcing consistent data types.
     """
-    try:
-        # Set the reset trigger to True
-        st.session_state['reset_trigger'] = True
-
-        # Store the new defaults in session state
-        st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
-        st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
-        st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
-        st.session_state[f'default_check_out_end_{selected_resort}'] = max_check_out
-        st.session_state[f'default_total_price_{selected_resort}'] = (float(total_price_min), float(total_price_max))
-        st.session_state[f'default_rate_code_{selected_resort}'] = "All"
-    except Exception as e:
-        st.error(f"Error resetting filters: {e}")
+    for col in df.select_dtypes(include='object').columns:
+        df[col] = df[col].fillna("N/A").astype(str)
+    for col in df.select_dtypes(include='number').columns:
+        df[col] = df[col].fillna(0).astype(float)
+    for col in df.select_dtypes(include='datetime').columns:
+        df[col] = df[col].fillna(pd.Timestamp("1970-01-01"))
+    if 'Select' in df.columns:
+        df['Select'] = df['Select'].fillna(False).astype(bool)
+    else:
+        df['Select'] = False  # Add if missing
+    return df
 
 # Main Tab2 Content
 with tab2:
-    st.title("��️ Marketing Information by Resort")
+    st.title("📊 Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -543,107 +540,40 @@ with tab2:
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Set default dates based on the selected resort
+    # Set default dates
     if not resort_df.empty:
         arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
-
-        arrival_dates = arrival_dates.dropna()
-        departure_dates = departure_dates.dropna()
-
         min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
         max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
     else:
-        today = pd.to_datetime('today').date()
-        min_check_in = today
-        max_check_out = today
+        min_check_in = max_check_out = pd.to_datetime('today').date()
 
-    # Date filters with unique keys to reset when a new resort is selected
+    # Filters
     col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
     with col1:
-        check_in_start = st.date_input(
-            "Check In Date (Start)",
-            value=min_check_in,
-            key=f'check_in_start_input_{selected_resort}'
-        )
-        check_in_end = st.date_input(
-            "Check In Date (End)",
-            value=max_check_out,
-            key=f'check_in_end_input_{selected_resort}'
-        )
-
+        check_in_start = st.date_input("Check In Date (Start)", value=min_check_in)
+        check_in_end = st.date_input("Check In Date (End)", value=max_check_out)
     with col2:
-        check_out_start = st.date_input(
-            "Check Out Date (Start)",
-            value=min_check_in,
-            key=f'check_out_start_input_{selected_resort}'
-        )
-        check_out_end = st.date_input(
-            "Check Out Date (End)",
-            value=max_check_out,
-            key=f'check_out_end_input_{selected_resort}'
-        )
-
+        check_out_start = st.date_input("Check Out Date (Start)", value=min_check_in)
+        check_out_end = st.date_input("Check Out Date (End)", value=max_check_out)
     with col3:
-        # Slider for Total Price
-        if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
-            total_price_min = resort_df['Total Price'].min()
-            total_price_max = resort_df['Total Price'].max()
+        price_min = resort_df['Total Price'].min() if 'Total Price' in resort_df else 0
+        price_max = resort_df['Total Price'].max() if 'Total Price' in resort_df else 0
+        total_price_range = st.slider("Total Price Range", price_min, price_max, (price_min, price_max))
 
-            # Handle single-value range by adding a buffer
-            if total_price_min == total_price_max:
-                total_price_min = total_price_min - 1  # Add a buffer of 1 unit
-                total_price_max = total_price_max + 1
-
-            total_price_range = st.slider(
-                "Total Price Range",
-                min_value=float(total_price_min),
-                max_value=float(total_price_max),
-                value=(float(total_price_min), float(total_price_max)),
-                key=f'total_price_slider_{selected_resort}'
-            )
-        else:
-            st.warning("No valid Total Price data available for filtering.")
-            total_price_range = (0, 0)  # Default range if no valid data
-
-        # Dropdown for Rate Code
-        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
-        selected_rate_code = st.selectbox(
-            "Select Rate Code",
-            options=["All"] + rate_code_options,
-            key=f'rate_code_filter_{selected_resort}'
-        )
-
-    with st.container():
-        # Reset Filters Button
-        if st.button("Reset Filters"):
-            reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
-
-    # Process and display data
+    # Filter the data
     if not resort_df.empty:
         resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
-
         filtered_df = resort_df[
-            (resort_df['Arrival Date Short'].dt.date >= check_in_start) &
-            (resort_df['Arrival Date Short'].dt.date <= check_in_end) &
-            (resort_df['Departure Date Short'].dt.date >= check_out_start) &
-            (resort_df['Departure Date Short'].dt.date <= check_out_end)
+            (resort_df['Arrival Date Short'].dt.date.between(check_in_start, check_in_end)) &
+            (resort_df['Departure Date Short'].dt.date.between(check_out_start, check_out_end)) &
+            (resort_df['Total Price'].between(total_price_range[0], total_price_range[1]))
         ]
 
-        # Apply Total Price filter
-        if 'Total Price' in filtered_df.columns:
-            filtered_df = filtered_df[
-                (filtered_df['Total Price'] >= total_price_range[0]) &
-                (filtered_df['Total Price'] <= total_price_range[1])
-            ]
-
-        # Apply Rate Code filter
-        if selected_rate_code != "All" and 'Rate Code Name' in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df['Rate Code Name'] == selected_rate_code]
-
         if not filtered_df.empty:
-            # Prepare display DataFrame
+            # Rename and ensure columns
             display_df = filtered_df.rename(columns={
                 'Name': 'Guest Name',
                 'Arrival Date Short': 'Check In',
@@ -651,9 +581,6 @@ with tab2:
                 'Rate Code Name': 'Rate Code',
                 'Total Price': 'Price'
             })
-
-            # Ensure required columns are present
-            # Ensure required columns are present and have consistent types
             required_columns = [
                 'Select', 'Guest Name', 'Check In', 'Check Out',
                 'Phone Number', 'Rate Code', 'Price',
@@ -661,141 +588,17 @@ with tab2:
                 'Call Duration (seconds)', 'Agent Name',
                 'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
             ]
+            for col in required_columns:
+                if col not in display_df.columns:
+                    display_df[col] = 0 if col in ['Price', 'Call Duration (seconds)', 'Total Messages', 
+                                                  'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'] \
+                                      else False if col == 'Select' else 'N/A'
 
-for col in required_columns:
-    if col not in display_df.columns:
-        if col in ['Price', 'Call Duration (seconds)', 'Total Messages', 'Total Calls',
-                   'Answered Calls', 'Missed Calls', 'Call Attempts']:
-            display_df[col] = 0  # Default to 0 for numeric fields
-        elif col == 'Select':
-            display_df[col] = False  # Default to False for selection column
-        else:
-            display_df[col] = 'N/A'  # Default placeholder for text columns
-
-
-            # Format phone numbers
+            # Clean DataFrame
+            display_df = clean_dataframe(display_df)
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
 
-            # Add Select All checkbox
-            select_all = st.checkbox("Select All Guests", key=f'select_all_{selected_resort}')
-            display_df['Select'] = select_all
-
-            # Initialize session state for communication data, scoped by resort
-            if 'communication_data' not in st.session_state:
-                st.session_state['communication_data'] = {}
-            if selected_resort not in st.session_state['communication_data']:
-                st.session_state['communication_data'][selected_resort] = {}
-
-            # Update display_df with saved communication data from session state
-            for idx, row in display_df.iterrows():
-                phone = row['Phone Number']
-                if phone in st.session_state['communication_data'][selected_resort]:
-                    comm_data = st.session_state['communication_data'][selected_resort][phone]
-                    display_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
-                    display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
-                    display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
-                    display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
-                    display_df.at[idx, 'Total Messages'] = comm_data.get('total_messages', 0)
-                    display_df.at[idx, 'Total Calls'] = comm_data.get('total_calls', 0)
-                    display_df.at[idx, 'Answered Calls'] = comm_data.get('answered_calls', 0)
-                    display_df.at[idx, 'Missed Calls'] = comm_data.get('missed_calls', 0)
-                    display_df.at[idx, 'Call Attempts'] = comm_data.get('call_attempts', 0)
-
-            # Fetch Communication Info Button
-            if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
-                headers = {
-                    "Authorization": OPENPHONE_API_KEY,
-                    "Content-Type": "application/json"
-                }
-
-                with st.spinner('Fetching communication information...'):
-                    (
-                        statuses, dates, durations, agent_names,
-                        total_messages_list, total_calls_list,
-                        answered_calls_list, missed_calls_list,
-                        call_attempts_list
-                    ) = fetch_communication_info(display_df, headers)
-
-                    # Update session state scoped to the selected resort
-                    for idx, (
-                        phone, status, date, duration, agent,
-                        total_msgs, total_cls, answered_cls, missed_cls, call_atpts
-                    ) in enumerate(zip(
-                        display_df['Phone Number'], statuses, dates, durations, agent_names,
-                        total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list
-                    )):
-                        st.session_state['communication_data'][selected_resort][phone] = {
-                            'status': status,
-                            'date': date,
-                            'duration': duration,
-                            'agent': agent,
-                            'total_messages': total_msgs,
-                            'total_calls': total_cls,
-                            'answered_calls': answered_cls,
-                            'missed_calls': missed_cls,
-                            'call_attempts': call_atpts
-                        }
-
-                        # Update display_df
-                        display_df.at[idx, 'Communication Status'] = status
-                        display_df.at[idx, 'Last Communication Date'] = date
-                        display_df.at[idx, 'Call Duration (seconds)'] = duration
-                        display_df.at[idx, 'Agent Name'] = agent
-                        display_df.at[idx, 'Total Messages'] = total_msgs
-                        display_df.at[idx, 'Total Calls'] = total_cls
-                        display_df.at[idx, 'Answered Calls'] = answered_cls
-                        display_df.at[idx, 'Missed Calls'] = missed_cls
-                        display_df.at[idx, 'Call Attempts'] = call_atpts
-
-            # Reorder columns
-            display_df = display_df[
-                [
-                    'Select', 'Guest Name', 'Check In', 'Check Out',
-                    'Phone Number', 'Rate Code', 'Price',
-                    'Communication Status', 'Last Communication Date',
-                    'Call Duration (seconds)', 'Agent Name',
-                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
-                ]
-            ]
-
-            # Display the interactive data editor
-            # Ensure 'Select' column has proper boolean values           
-            # Clean DataFrame before passing to st.data_editor
-            # Clean the DataFrame to enforce consistency
-            def clean_dataframe(df):
-                """
-                Cleans the DataFrame by replacing missing values and enforcing consistent data types.
-                """
-                # Replace None/NaN in text columns with 'N/A'
-                for col in df.select_dtypes(include='object').columns:
-                    df[col] = df[col].fillna("N/A").astype(str)
-                
-                # Replace None/NaN in numeric columns with 0
-                for col in df.select_dtypes(include='number').columns:
-                    df[col] = df[col].fillna(0).astype(float)
-                
-                # Replace None/NaN in date columns with a placeholder date
-                for col in df.select_dtypes(include='datetime').columns:
-                    df[col] = df[col].fillna(pd.Timestamp("1970-01-01"))
-                
-                # Ensure 'Select' column is boolean
-                if 'Select' in df.columns:
-                    df['Select'] = df['Select'].fillna(False).astype(bool)
-                return df
-
-            
-            # Apply cleaning to display_df
-            display_df = clean_dataframe(display_df)
-            
-                      
-            # Drop rows where Guest Name is missing
-            display_df = display_df[display_df['Guest Name'].notna()].reset_index(drop=True)
-            
-            # Display cleaned data in the interactive data editor
-            # Clean the DataFrame before passing to st.data_editor
-            display_df = clean_dataframe(display_df)
-            
-            # Display the interactive data editor
+            # Display Data Editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
@@ -804,41 +607,20 @@ for col in required_columns:
                     "Check In": st.column_config.DateColumn("Check In"),
                     "Check Out": st.column_config.DateColumn("Check Out"),
                     "Phone Number": st.column_config.TextColumn("Phone Number"),
-                    "Rate Code": st.column_config.TextColumn("Rate Code"),
-                    "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
-                    "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
-                    "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
-                    "Call Duration (seconds)": st.column_config.NumberColumn("Call Duration (seconds)", format="%d", disabled=True),
-                    "Agent Name": st.column_config.TextColumn("Agent Name", disabled=True),
-                    "Total Messages": st.column_config.NumberColumn("Total Messages", format="%d", disabled=True),
-                    "Total Calls": st.column_config.NumberColumn("Total Calls", format="%d", disabled=True),
-                    "Answered Calls": st.column_config.NumberColumn("Answered Calls", format="%d", disabled=True),
-                    "Missed Calls": st.column_config.NumberColumn("Missed Calls", format="%d", disabled=True),
-                    "Call Attempts": st.column_config.NumberColumn("Call Attempts", format="%d", disabled=True)
+                    "Price": st.column_config.NumberColumn("Price", format="$%.2f")
                 },
                 hide_index=True,
                 use_container_width=True
             )
 
-
-
-            # Ensure 'Select' column contains valid boolean values
+            # Selected Guests
             if 'Select' in edited_df.columns:
-                # Map string representations to booleans
-                edited_df['Select'] = edited_df['Select'].map({True: True, False: False, 'True': True, 'False': False})
-                # Fill any NaN values with False
-                edited_df['Select'] = edited_df['Select'].fillna(False)
-                # Ensure the 'Select' column is of boolean data type
-                edited_df['Select'] = edited_df['Select'].astype(bool)
-                # Now select the guests safely
                 selected_guests = edited_df[edited_df['Select']]
-            else:
-                st.error("The 'Select' column is missing from the edited data.")
-
-
+                st.write("Selected Guests", selected_guests)
         else:
             st.warning("No data available for the selected filters.")
-
+    else:
+        st.warning("No data available for this resort.")
 
 
 
