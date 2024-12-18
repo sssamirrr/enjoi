@@ -650,26 +650,28 @@ with tab2:
                 'Rate Code Name': 'Rate Code',
                 'Total Price': 'Price'
             })
-
+    
             # Ensure required columns are present
-            # Ensure required columns are present and have consistent types
             required_columns = [
                 'Select', 'Guest Name', 'Check In', 'Check Out',
                 'Phone Number', 'Rate Code', 'Price',
                 'Communication Status', 'Last Communication Date',
                 'Call Duration (seconds)', 'Agent Name',
-                'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
+                'Total Messages', 'Total Calls', 'Answered Calls', 
+                'Missed Calls', 'Call Attempts'
             ]
-
-for col in required_columns:
-    if col not in display_df.columns:
-        if col in ['Price', 'Call Duration (seconds)', 'Total Messages', 'Total Calls',
-                   'Answered Calls', 'Missed Calls', 'Call Attempts']:
-            display_df[col] = 0  # Default to 0 for numeric fields
-        elif col == 'Select':
-            display_df[col] = False  # Default to False for selection column
-        else:
-            display_df[col] = 'N/A'  # Default placeholder for text columns
+    
+            # Add missing columns
+            for col in required_columns:
+                if col not in display_df.columns:
+                    if col in ['Price', 'Call Duration (seconds)', 'Total Messages', 
+                              'Total Calls', 'Answered Calls', 'Missed Calls', 
+                              'Call Attempts']:
+                        display_df[col] = 0  # Default to 0 for numeric fields
+                    elif col == 'Select':
+                        display_df[col] = False  # Default to False for selection column
+                    else:
+                        display_df[col] = 'N/A'  # Default placeholder for text columns
 
 
             # Format phone numbers
