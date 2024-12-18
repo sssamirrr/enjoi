@@ -30,8 +30,6 @@ def init_session_state():
 init_session_state()
 
 
-# Set page configuration
-st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
 
 # Add CSS for optional styling (can be customized or removed)
 st.markdown("""
