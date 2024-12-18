@@ -708,32 +708,51 @@ with tab2:
                     display_df.at[idx, 'Call Attempts'] = comm_data.get('call_attempts', 0)
 
             # **Fetch Communication Info Button**
+            # Fetch Communication Info Button
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
-
+            
                 with st.spinner('Fetching communication information...'):
                     (
                         statuses, dates, durations, agent_names,
                         total_messages_list, total_calls_list,
-                        answered_calls_list, missed_calls_list,
-                        call_attempts_list
+                        answered_calls_list, missed_calls_list, call_attempts_list
                     ) = fetch_communication_info(display_df, headers)
-
+            
+                    # New Columns Data
+                    call_counts = []
+                    text_counts_after_checkin = []
+                    short_calls_count = []
+            
+                    for idx, row in display_df.iterrows():
+                        phone = row['Phone Number']
+                        check_in_date = row['Check In']
+            
+                        # Logic to compute new columns
+                        total_calls = call_attempts_list[idx]
+                        short_calls = durations[idx] if durations[idx] and durations[idx] < 40 else 0
+                        total_texts_after_checkin = total_messages_list[idx] if dates[idx] and dates[idx] >= check_in_date else 0
+            
+                        # Append to lists
+                        call_counts.append(total_calls)
+                        text_counts_after_checkin.append(total_texts_after_checkin)
+                        short_calls_count.append(short_calls)
+            
                     # Verify that all lists have the same length as display_df
                     expected_length = len(display_df)
                     actual_lengths = [len(lst) for lst in [
                         statuses, dates, durations, agent_names,
                         total_messages_list, total_calls_list,
-                        answered_calls_list, missed_calls_list,
-                        call_attempts_list
+                        answered_calls_list, missed_calls_list, call_attempts_list,
+                        call_counts, text_counts_after_checkin, short_calls_count
                     ]]
                     if not all(length == expected_length for length in actual_lengths):
                         st.error("Mismatch in communication data lengths. Aborting update to prevent data misalignment.")
                         st.stop()
-
+            
                     # Assign communication data directly to display_df
                     display_df['Communication Status'] = statuses
                     display_df['Last Communication Date'] = dates
@@ -744,7 +763,12 @@ with tab2:
                     display_df['Answered Calls'] = answered_calls_list
                     display_df['Missed Calls'] = missed_calls_list
                     display_df['Call Attempts'] = call_attempts_list
-
+            
+                    # New Columns
+                    display_df['How Many Times Called'] = call_counts
+                    display_df['How Many Times Texted After Check In Date'] = text_counts_after_checkin
+                    display_df['Phone Calls Under 40 Seconds'] = short_calls_count
+            
                     # Update session state scoped to the selected resort
                     st.session_state['communication_data'][selected_resort] = {
                         phone: {
@@ -756,119 +780,61 @@ with tab2:
                             'total_calls': total_cls,
                             'answered_calls': answered_cls,
                             'missed_calls': missed_cls,
-                            'call_attempts': call_atpts
+                            'call_attempts': call_atpts,
+                            'how_many_times_called': calls,
+                            'how_many_texts_after_checkin': texts_after_checkin,
+                            'phone_calls_under_40_sec': short_calls
                         }
-                        for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts
+                        for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, calls, texts_after_checkin, short_calls
                         in zip(
                             display_df['Phone Number'], statuses, dates, durations, agent_names,
-                            total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list
+                            total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list,
+                            call_counts, text_counts_after_checkin, short_calls_count
                         )
                     }
-
+            
                     st.success("Communication information successfully fetched and updated.")
-
-            # Reorder columns
+            
+            # Reorder columns to include new fields
             display_df = display_df[
                 [
                     'Select', 'Guest Name', 'Check In', 'Check Out',
                     'Phone Number', 'Rate Code', 'Price',
                     'Communication Status', 'Last Communication Date',
                     'Call Duration (seconds)', 'Agent Name',
-                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
+                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+                    'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
                 ]
             ]
-
-            # Display the interactive data editor with adjusted column widths
+            
+            # Add new columns to the interactive data editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
-                    "Select": st.column_config.CheckboxColumn(
-                        "Select",
-                        help="Select or deselect this guest",
-                        default=False,
-                        width="60px"  # Narrow width for checkboxes
-                    ),
-                    "Guest Name": st.column_config.TextColumn(
-                        "Guest Name",
-                        width="200px"  # Adjust as needed
-                    ),
-                    "Check In": st.column_config.DateColumn(
-                        "Check In",
-                        width="120px"
-                    ),
-                    "Check Out": st.column_config.DateColumn(
-                        "Check Out",
-                        width="120px"
-                    ),
-                    "Phone Number": st.column_config.TextColumn(
-                        "Phone Number",
-                        width="150px"
-                    ),
-                    "Rate Code": st.column_config.TextColumn(
-                        "Rate Code",
-                        width="100px"
-                    ),
-                    "Price": st.column_config.NumberColumn(
-                        "Price",
-                        format="$%.2f",
-                        width="100px"
-                    ),
-                    "Communication Status": st.column_config.TextColumn(
-                        "Communication Status",
+                    "How Many Times Called": st.column_config.NumberColumn(
+                        "How Many Times Called",
+                        format="%d",
                         disabled=True,
                         width="150px"
                     ),
-                    "Last Communication Date": st.column_config.TextColumn(
-                        "Last Communication Date",
+                    "How Many Times Texted After Check In Date": st.column_config.NumberColumn(
+                        "How Many Times Texted After Check In Date",
+                        format="%d",
+                        disabled=True,
+                        width="200px"
+                    ),
+                    "Phone Calls Under 40 Seconds": st.column_config.NumberColumn(
+                        "Phone Calls Under 40 Seconds",
+                        format="%d",
                         disabled=True,
                         width="180px"
                     ),
-                    "Call Duration (seconds)": st.column_config.NumberColumn(
-                        "Call Duration (seconds)",
-                        format="%d",
-                        disabled=True,
-                        width="150px"
-                    ),
-                    "Agent Name": st.column_config.TextColumn(
-                        "Agent Name",
-                        disabled=True,
-                        width="150px"
-                    ),
-                    "Total Messages": st.column_config.NumberColumn(
-                        "Total Messages",
-                        format="%d",
-                        disabled=True,
-                        width="120px"
-                    ),
-                    "Total Calls": st.column_config.NumberColumn(
-                        "Total Calls",
-                        format="%d",
-                        disabled=True,
-                        width="100px"
-                    ),
-                    "Answered Calls": st.column_config.NumberColumn(
-                        "Answered Calls",
-                        format="%d",
-                        disabled=True,
-                        width="120px"
-                    ),
-                    "Missed Calls": st.column_config.NumberColumn(
-                        "Missed Calls",
-                        format="%d",
-                        disabled=True,
-                        width="120px"
-                    ),
-                    "Call Attempts": st.column_config.NumberColumn(
-                        "Call Attempts",
-                        format="%d",
-                        disabled=True,
-                        width="120px"
-                    )
                 },
                 hide_index=True,
                 use_container_width=True,
                 key=f"guest_editor_{selected_resort}"
             )
+
             
             # Ensure 'Select' column contains valid boolean values
             if 'Select' in edited_df.columns:
