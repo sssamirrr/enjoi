@@ -798,12 +798,30 @@ with tab2:
                     }
 
                     for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, calls, texts_after_checkin, short_calls
-                    in zip(
+                    # Update session state scoped to the selected resort
+                    for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, calls, texts_after_checkin, short_calls in zip(
                         display_df['Phone Number'], statuses, dates, durations, agent_names,
                         total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list,
                         call_counts, text_counts_after_checkin, short_calls_count
-                    )
-                    }
+                    ):
+                        if phone not in st.session_state['communication_data'][selected_resort]:
+                            st.session_state['communication_data'][selected_resort][phone] = {}
+                    
+                        st.session_state['communication_data'][selected_resort][phone].update({
+                            'status': status if status else 'No Status',
+                            'date': date if date else None,
+                            'duration': duration if duration else 0,
+                            'agent': agent if agent else 'Unknown',
+                            'total_messages': total_msgs if total_msgs is not None else 0,
+                            'total_calls': total_cls if total_cls is not None else 0,
+                            'answered_calls': answered_cls if answered_cls is not None else 0,
+                            'missed_calls': missed_cls if missed_cls is not None else 0,
+                            'call_attempts': call_atpts if call_atpts is not None else 0,
+                            'how_many_times_called': calls if calls is not None else 0,
+                            'how_many_texts_after_checkin': texts_after_checkin if texts_after_checkin is not None else 0,
+                            'phone_calls_under_40_sec': short_calls if short_calls is not None else 0
+                        })
+
             
                     st.success("Communication information successfully fetched and updated.")
             
