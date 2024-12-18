@@ -78,13 +78,7 @@ def get_owner_sheet_data():
 
 def format_phone_number(phone):
     """Format phone number to E.164 format"""
-    try:
-        parsed_phone = phonenumbers.parse(phone, "US")
-        if phonenumbers.is_valid_number(parsed_phone):
-            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
-    except phonenumbers.NumberParseException:
-        pass
-    return None
+    return communication.format_phone_number_e164(phone)
 
 def clean_zip_code(zip_code):
     """Clean and validate ZIP code"""
@@ -291,7 +285,7 @@ def run_owner_marketing_tab(owner_df):
                     else:
                         selected_owners = display_df.loc[selected_rows]
                         headers = {
-                            "Authorization": communication.OPENPHONE_API_KEY,
+                            "Authorization": f"Bearer {communication.OPENPHONE_API_KEY}",
                             "Content-Type": "application/json"
                         }
 
@@ -301,8 +295,6 @@ def run_owner_marketing_tab(owner_df):
                                 total_messages_list, total_calls_list,
                                 answered_calls_list, missed_calls_list,
                                 call_attempts_list,
-                                pre_arrival_calls_list, pre_arrival_texts_list,
-                                post_arrival_calls_list, post_arrival_texts_list,
                                 calls_under_40sec_list
                             ) = communication.fetch_communication_info(selected_owners, headers)
 
@@ -316,10 +308,6 @@ def run_owner_marketing_tab(owner_df):
                         display_df.loc[selected_rows, 'Answered Calls'] = answered_calls_list
                         display_df.loc[selected_rows, 'Missed Calls'] = missed_calls_list
                         display_df.loc[selected_rows, 'Call Attempts'] = call_attempts_list
-                        display_df.loc[selected_rows, 'Pre-Arrival Calls'] = pre_arrival_calls_list
-                        display_df.loc[selected_rows, 'Pre-Arrival Texts'] = pre_arrival_texts_list
-                        display_df.loc[selected_rows, 'Post-Arrival Calls'] = post_arrival_calls_list
-                        display_df.loc[selected_rows, 'Post-Arrival Texts'] = post_arrival_texts_list
                         display_df.loc[selected_rows, 'Calls Under 40 sec'] = calls_under_40sec_list
 
                         # Update session state scoped to the campaign type
@@ -335,10 +323,6 @@ def run_owner_marketing_tab(owner_df):
                                 'answered_calls': answered_calls_list[idx],
                                 'missed_calls': missed_calls_list[idx],
                                 'call_attempts': call_attempts_list[idx],
-                                'pre_arrival_calls': pre_arrival_calls_list[idx],
-                                'pre_arrival_texts': pre_arrival_texts_list[idx],
-                                'post_arrival_calls': post_arrival_calls_list[idx],
-                                'post_arrival_texts': post_arrival_texts_list[idx],
                                 'calls_under_40sec': calls_under_40sec_list[idx]
                             }
 
@@ -518,10 +502,10 @@ def run_owner_marketing_tab(owner_df):
                     return
 
                 # Split the dataset for A/B testing
-                campaign_filtered_df = campaign_filtered_df.sample(frac=1).reset_index(drop=True)  # Shuffle the DataFrame
+                campaign_shuffled_df = campaign_filtered_df.sample(frac=1).reset_index(drop=True)  # Shuffle the DataFrame
                 split_index = group_a_size
-                group_a = campaign_filtered_df.iloc[:split_index].copy()
-                group_b = campaign_filtered_df.iloc[split_index:].copy()
+                group_a = campaign_shuffled_df.iloc[:split_index].copy()
+                group_b = campaign_shuffled_df.iloc[split_index:].copy()
 
                 # Combine groups with labels
                 group_a['Group'] = 'A'
@@ -548,7 +532,7 @@ def run_owner_marketing_tab(owner_df):
                                 else:
                                     success = False
                             else:
-                                phone = communication.format_phone_number(row['Phone Number'])
+                                phone = format_phone_number(row['Phone Number'])
                                 if phone:
                                     personalized_message = message.format(first_name=row['First Name'])
                                     success = send_text_message(phone, personalized_message)
@@ -596,14 +580,14 @@ def run_owner_marketing_tab(owner_df):
                             mime="text/csv"
                         )
 
-    def run_minimal_app():
-        st.title("Owner Marketing Dashboard")
-        owner_df = get_owner_sheet_data()
-        if not owner_df.empty:
-            run_owner_marketing_tab(owner_df)
-        else:
-            st.error("No owner data available to display.")
+def run_minimal_app():
+    st.title("Owner Marketing Dashboard")
+    owner_df = get_owner_sheet_data()
+    if not owner_df.empty:
+        run_owner_marketing_tab(owner_df)
+    else:
+        st.error("No owner data available to display.")
 
-    if __name__ == "__main__":
-        st.set_page_config(page_title="Owner Marketing", layout="wide")
-        run_minimal_app()
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    run_minimal_app()
