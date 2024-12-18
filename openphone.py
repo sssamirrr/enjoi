@@ -57,19 +57,48 @@ def run_openphone_tab():
 
     # Metrics
     st.subheader("Key Metrics")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Bookings", total_bookings)
     with col2:
         st.metric("Call Conversion Rate", f"{call_conversion_rate:.2f}%")
     with col3:
         st.metric("Message Conversion Rate", f"{message_conversion_rate:.2f}%")
+    with col4:
+        st.metric("Total Messages", len(messages))
 
     # Hourly Trends
     st.subheader("Hourly Trends")
     calls['hour'] = calls['createdAtPT'].dt.hour
     hourly_stats = calls.groupby(['hour', 'direction']).size().reset_index(name='count')
     fig = px.bar(hourly_stats, x='hour', y='count', color='direction', barmode='group', title='Call Volume by Hour')
+    st.plotly_chart(fig)
+
+    # Call Duration Analysis
+    st.subheader("Call Duration Analysis")
+    if 'duration' in calls.columns and not calls['duration'].isnull().all():
+        long_calls = calls[calls['duration'] >= calls['duration'].mean()]
+        long_call_times = long_calls.groupby('hour').size().reset_index(name='count')
+        fig = px.bar(long_call_times, x='hour', y='count', title='Long Calls by Hour')
+        st.plotly_chart(fig)
+
+        # Heatmap for Call Duration
+        calls['day'] = calls['createdAtPT'].dt.day_name()
+        duration_heatmap_data = calls.groupby(['day', 'hour'])['duration'].mean().reset_index()
+        duration_heatmap_pivot = duration_heatmap_data.pivot(index='day', columns='hour', values='duration').fillna(0)
+        fig = px.imshow(
+            duration_heatmap_pivot,
+            title="Heatmap of Average Call Duration by Day and Hour",
+            labels=dict(x="Hour", y="Day", color="Duration (seconds)"),
+        )
+        st.plotly_chart(fig)
+
+    # Incoming Message Analysis
+    st.subheader("Incoming Messages by Hour")
+    messages['hour'] = messages['createdAtPT'].dt.hour
+    incoming_messages = messages[messages['direction'] == 'incoming']
+    incoming_message_times = incoming_messages.groupby('hour').size().reset_index(name='count')
+    fig = px.bar(incoming_message_times, x='hour', y='count', title='Incoming Messages by Hour')
     st.plotly_chart(fig)
 
     # Agent Performance
