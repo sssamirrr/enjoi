@@ -361,40 +361,57 @@ with tab5:
     with col3:
         st.metric("Recovery Rate", "---")
 
-############################################
-# Dashboard Tab
-############################################
 with tab1:
-    st.title("🏨 Hotel Reservations Dashboard")
+    st.title("�� Hotel Reservations Dashboard")
     st.markdown("Real-time analysis of hotel reservations")
+    
+    # Debugging: Display DataFrame Columns and Sample Data
+    st.subheader("Data Inspection")
+    st.write("### Data Columns:", df.columns.tolist())
+    st.write("### Sample Data:", df.head())
 
+    # Check for essential columns
+    required_columns = ['Market', 'Arrival Date Short', 'Rate Code Name', '# Nights', 'Name']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    
+    if missing_columns:
+        st.error(f"The following essential columns are missing from the data: {', '.join(missing_columns)}")
+        st.stop()
+    
     # Filters
+    st.subheader("Filters")
     col1, col2, col3 = st.columns(3)
     
     with col1:
         selected_hotel = st.multiselect(
             "Select Hotel",
-            options=sorted(df['Market'].unique()),
+            options=sorted(df['Market'].dropna().unique()),
             default=[]
         )
-
+    
     with col2:
-        min_date = pd.to_datetime(df['Arrival Date Short']).min()
-        max_date = pd.to_datetime(df['Arrival Date Short']).max()
-        date_range = st.date_input(
-            "Select Date Range",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date
-        )
-
+        try:
+            min_date = pd.to_datetime(df['Arrival Date Short']).min().date()
+            max_date = pd.to_datetime(df['Arrival Date Short']).max().date()
+            date_range = st.date_input(
+                "Select Date Range",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date
+            )
+            if not isinstance(date_range, tuple) or len(date_range) != 2:
+                st.warning("Please select a valid date range.")
+        except Exception as e:
+            st.error(f"Error processing dates: {e}")
+            st.stop()
+    
     with col3:
         selected_rate_codes = st.multiselect(
             "Select Rate Codes",
-            options=sorted(df['Rate Code Name'].unique()),
+            options=sorted(df['Rate Code Name'].dropna().unique()),
             default=[]
         )
-
+    
     # Filter data
     filtered_df = df.copy()
     
@@ -402,88 +419,118 @@ with tab1:
         filtered_df = filtered_df[filtered_df['Market'].isin(selected_hotel)]
     
     if isinstance(date_range, tuple) and len(date_range) == 2:
-        filtered_df = filtered_df[
-            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date >= date_range[0]) &
-            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date <= date_range[1])
-        ]
+        try:
+            filtered_df = filtered_df[
+                (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date >= date_range[0]) &
+                (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date <= date_range[1])
+            ]
+        except Exception as e:
+            st.error(f"Error filtering by date range: {e}")
     
     if selected_rate_codes:
         filtered_df = filtered_df[filtered_df['Rate Code Name'].isin(selected_rate_codes)]
-
-    # Metrics
-    col1, col2, col3, col4 = st.columns(4)
     
-    with col1:
-        st.metric("Total Reservations", len(filtered_df))
-    with col2:
-        average_nights = filtered_df['# Nights'].mean()
-        st.metric("Average Nights", f"{average_nights:.1f}" if not math.isnan(average_nights) else "0")
-    with col3:
-        total_room_nights = filtered_df['# Nights'].sum()
-        st.metric("Total Room Nights", f"{total_room_nights:,.0f}")
-    with col4:
-        unique_guests = filtered_df['Name'].nunique()
-        st.metric("Unique Guests", unique_guests)
-
-    # Charts
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Reservations by Hotel using groupby
-        reservations_by_hotel = filtered_df.groupby('Market').size().reset_index(name='Reservations')
-        reservations_by_hotel = reservations_by_hotel.rename(columns={'Market': 'Hotel'})
-        
-        # Conditional Plotting
-        if reservations_by_hotel.empty:
-            st.warning("No reservation data available for the selected filters.")
+    # Metrics Section
+    st.subheader("Key Metrics")
+    metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
+    
+    with metrics_col1:
+        total_reservations = len(filtered_df)
+        st.metric("Total Reservations", total_reservations)
+    
+    with metrics_col2:
+        if '# Nights' in filtered_df.columns:
+            average_nights = filtered_df['# Nights'].mean()
+            average_nights_display = f"{average_nights:.1f}" if not math.isnan(average_nights) else "0"
+            st.metric("Average Nights", average_nights_display)
         else:
-            fig_hotels = px.bar(
-                reservations_by_hotel,
-                x='Hotel',
-                y='Reservations',
-                labels={'Hotel': 'Hotel', 'Reservations': 'Reservations'},
-                title='Reservations by Hotel'
-            )
-            st.plotly_chart(fig_hotels, use_container_width=True)
-
-    with col2:
+            st.metric("Average Nights", "N/A")
+            st.warning("Column '# Nights' is missing in the data.")
+    
+    with metrics_col3:
+        if '# Nights' in filtered_df.columns:
+            total_room_nights = filtered_df['# Nights'].sum()
+            st.metric("Total Room Nights", f"{total_room_nights:,.0f}")
+        else:
+            st.metric("Total Room Nights", "N/A")
+    
+    with metrics_col4:
+        if 'Name' in filtered_df.columns:
+            unique_guests = filtered_df['Name'].nunique()
+            st.metric("Unique Guests", unique_guests)
+        else:
+            st.metric("Unique Guests", "N/A")
+            st.warning("Column 'Name' is missing in the data.")
+    
+    # Charts Section
+    st.subheader("Visualizations")
+    chart_col1, chart_col2 = st.columns(2)
+    
+    with chart_col1:
+        # Reservations by Hotel
+        if 'Market' in filtered_df.columns:
+            reservations_by_hotel = filtered_df.groupby('Market').size().reset_index(name='Reservations')
+            reservations_by_hotel = reservations_by_hotel.rename(columns={'Market': 'Hotel'})
+            
+            if reservations_by_hotel.empty:
+                st.warning("No reservation data available for the selected filters.")
+            else:
+                fig_hotels = px.bar(
+                    reservations_by_hotel,
+                    x='Hotel',
+                    y='Reservations',
+                    labels={'Hotel': 'Hotel', 'Reservations': 'Reservations'},
+                    title='Reservations by Hotel'
+                )
+                st.plotly_chart(fig_hotels, use_container_width=True)
+        else:
+            st.warning("Column 'Market' is missing, cannot plot Reservations by Hotel.")
+    
+    with chart_col2:
         # Length of Stay Distribution
-        fig_los = px.histogram(
-            filtered_df,
-            x='# Nights',
-            title='Length of Stay Distribution'
-        )
-        st.plotly_chart(fig_los, use_container_width=True)
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Rate Code Distribution
-        fig_rate = px.pie(
-            filtered_df,
-            names='Rate Code Name',
-            title='Rate Code Distribution'
-        )
-        st.plotly_chart(fig_rate, use_container_width=True)
-
-    with col2:
-        # Arrivals by Date
-        daily_arrivals = filtered_df['Arrival Date Short'].value_counts().sort_index()
-        
-        if daily_arrivals.empty:
-            st.warning("No arrival data available for the selected filters.")
-        else:
-            fig_arrivals = px.line(
-                x=daily_arrivals.index,
-                y=daily_arrivals.values,
-                labels={'x': 'Date', 'y': 'Arrivals'},
-                title='Arrivals by Date'
+        if '# Nights' in filtered_df.columns:
+            fig_los = px.histogram(
+                filtered_df,
+                x='# Nights',
+                title='Length of Stay Distribution'
             )
-            st.plotly_chart(fig_arrivals, use_container_width=True)
-
-
-
-
+            st.plotly_chart(fig_los, use_container_width=True)
+        else:
+            st.warning("Column '# Nights' is missing, cannot plot Length of Stay Distribution.")
+    
+    chart_col3, chart_col4 = st.columns(2)
+    
+    with chart_col3:
+        # Rate Code Distribution
+        if 'Rate Code Name' in filtered_df.columns:
+            fig_rate = px.pie(
+                filtered_df,
+                names='Rate Code Name',
+                title='Rate Code Distribution'
+            )
+            st.plotly_chart(fig_rate, use_container_width=True)
+        else:
+            st.warning("Column 'Rate Code Name' is missing, cannot plot Rate Code Distribution.")
+    
+    with chart_col4:
+        # Arrivals by Date
+        if 'Arrival Date Short' in filtered_df.columns:
+            try:
+                daily_arrivals = filtered_df['Arrival Date Short'].value_counts().sort_index()
+                if daily_arrivals.empty:
+                    st.warning("No arrival data available for the selected filters.")
+                else:
+                    fig_arrivals = px.line(
+                        x=daily_arrivals.index,
+                        y=daily_arrivals.values,
+                        labels={'x': 'Date', 'y': 'Arrivals'},
+                        title='Arrivals by Date'
+                    )
+                    st.plotly_chart(fig_arrivals, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error plotting Arrivals by Date: {e}")
+        else:
+            st.warning("Column 'Arrival Date Short' is missing, cannot plot Arrivals by Date.")
 
 import pandas as pd
 import requests
