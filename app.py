@@ -1,8 +1,10 @@
-import streamlit as st
+import streamlit as st  # Import Streamlit first
 
-import openphone  # Ensure this import comes after setting the page config
-# Set the page configuration first
+# Set the page configuration as the first command
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
+
+# Now import other modules
+import openphone  # Ensure this does not execute any Streamlit commands
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
@@ -11,7 +13,7 @@ from google.oauth2 import service_account
 import math
 import requests
 import time
-import owner_marketing  # Ensure owner_marketing.py is in the same directory or adjust the path accordingly
+import owner_marketing  # Ensure this module is also free of Streamlit commands
 
 
 
