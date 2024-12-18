@@ -9,28 +9,22 @@ import logging
 from logging.handlers import RotatingFileHandler
 import pgeocode
 import requests
+import json
 
 # Define a global flag for demo mode
 DEMO_MODE = True  # Set to False to enable live functionality
 
-# Setup logging with rotation to manage log file sizes
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 handler = RotatingFileHandler('campaign.log', maxBytes=1000000, backupCount=5)
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-# Cache data fetching to improve performance
-def get_owner_sheet_data():
-    """
-    Fetch owner data from Google Sheets.
-    Returns a pandas DataFrame containing owner information.
-    """
+def initialize_connection():
+    """Initialize Google Sheets connection with error handling"""
     try:
-        # Log the start of the process
-        logger.info("Attempting to fetch data from Google Sheets...")
-
         credentials = service_account.Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=[
@@ -38,141 +32,229 @@ def get_owner_sheet_data():
                 "https://www.googleapis.com/auth/drive.readonly"
             ],
         )
+        return gspread.authorize(credentials)
+    except Exception as e:
+        logger.error(f"Failed to initialize connection: {str(e)}")
+        raise
 
-        client = gspread.authorize(credentials)
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_owner_sheet_data():
+    """
+    Fetch and process owner data from Google Sheets with error handling and data validation
+    """
+    try:
+        logger.info("Fetching data from Google Sheets...")
+        
+        # Initialize connection
+        client = initialize_connection()
         sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
         sheet = client.open_by_key(sheet_key)
         worksheet = sheet.get_worksheet(0)
         data = worksheet.get_all_records()
 
         if not data:
-            logger.warning("Google Sheet is empty.")
-            st.warning("The Google Sheet is empty. Please ensure it contains data.")
+            logger.warning("No data found in Google Sheet")
             return pd.DataFrame()
 
+        # Convert to DataFrame
         df = pd.DataFrame(data)
-        logger.info(f"Successfully fetched {len(df)} rows from Google Sheets.")
 
-        # Data Cleaning
-        for date_col in ['Sale Date', 'Maturity Date']:
-            if date_col in df.columns:
-                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+        # Data cleaning and validation
+        df = clean_and_validate_data(df)
 
-        for num_col in ['Points', 'Primary FICO']:
-            if num_col in df.columns:
-                df[num_col] = pd.to_numeric(df[num_col], errors='coerce')
+        logger.info(f"Successfully fetched {len(df)} rows of data")
+        return df
 
+    except Exception as e:
+        logger.error(f"Error in get_owner_sheet_data: {str(e)}")
+        raise
+
+def clean_and_validate_data(df):
+    """Clean and validate the DataFrame"""
+    try:
+        # Convert date columns
+        date_columns = ['Sale Date', 'Maturity Date']
+        for col in date_columns:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        # Convert numeric columns
+        numeric_columns = ['Points', 'Primary FICO']
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Clean phone numbers
         if 'Phone Number' in df.columns:
             df['Phone Number'] = df['Phone Number'].astype(str)
+            df['Phone Number'] = df['Phone Number'].apply(clean_phone_number)
 
-        # Add communication-related columns
-        df['Last Communication Status'] = ""
-        df['Last Communication Date'] = ""
-        df['Total Calls'] = 0
-        df['Total Messages'] = 0
-        df['Select'] = False
+        # Add communication tracking columns
+        tracking_columns = {
+            'Last Communication Status': '',
+            'Last Communication Date': '',
+            'Total Calls': 0,
+            'Total Messages': 0,
+            'Select': False
+        }
+
+        for col, default_value in tracking_columns.items():
+            if col not in df.columns:
+                df[col] = default_value
 
         return df
 
-    except gspread.exceptions.SpreadsheetNotFound:
-        st.error("Google Sheet not found. Please check the sheet key and permissions.")
-        logger.error("Google Sheet not found. Check the sheet key and permissions.")
-        return pd.DataFrame()
-
     except Exception as e:
-        st.error(f"Error accessing Google Sheet: {str(e)}")
-        logger.error(f"Google Sheet Access Error: {str(e)}")
-        return pd.DataFrame()
+        logger.error(f"Error in clean_and_validate_data: {str(e)}")
+        raise
 
-# Function to fetch communication data from OpenPhone
+def clean_phone_number(phone):
+    """Clean and format phone numbers"""
+    try:
+        if pd.isna(phone) or phone == '':
+            return ''
+        # Remove any non-numeric characters
+        cleaned = ''.join(filter(str.isdigit, str(phone)))
+        # Ensure proper length and format
+        if len(cleaned) == 10:
+            cleaned = '1' + cleaned
+        elif len(cleaned) > 11 or len(cleaned) < 10:
+            return ''
+        return cleaned
+    except Exception as e:
+        logger.error(f"Error cleaning phone number: {str(e)}")
+        return ''
+
 def fetch_openphone_data(phone_number):
     """
-    Fetch communication data (calls and messages) for a given phone number from OpenPhone.
+    Fetch communication data from OpenPhone API with error handling
     """
-    OPENPHONE_API_KEY = st.secrets["openphone_api_key"]
-    headers = {
-        "Authorization": f"Bearer {OPENPHONE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    url = "https://api.openphone.co/v1/calls"
-    params = {"participants": [phone_number], "maxResults": 50}
+    if DEMO_MODE:
+        # Return mock data in demo mode
+        return {
+            "Last Communication Status": "Demo Mode",
+            "Last Communication Date": datetime.now().isoformat(),
+            "Total Calls": 0,
+            "Total Messages": 0
+        }
 
     try:
-        logger.info(f"Fetching OpenPhone data for {phone_number}...")
-        response = requests.get(url, headers=headers, params=params)
+        OPENPHONE_API_KEY = st.secrets["openphone_api_key"]
+        headers = {
+            "Authorization": f"Bearer {OPENPHONE_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        url = "https://api.openphone.co/v1/calls"
+        params = {"participants": [phone_number], "maxResults": 50}
 
-        if response.status_code == 200:
-            data = response.json().get('data', [])
-            total_calls = len([d for d in data if d.get("type") == "call"])
-            total_messages = len([d for d in data if d.get("type") == "message"])
-            last_communication = max(data, key=lambda x: x.get('createdAt', 0), default=None)
-            status = last_communication.get("status", "") if last_communication else "No Communications"
-            last_date = last_communication.get("createdAt", "") if last_communication else None
-            return {
-                "Last Communication Status": status,
-                "Last Communication Date": last_date,
-                "Total Calls": total_calls,
-                "Total Messages": total_messages
-            }
-        else:
-            logger.error(f"OpenPhone API error: {response.status_code} - {response.text}")
-            return {
-                "Last Communication Status": "API Error",
-                "Last Communication Date": None,
-                "Total Calls": 0,
-                "Total Messages": 0
-            }
-    except Exception as e:
-        logger.error(f"Error fetching OpenPhone data for {phone_number}: {str(e)}")
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        data = response.json().get('data', [])
+        total_calls = len([d for d in data if d.get("type") == "call"])
+        total_messages = len([d for d in data if d.get("type") == "message"])
+        
+        last_communication = max(data, key=lambda x: x.get('createdAt', 0), default=None)
+        status = last_communication.get("status", "") if last_communication else "No Communications"
+        last_date = last_communication.get("createdAt", "") if last_communication else None
+
         return {
-            "Last Communication Status": "Error",
+            "Last Communication Status": status,
+            "Last Communication Date": last_date,
+            "Total Calls": total_calls,
+            "Total Messages": total_messages
+        }
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"OpenPhone API error: {str(e)}")
+        return {
+            "Last Communication Status": "API Error",
             "Last Communication Date": None,
             "Total Calls": 0,
             "Total Messages": 0
         }
 
-# Function to update communication info for selected rows
 def update_communication_info(df, selected_rows):
-    """
-    Update the communication info for selected rows in the DataFrame.
-    """
-    for idx in selected_rows:
-        phone_number = df.at[idx, "Phone Number"]
-        communication_data = fetch_openphone_data(phone_number)
-        df.at[idx, "Last Communication Status"] = communication_data["Last Communication Status"]
-        df.at[idx, "Last Communication Date"] = communication_data["Last Communication Date"]
-        df.at[idx, "Total Calls"] = communication_data["Total Calls"]
-        df.at[idx, "Total Messages"] = communication_data["Total Messages"]
-    return df
+    """Update communication information for selected rows"""
+    try:
+        for idx in selected_rows:
+            if idx in df.index and "Phone Number" in df.columns:
+                phone_number = df.loc[idx, "Phone Number"]
+                if phone_number:
+                    communication_data = fetch_openphone_data(phone_number)
+                    
+                    # Update the DataFrame using .loc
+                    for key, value in communication_data.items():
+                        if key in df.columns:
+                            df.loc[idx, key] = value
+                    
+                    # Add a small delay to avoid API rate limits
+                    time.sleep(0.1)
+        
+        return df
 
-# Run the main Streamlit app
+    except Exception as e:
+        logger.error(f"Error in update_communication_info: {str(e)}")
+        raise
+
 def run_owner_marketing_tab(owner_df):
-    st.title("Owner Marketing Dashboard")
+    """Main function to run the owner marketing dashboard"""
+    try:
+        st.title("Owner Marketing Dashboard")
 
-    # Interactive table for editing
-    st.subheader("Owner Data")
-    for i in range(len(owner_df)):
-        owner_df.at[i, 'Select'] = st.checkbox(f"Select Row {i+1}", key=f"row_{i}")
+        # Reset index and ensure proper column setup
+        owner_df = owner_df.reset_index(drop=True)
+        
+        # Display filters
+        with st.expander("Filters"):
+            # Add your filter controls here
+            pass
 
-    # Button to update communication info
-    if st.button("Update Communication Info"):
-        selected_rows = [i for i in range(len(owner_df)) if owner_df.at[i, 'Select']]
-        if not selected_rows:
-            st.warning("No rows selected. Please select rows to update.")
-        else:
-            with st.spinner("Fetching communication info..."):
-                updated_df = update_communication_info(owner_df, selected_rows)
-            st.success("Communication info updated successfully!")
-            st.dataframe(updated_df)
+        # Create selection interface
+        st.subheader("Select Owners to Update")
+        
+        # Create checkboxes for selection
+        selected_rows = []
+        for index, row in owner_df.iterrows():
+            owner_df.loc[index, 'Select'] = st.checkbox(
+                f"Select Row {index+1}", 
+                value=owner_df.loc[index, 'Select'],
+                key=f"row_{index}"
+            )
+            if owner_df.loc[index, 'Select']:
+                selected_rows.append(index)
+
+        # Update button
+        if st.button("Update Communication Info"):
+            if not selected_rows:
+                st.warning("Please select at least one row to update.")
+            else:
+                with st.spinner("Updating communication information..."):
+                    owner_df = update_communication_info(owner_df, selected_rows)
+                st.success(f"Updated {len(selected_rows)} rows successfully!")
+
+        # Display the DataFrame
+        st.subheader("Owner Data")
+        st.dataframe(owner_df)
+
+    except Exception as e:
+        logger.error(f"Error in run_owner_marketing_tab: {str(e)}")
+        st.error("An error occurred while running the dashboard. Please check the logs for details.")
 
 def run_minimal_app():
-    st.title("Owner Marketing Dashboard")
-    owner_df = get_owner_sheet_data()
-    if not owner_df.empty:
-        run_owner_marketing_tab(owner_df)
-    else:
-        st.error("No owner data available to display.")
+    """Main application entry point"""
+    try:
+        st.set_page_config(page_title="Owner Marketing", layout="wide")
+        
+        owner_df = get_owner_sheet_data()
+        if not owner_df.empty:
+            run_owner_marketing_tab(owner_df)
+        else:
+            st.error("No data available. Please check the Google Sheet connection.")
+
+    except Exception as e:
+        logger.error(f"Application error: {str(e)}")
+        st.error("An error occurred while starting the application. Please check the logs for details.")
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
     run_minimal_app()
