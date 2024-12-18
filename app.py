@@ -763,6 +763,7 @@ with tab2:
 
             # **Fetch Communication Info Button**
             # Fetch Communication Info Button
+            # Inside the Fetch Communication Info button handler:
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
@@ -783,18 +784,29 @@ with tab2:
             
                     for idx, row in display_df.iterrows():
                         phone = row['Phone Number']
-                        check_in_date = row['Check In']
+                        # Convert check_in_date to datetime if it's not already
+                        check_in_date = pd.to_datetime(row['Check In']) if isinstance(row['Check In'], str) else row['Check In']
             
                         # Logic to compute new columns
                         total_calls = call_attempts_list[idx]
                         short_calls = durations[idx] if durations[idx] and durations[idx] < 40 else 0
-                        total_texts_after_checkin = total_messages_list[idx] if dates[idx] and dates[idx] >= check_in_date else 0
+                        
+                        # Handle date comparison safely
+                        if dates[idx] and check_in_date:
+                            try:
+                                # Convert the communication date to datetime if it's a string
+                                comm_date = pd.to_datetime(dates[idx]) if isinstance(dates[idx], str) else dates[idx]
+                                texts_after_checkin = total_messages_list[idx] if comm_date >= check_in_date else 0
+                            except (ValueError, TypeError):
+                                texts_after_checkin = 0
+                        else:
+                            texts_after_checkin = 0
             
                         # Append to lists
                         call_counts.append(total_calls)
-                        text_counts_after_checkin.append(total_texts_after_checkin)
+                        text_counts_after_checkin.append(texts_after_checkin)
                         short_calls_count.append(short_calls)
-            
+
                     # Verify that all lists have the same length as display_df
                     expected_length = len(display_df)
                     actual_lengths = [len(lst) for lst in [
