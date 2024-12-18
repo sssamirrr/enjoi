@@ -715,25 +715,8 @@ with tab2:
             st.stop()
 
         if not display_df.empty:
-            # Prepare display DataFrame
-            # Debugging: Log the available columns in the DataFrame
-            st.write("Available columns in display_df:", display_df.columns.tolist())
-            
-            # Reorder columns to include new fields
-            try:
-                display_df = display_df[
-                    [
-                        'Select', 'Guest Name', 'Check In', 'Check Out',
-                        'Phone Number', 'Rate Code', 'Price',
-                        'Communication Status', 'Last Communication Date',
-                        'Call Duration (seconds)', 'Agent Name',
-                        'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
-                        'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
-                    ]
-                ]
-            except KeyError as e:
-                st.error(f"Missing columns in display_df: {str(e)}")
-                st.stop()
+            # Prepare the display DataFrame using the new function
+            display_df = prepare_display_dataframe(display_df)
 
 
             # Ensure required columns are present
