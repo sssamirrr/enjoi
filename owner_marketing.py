@@ -142,31 +142,26 @@ def update_communication_info(df, selected_rows):
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    # Reset index to ensure alignment
-    owner_df = owner_df.reset_index(drop=True)
+    # Ensure the DataFrame is in session state
+    if "owner_df" not in st.session_state:
+        st.session_state["owner_df"] = owner_df.reset_index(drop=True)
 
-    # Ensure 'Select' column exists
-    if 'Select' not in owner_df.columns:
-        owner_df['Select'] = False
+    # Access the DataFrame from session state
+    df = st.session_state["owner_df"]
 
-    # Log the DataFrame structure for debugging
-    logger.info(f"DataFrame columns: {owner_df.columns}")
-    logger.info(f"DataFrame head: {owner_df.head()}")
-
-    # Interactive checkboxes for selecting rows
+    # Display the table with checkboxes
     st.subheader("Owner Data")
-    for i in range(len(owner_df)):
-        owner_df.at[i, 'Select'] = st.checkbox(f"Select Row {i+1}", key=f"row_{i}")
+    for i in range(len(df)):
+        df.at[i, 'Select'] = st.checkbox(f"Select Row {i+1}", value=df.at[i, 'Select'], key=f"row_{i}")
 
     # Button to update communication info
     if st.button("Update Communication Info"):
-        selected_rows = owner_df.index[owner_df['Select']].tolist()
-        logger.info(f"Selected rows: {selected_rows}")  # Log selected rows
+        selected_rows = df.index[df['Select']].tolist()
         if not selected_rows:
             st.warning("No rows selected. Please select rows to update.")
         else:
             with st.spinner("Fetching communication info..."):
-                updated_df = update_communication_info(owner_df, selected_rows)
+                updated_df = update_communication_info(df, selected_rows)
             st.success("Communication info updated successfully!")
             st.dataframe(updated_df)
 
