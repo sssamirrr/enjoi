@@ -1366,8 +1366,11 @@ with tab5:
     with col3:
         st.metric("Recovery Rate", "---")
 with tab6:
-    import openphone
-    openphone.run_openphone_tab()
+    try:
+        from openphone import run_openphone_tab
+        run_openphone_tab()
+    except Exception as e:
+        st.error(f"Error in OpenPhone tab: {str(e)}")
 ############################################
 # Raw Data Viewer
 ############################################
