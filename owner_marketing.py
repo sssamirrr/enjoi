@@ -1,3 +1,4 @@
+# owner_marketing.py
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -8,6 +9,7 @@ import phonenumbers
 import logging
 from logging.handlers import RotatingFileHandler
 import pgeocode  # For geocoding ZIP codes to latitude and longitude
+import communication  # Import the communication module
 
 # Define a global flag for demo mode
 DEMO_MODE = True  # Set to False to enable live functionality
@@ -83,7 +85,7 @@ def format_phone_number(phone):
     except phonenumbers.NumberParseException:
         pass
     return None
-# Add this function here
+
 def clean_zip_code(zip_code):
     """Clean and validate ZIP code"""
     if pd.isna(zip_code):
@@ -91,6 +93,7 @@ def clean_zip_code(zip_code):
     zip_str = str(zip_code)
     zip_digits = ''.join(filter(str.isdigit, zip_str))
     return zip_digits[:5] if len(zip_digits) >= 5 else None
+
 def send_email(recipient, subject, body):
     """
     Mock function to simulate sending an email.
@@ -165,7 +168,7 @@ def run_owner_marketing_tab(owner_df):
         st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
 
     # Campaign Type Selection
-    campaign_tabs = st.tabs([" \U0001F4F1 Text Message Campaign", " \U0001F4E9 Email Campaign"])
+    campaign_tabs = st.tabs(["📱 Text Message Campaign", "✉️ Email Campaign"])
 
     # Now, loop over the campaign tabs
     for idx, campaign_type in enumerate(["Text", "Email"]):
@@ -173,7 +176,7 @@ def run_owner_marketing_tab(owner_df):
             st.header(f"{campaign_type} Campaign Management")
 
             # Apply filters inside the tab
-            with st.expander(" \u2699\ufe0f", expanded=True):
+            with st.expander("⚙️ Filter Options", expanded=True):
                 col1, col2, col3 = st.columns(3)
 
                 # Column 1 Filters
@@ -230,7 +233,7 @@ def run_owner_marketing_tab(owner_df):
                                 key=f'fico_{campaign_type}'
                             )
 
-            # Apply filters to the data
+    # Apply filters to the data
             campaign_filtered_df = owner_df.copy()
 
             if selected_states:
@@ -256,19 +259,51 @@ def run_owner_marketing_tab(owner_df):
             if campaign_filtered_df.empty:
                 st.warning("No data matches the selected filters.")
             else:
+                # Integrate Communication Status
+                headers = {
+                    "Authorization": communication.OPENPHONE_API_KEY,
+                    "Content-Type": "application/json"
+                }
+
+                with st.spinner('Fetching communication information...'):
+                    (
+                        statuses, dates, durations, agent_names,
+                        total_messages_list, total_calls_list,
+                        answered_calls_list, missed_calls_list,
+                        call_attempts_list,
+                        pre_arrival_calls_list, pre_arrival_texts_list,
+                        post_arrival_calls_list, post_arrival_texts_list,
+                        calls_under_40sec_list
+                    ) = communication.fetch_communication_info(campaign_filtered_df, headers)
+
+                # Add communication data to DataFrame
+                campaign_filtered_df['Communication Status'] = statuses
+                campaign_filtered_df['Last Communication Date'] = dates
+                campaign_filtered_df['Call Duration (seconds)'] = durations
+                campaign_filtered_df['Agent Name'] = agent_names
+                campaign_filtered_df['Total Messages'] = total_messages_list
+                campaign_filtered_df['Total Calls'] = total_calls_list
+                campaign_filtered_df['Answered Calls'] = answered_calls_list
+                campaign_filtered_df['Missed Calls'] = missed_calls_list
+                campaign_filtered_df['Call Attempts'] = call_attempts_list
+                campaign_filtered_df['Pre-Arrival Calls'] = pre_arrival_calls_list
+                campaign_filtered_df['Pre-Arrival Texts'] = pre_arrival_texts_list
+                campaign_filtered_df['Post-Arrival Calls'] = post_arrival_calls_list
+                campaign_filtered_df['Post-Arrival Texts'] = post_arrival_texts_list
+                campaign_filtered_df['Calls Under 40 sec'] = calls_under_40sec_list
+
                 st.dataframe(campaign_filtered_df)
 
-                        
             # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
-            
+
             # Create a toggle for the map
             show_map = st.expander("Show/Hide Owners Map", expanded=False)
-            
-            with show_map:  # Everything related to the map should be inside this block
+
+            with show_map:
                 if 'Zip Code' in campaign_filtered_df.columns:
                     # Clean and prepare ZIP codes
-                    campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
+                    campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(communication.clean_zip_code)
                     campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
 
                     if not campaign_filtered_df.empty:
@@ -276,7 +311,7 @@ def run_owner_marketing_tab(owner_df):
                             # Geocode ZIP codes
                             nomi = pgeocode.Nominatim('us')
                             geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'].tolist())
-                            
+
                             # Create map data
                             map_data = pd.DataFrame({
                                 'lat': geocode_df['latitude'],
@@ -294,7 +329,6 @@ def run_owner_marketing_tab(owner_df):
                         st.info("No valid ZIP codes available for mapping")
                 else:
                     st.info("ZIP Code data is not available to display the map")
-
 
             # Display metrics
             metrics_cols = st.columns(4)
@@ -331,10 +365,8 @@ def run_owner_marketing_tab(owner_df):
                     total_value = 0
                 st.metric("Total Value", f"${total_value:,.2f}")
 
-            # Campaign Setup
-            st.subheader("Campaign Setup")
-
             # A/B Testing setup
+            st.subheader("A/B Testing Setup")
             col1, col2 = st.columns(2)
             with col1:
                 ab_split = st.slider(
@@ -462,7 +494,7 @@ def run_owner_marketing_tab(owner_df):
                                 else:
                                     success = False
                             else:
-                                phone = format_phone_number(row['Phone Number'])
+                                phone = communication.format_phone_number(row['Phone Number'])
                                 if phone:
                                     personalized_message = message.format(first_name=row['First Name'])
                                     success = send_text_message(phone, personalized_message)
@@ -510,10 +542,14 @@ def run_owner_marketing_tab(owner_df):
                             mime="text/csv"
                         )
 
+    # **Add Communication Status Data (Optional)**
+    # You can choose to display additional communication metrics or charts here
+
 def run_minimal_app():
     st.title("Owner Marketing Dashboard")
     owner_df = get_owner_sheet_data()
     if not owner_df.empty:
+        communication.run_fetch_communication_info(owner_df)  # Optional: Pre-fetch communication data
         run_owner_marketing_tab(owner_df)
     else:
         st.error("No owner data available to display.")
@@ -521,4 +557,3 @@ def run_minimal_app():
 if __name__ == "__main__":
     st.set_page_config(page_title="Owner Marketing", layout="wide")
     run_minimal_app()
-
