@@ -82,8 +82,8 @@ def fetch_openphone_data(phone_number):
     # Replace with your actual OpenPhone API key and number
     OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
     OPENPHONE_NUMBER = "+18438972426"
-        url = "https://api.openphone.co/v1/calls"
-        params = {"participants": [phone_number], "maxResults": 50}
+    url = "https://api.openphone.co/v1/calls"
+    params = {"participants": [phone_number], "maxResults": 50}
 
     try:
         logger.info(f"Fetching OpenPhone data for {phone_number}...")
