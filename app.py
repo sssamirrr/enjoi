@@ -265,7 +265,6 @@ def get_communication_info(phone_number, headers):
         'call_attempts': call_attempts
     }
 
-
 def fetch_communication_info(guest_df, headers):
     if 'Phone Number' not in guest_df.columns:
         num_rows = len(guest_df)
