@@ -55,6 +55,30 @@ def run_openphone_tab():
     agent_performance = pd.merge(agent_performance, agent_bookings, on='userId', how='outer').fillna(0)
     agent_performance['booking_rate'] = (agent_performance['total_bookings'] / agent_performance['total_calls'] * 100).fillna(0)
 
+    # Outbound Call Success Rate
+    st.subheader("Outbound Call Success Rate")
+    min_success_duration = st.slider(
+        "Minimum Call Duration (seconds) to Count as Success",
+        min_value=0,
+        max_value=int(calls['duration'].max()) if 'duration' in calls.columns and not calls['duration'].isnull().all() else 60,
+        value=30
+    )
+
+    outbound_calls = calls[calls['direction'] == 'outgoing']
+    successful_outbound_calls = outbound_calls[outbound_calls['duration'] >= min_success_duration]
+
+    success_rate = (
+        len(successful_outbound_calls) / len(outbound_calls) * 100 if len(outbound_calls) > 0 else 0
+    )
+
+    # Success Rate per Agent
+    agent_success = successful_outbound_calls.groupby('userId').size().reset_index(name='successful_calls')
+    agent_outbound = outbound_calls.groupby('userId').size().reset_index(name='total_outbound_calls')
+    agent_success_rate = pd.merge(agent_outbound, agent_success, on='userId', how='outer').fillna(0)
+    agent_success_rate['success_rate'] = (
+        agent_success_rate['successful_calls'] / agent_success_rate['total_outbound_calls'] * 100
+    ).fillna(0)
+
     # Metrics
     st.subheader("Key Metrics")
     col1, col2, col3, col4 = st.columns(4)
@@ -65,7 +89,7 @@ def run_openphone_tab():
     with col3:
         st.metric("Message Conversion Rate", f"{message_conversion_rate:.2f}%")
     with col4:
-        st.metric("Total Messages", len(messages))
+        st.metric("Outbound Call Success Rate", f"{success_rate:.2f}%")
 
     # Hourly Trends
     st.subheader("Hourly Trends")
@@ -116,6 +140,23 @@ def run_openphone_tab():
         'total_calls': 'Total Calls',
         'total_bookings': 'Total Bookings',
         'booking_rate': 'Booking Rate (%)'
+    }))
+
+    # Agent Outbound Success Rate
+    st.subheader("Agent Outbound Success Rate")
+    fig = px.bar(
+        agent_success_rate,
+        x='userId',
+        y=['total_outbound_calls', 'successful_calls'],
+        title="Agent Outbound Success Rate",
+        barmode='group',
+    )
+    st.plotly_chart(fig)
+    st.dataframe(agent_success_rate.rename(columns={
+        'userId': 'Agent',
+        'total_outbound_calls': 'Total Outbound Calls',
+        'successful_calls': 'Successful Calls',
+        'success_rate': 'Success Rate (%)'
     }))
 
     # Heatmap of Call Volume by Time
