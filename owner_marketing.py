@@ -233,7 +233,7 @@ def run_owner_marketing_tab(owner_df):
                                 key=f'fico_{campaign_type}'
                             )
 
-    # Apply filters to the data
+            # Apply filters to the data
             campaign_filtered_df = owner_df.copy()
 
             if selected_states:
@@ -254,45 +254,99 @@ def run_owner_marketing_tab(owner_df):
                     (campaign_filtered_df['Primary FICO'] <= fico_range[1])
                 ]
 
-            # Display Filtered Data as a Table
-            st.subheader("Filtered Owner Sheets Data")
-            if campaign_filtered_df.empty:
+            # Remove duplicate rows based on 'Phone Number' and reset index
+            display_df = campaign_filtered_df.drop_duplicates(subset=['Phone Number']).reset_index(drop=True)
+
+            # Optional: Verify that 'Phone Number' is unique
+            if display_df['Phone Number'].duplicated().any():
+                st.error("Duplicate Phone Numbers found in the data. Please ensure each owner has a unique phone number.")
+                st.stop()
+
+            # Add a checkbox for each row to select owners
+            st.subheader("Select Owners to Fetch Communication Status")
+            if display_df.empty:
                 st.warning("No data matches the selected filters.")
             else:
-                # Integrate Communication Status
-                headers = {
-                    "Authorization": communication.OPENPHONE_API_KEY,
-                    "Content-Type": "application/json"
-                }
+                # Initialize session state for communication data, scoped by campaign type
+                if 'communication_data' not in st.session_state:
+                    st.session_state['communication_data'] = {}
+                if campaign_type not in st.session_state['communication_data']:
+                    st.session_state['communication_data'][campaign_type] = {}
 
-                with st.spinner('Fetching communication information...'):
-                    (
-                        statuses, dates, durations, agent_names,
-                        total_messages_list, total_calls_list,
-                        answered_calls_list, missed_calls_list,
-                        call_attempts_list,
-                        pre_arrival_calls_list, pre_arrival_texts_list,
-                        post_arrival_calls_list, post_arrival_texts_list,
-                        calls_under_40sec_list
-                    ) = communication.fetch_communication_info(campaign_filtered_df, headers)
+                # Display checkboxes
+                display_df['Select'] = False  # Initialize the 'Select' column
+                selected_rows = []
+                for index, row in display_df.iterrows():
+                    select = st.checkbox(f"Select {row['First Name']} {row['Last Name']}", key=f"select_{campaign_type}_{index}")
+                    display_df.at[index, 'Select'] = select
+                    if select:
+                        selected_rows.append(index)
 
-                # Add communication data to DataFrame
-                campaign_filtered_df['Communication Status'] = statuses
-                campaign_filtered_df['Last Communication Date'] = dates
-                campaign_filtered_df['Call Duration (seconds)'] = durations
-                campaign_filtered_df['Agent Name'] = agent_names
-                campaign_filtered_df['Total Messages'] = total_messages_list
-                campaign_filtered_df['Total Calls'] = total_calls_list
-                campaign_filtered_df['Answered Calls'] = answered_calls_list
-                campaign_filtered_df['Missed Calls'] = missed_calls_list
-                campaign_filtered_df['Call Attempts'] = call_attempts_list
-                campaign_filtered_df['Pre-Arrival Calls'] = pre_arrival_calls_list
-                campaign_filtered_df['Pre-Arrival Texts'] = pre_arrival_texts_list
-                campaign_filtered_df['Post-Arrival Calls'] = post_arrival_calls_list
-                campaign_filtered_df['Post-Arrival Texts'] = post_arrival_texts_list
-                campaign_filtered_df['Calls Under 40 sec'] = calls_under_40sec_list
+                # Add "Fetch Communication Status" button
+                fetch_button = st.button("Fetch Communication Status", key=f'fetch_comm_{campaign_type}')
 
-                st.dataframe(campaign_filtered_df)
+                if fetch_button:
+                    if not selected_rows:
+                        st.warning("No owners selected for fetching communication status.")
+                    else:
+                        selected_owners = display_df.loc[selected_rows]
+                        headers = {
+                            "Authorization": communication.OPENPHONE_API_KEY,
+                            "Content-Type": "application/json"
+                        }
+
+                        with st.spinner('Fetching communication information...'):
+                            (
+                                statuses, dates, durations, agent_names,
+                                total_messages_list, total_calls_list,
+                                answered_calls_list, missed_calls_list,
+                                call_attempts_list,
+                                pre_arrival_calls_list, pre_arrival_texts_list,
+                                post_arrival_calls_list, post_arrival_texts_list,
+                                calls_under_40sec_list
+                            ) = communication.fetch_communication_info(selected_owners, headers)
+
+                        # Add communication data to DataFrame
+                        display_df.loc[selected_rows, 'Communication Status'] = statuses
+                        display_df.loc[selected_rows, 'Last Communication Date'] = dates
+                        display_df.loc[selected_rows, 'Call Duration (seconds)'] = durations
+                        display_df.loc[selected_rows, 'Agent Name'] = agent_names
+                        display_df.loc[selected_rows, 'Total Messages'] = total_messages_list
+                        display_df.loc[selected_rows, 'Total Calls'] = total_calls_list
+                        display_df.loc[selected_rows, 'Answered Calls'] = answered_calls_list
+                        display_df.loc[selected_rows, 'Missed Calls'] = missed_calls_list
+                        display_df.loc[selected_rows, 'Call Attempts'] = call_attempts_list
+                        display_df.loc[selected_rows, 'Pre-Arrival Calls'] = pre_arrival_calls_list
+                        display_df.loc[selected_rows, 'Pre-Arrival Texts'] = pre_arrival_texts_list
+                        display_df.loc[selected_rows, 'Post-Arrival Calls'] = post_arrival_calls_list
+                        display_df.loc[selected_rows, 'Post-Arrival Texts'] = post_arrival_texts_list
+                        display_df.loc[selected_rows, 'Calls Under 40 sec'] = calls_under_40sec_list
+
+                        # Update session state scoped to the campaign type
+                        for idx, row in selected_owners.iterrows():
+                            phone = row['Phone Number']
+                            st.session_state['communication_data'][campaign_type][phone] = {
+                                'status': statuses[idx],
+                                'date': dates[idx],
+                                'duration': durations[idx],
+                                'agent': agent_names[idx],
+                                'total_messages': total_messages_list[idx],
+                                'total_calls': total_calls_list[idx],
+                                'answered_calls': answered_calls_list[idx],
+                                'missed_calls': missed_calls_list[idx],
+                                'call_attempts': call_attempts_list[idx],
+                                'pre_arrival_calls': pre_arrival_calls_list[idx],
+                                'pre_arrival_texts': pre_arrival_texts_list[idx],
+                                'post_arrival_calls': post_arrival_calls_list[idx],
+                                'post_arrival_texts': post_arrival_texts_list[idx],
+                                'calls_under_40sec': calls_under_40sec_list[idx]
+                            }
+
+                        st.success("Communication information successfully fetched and updated.")
+
+                # Display the updated DataFrame with communication data
+                st.subheader("Owner Sheets Data with Communication Status")
+                st.dataframe(display_df)
 
             # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
@@ -300,10 +354,10 @@ def run_owner_marketing_tab(owner_df):
             # Create a toggle for the map
             show_map = st.expander("Show/Hide Owners Map", expanded=False)
 
-            with show_map:
+            with show_map:  # Everything related to the map should be inside this block
                 if 'Zip Code' in campaign_filtered_df.columns:
                     # Clean and prepare ZIP codes
-                    campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(communication.clean_zip_code)
+                    campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
                     campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
 
                     if not campaign_filtered_df.empty:
@@ -542,18 +596,14 @@ def run_owner_marketing_tab(owner_df):
                             mime="text/csv"
                         )
 
-    # **Add Communication Status Data (Optional)**
-    # You can choose to display additional communication metrics or charts here
+    def run_minimal_app():
+        st.title("Owner Marketing Dashboard")
+        owner_df = get_owner_sheet_data()
+        if not owner_df.empty:
+            run_owner_marketing_tab(owner_df)
+        else:
+            st.error("No owner data available to display.")
 
-def run_minimal_app():
-    st.title("Owner Marketing Dashboard")
-    owner_df = get_owner_sheet_data()
-    if not owner_df.empty:
-        communication.run_fetch_communication_info(owner_df)  # Optional: Pre-fetch communication data
-        run_owner_marketing_tab(owner_df)
-    else:
-        st.error("No owner data available to display.")
-
-if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    run_minimal_app()
+    if __name__ == "__main__":
+        st.set_page_config(page_title="Owner Marketing", layout="wide")
+        run_minimal_app()
