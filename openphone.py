@@ -1,4 +1,4 @@
-import streamlit as st
+# openphone.py
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
@@ -6,8 +6,7 @@ import gspread
 from google.oauth2 import service_account
 import math
 import requests
-import time
-import owner_marketing  # Ensure owner_marketing.py is in the same directory or adjust the path accordingly
+
 
 
 
