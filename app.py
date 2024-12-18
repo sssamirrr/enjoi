@@ -569,8 +569,8 @@ with tab2:
             'Answered Calls': 0,
             'Missed Calls': 0,
             'Call Attempts': 0,
-            'How Many Times Called': 0,
-            'How Many Times Texted After Check In Date': 0,
+            '# Calls after check in': 0,
+            '# Texts after check in': 0,
             'Phone Calls Under 40 Seconds': 0
         }
         
@@ -584,7 +584,7 @@ with tab2:
             'Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
             'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
             'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
-            'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
+            '# Calls after check in', '# Texts after check in', 'Phone Calls Under 40 Seconds'
         ]
         
         # Add any missing columns with None values
@@ -850,7 +850,7 @@ with tab2:
                         display_df['Calls On/After Check-In'] = calls_after_checkin_list
                         display_df['Texts On/After Check-In'] = texts_after_checkin_list
                         display_df['Phone Calls Under 40 Seconds'] = short_calls_list
-                        display_df['How Many Times Called'] = total_calls_list
+                        display_df['# Calls after check in'] = total_calls_list
 
                         st.success("Communication information successfully fetched and updated.")
                     else:
@@ -875,7 +875,7 @@ with tab2:
                 'Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
                 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
                 'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
-                'How Many Times Called', 'How Many Times Texted After Check In Date', 'Phone Calls Under 40 Seconds'
+                '# Calls after check in', '# Texts after check in', 'Phone Calls Under 40 Seconds'
             ]
             for col in required_columns:
                 if col not in display_df.columns:
@@ -889,14 +889,14 @@ with tab2:
             edited_df = st.data_editor(
                 display_df,
                 column_config={
-                    "How Many Times Called": st.column_config.NumberColumn(
-                        "How Many Times Called",
+                    "# Calls after check in": st.column_config.NumberColumn(
+                        "# Calls after check in",
                         format="%d",
                         disabled=True,
                         width="150px"
                     ),
-                    "How Many Times Texted After Check In Date": st.column_config.NumberColumn(
-                        "How Many Times Texted After Check In Date",
+                    "# Texts after check in": st.column_config.NumberColumn(
+                        "# Texts after check in",
                         format="%d",
                         disabled=True,
                         width="200px"
