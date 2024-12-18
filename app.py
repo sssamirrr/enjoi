@@ -1,8 +1,8 @@
 import streamlit as st
-import openphone  # Ensure this import comes after setting the page config
-
 # Set the page configuration first
 st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
+import openphone  # Ensure this import comes after setting the page config
+
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
