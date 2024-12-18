@@ -10,6 +10,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 import pgeocode  # For geocoding ZIP codes to latitude and longitude
 import communication  # Import the communication module
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid.shared import JsCode
 
 # Define a global flag for demo mode
 DEMO_MODE = True  # Set to False to enable live functionality
@@ -101,9 +103,9 @@ def send_email(recipient, subject, body):
             import sendgrid
             from sendgrid.helpers.mail import Mail
 
-            sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid_api_key"])
+            sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid"]["api_key"])
             email = Mail(
-                from_email=st.secrets["sendgrid_from_email"],
+                from_email=st.secrets["sendgrid"]["from_email"],
                 to_emails=recipient,
                 subject=subject,
                 plain_text_content=body
@@ -133,12 +135,12 @@ def send_text_message(phone_number, message):
             from twilio.rest import Client
 
             client = Client(
-                st.secrets["twilio_account_sid"],
-                st.secrets["twilio_auth_token"]
+                st.secrets["twilio"]["account_sid"],
+                st.secrets["twilio"]["auth_token"]
             )
             msg = client.messages.create(
                 body=message,
-                from_=st.secrets["twilio_phone_number"],
+                from_=st.secrets["twilio"]["phone_number"],
                 to=phone_number
             )
             if msg.sid:
@@ -256,36 +258,41 @@ def run_owner_marketing_tab(owner_df):
                 st.error("Duplicate Phone Numbers found in the data. Please ensure each owner has a unique phone number.")
                 st.stop()
 
-            # Add a checkbox for each row to select owners
+            # Add a checkbox for each row to select owners using AgGrid
             st.subheader("Select Owners to Fetch Communication Status")
+
             if display_df.empty:
                 st.warning("No data matches the selected filters.")
             else:
-                # Initialize session state for communication data, scoped by campaign type
-                if 'communication_data' not in st.session_state:
-                    st.session_state['communication_data'] = {}
-                if campaign_type not in st.session_state['communication_data']:
-                    st.session_state['communication_data'][campaign_type] = {}
+                # Configure AgGrid options with a checkbox selection
+                gb = GridOptionsBuilder.from_dataframe(display_df)
+                gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren=True, groupSelectsFiltered=True)
+                gb.configure_grid_options(domLayout='normal')
+                grid_options = gb.build()
 
-                # Display checkboxes
-                display_df['Select'] = False  # Initialize the 'Select' column
-                selected_rows = []
-                for index, row in display_df.iterrows():
-                    select = st.checkbox(f"Select {row['First Name']} {row['Last Name']}", key=f"select_{campaign_type}_{index}")
-                    display_df.at[index, 'Select'] = select
-                    if select:
-                        selected_rows.append(index)
+                grid_response = AgGrid(
+                    display_df,
+                    gridOptions=grid_options,
+                    enable_enterprise_modules=False,
+                    update_mode=GridUpdateMode.SELECTION_CHANGED,
+                    height=400,
+                    width='100%',
+                    allow_unsafe_jscode=True  # Set to True to allow checkbox integration
+                )
+
+                selected_rows_df = grid_response['selected_rows']
+                selected_indices = [row['_selectedRowNodeInfo']['nodeRowIndex'] for row in grid_response['selected_rows']]
 
                 # Add "Fetch Communication Status" button
                 fetch_button = st.button("Fetch Communication Status", key=f'fetch_comm_{campaign_type}')
 
                 if fetch_button:
-                    if not selected_rows:
+                    if not selected_rows_df:
                         st.warning("No owners selected for fetching communication status.")
                     else:
-                        selected_owners = display_df.loc[selected_rows]
+                        selected_owners = pd.DataFrame(selected_rows_df)
                         headers = {
-                            "Authorization": f"Bearer {communication.OPENPHONE_API_KEY}",
+                            "Authorization": communication.OPENPHONE_API_KEY,  # Removed 'Bearer'
                             "Content-Type": "application/json"
                         }
 
@@ -299,18 +306,23 @@ def run_owner_marketing_tab(owner_df):
                             ) = communication.fetch_communication_info(selected_owners, headers)
 
                         # Add communication data to DataFrame
-                        display_df.loc[selected_rows, 'Communication Status'] = statuses
-                        display_df.loc[selected_rows, 'Last Communication Date'] = dates
-                        display_df.loc[selected_rows, 'Call Duration (seconds)'] = durations
-                        display_df.loc[selected_rows, 'Agent Name'] = agent_names
-                        display_df.loc[selected_rows, 'Total Messages'] = total_messages_list
-                        display_df.loc[selected_rows, 'Total Calls'] = total_calls_list
-                        display_df.loc[selected_rows, 'Answered Calls'] = answered_calls_list
-                        display_df.loc[selected_rows, 'Missed Calls'] = missed_calls_list
-                        display_df.loc[selected_rows, 'Call Attempts'] = call_attempts_list
-                        display_df.loc[selected_rows, 'Calls Under 40 sec'] = calls_under_40sec_list
+                        display_df.loc[selected_indices, 'Communication Status'] = statuses
+                        display_df.loc[selected_indices, 'Last Communication Date'] = dates
+                        display_df.loc[selected_indices, 'Call Duration (seconds)'] = durations
+                        display_df.loc[selected_indices, 'Agent Name'] = agent_names
+                        display_df.loc[selected_indices, 'Total Messages'] = total_messages_list
+                        display_df.loc[selected_indices, 'Total Calls'] = total_calls_list
+                        display_df.loc[selected_indices, 'Answered Calls'] = answered_calls_list
+                        display_df.loc[selected_indices, 'Missed Calls'] = missed_calls_list
+                        display_df.loc[selected_indices, 'Call Attempts'] = call_attempts_list
+                        display_df.loc[selected_indices, 'Calls Under 40 sec'] = calls_under_40sec_list
 
                         # Update session state scoped to the campaign type
+                        if 'communication_data' not in st.session_state:
+                            st.session_state['communication_data'] = {}
+                        if campaign_type not in st.session_state['communication_data']:
+                            st.session_state['communication_data'][campaign_type] = {}
+
                         for idx, row in selected_owners.iterrows():
                             phone = row['Phone Number']
                             st.session_state['communication_data'][campaign_type][phone] = {
@@ -537,6 +549,7 @@ def run_owner_marketing_tab(owner_df):
                                     personalized_message = message.format(first_name=row['First Name'])
                                     success = send_text_message(phone, personalized_message)
                                 else:
+                                    st.warning(f"Invalid phone number for {row['First Name']} {row['Last Name']}. Skipping.")
                                     success = False
 
                             if success:
