@@ -542,7 +542,7 @@ def fetch_communication_info(guest_df, headers):
 
     for _, row in guest_df.iterrows():
         phone = row['Phone Number']
-        arrival_date = row['Arrival Date Short']
+        arrival_date = row['Check In']  # Use 'Check In' instead of 'Arrival Date Short'
         if phone and phone != 'No Data':
             try:
                 comm_info = get_communication_info(phone, headers, arrival_date)
@@ -708,13 +708,13 @@ def get_communication_info(phone_number, headers, arrival_date):
                 for call in calls:
                     call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
                     call_date = call_time.date()
-                    call_duration = call.get("duration", 0)
+                    duration = call.get("duration", 0)
                     if call_date <= arrival_date_only:
                         pre_arrival_calls += 1
                     else:
                         post_arrival_calls += 1
 
-                    if call_duration < 40:
+                    if duration < 40:
                         calls_under_40sec += 1
 
                     if not latest_datetime or call_time > latest_datetime:
@@ -1006,8 +1006,7 @@ with tab2:
                             'post_arrival_texts': post_texts,
                             'calls_under_40sec': under_40sec
                         }
-                        for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts,
-                            pre_calls, pre_texts, post_calls, post_texts, under_40sec
+                        for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, pre_calls, pre_texts, post_calls, post_texts, under_40sec
                         in zip(
                             display_df['Phone Number'], statuses, dates, durations, agent_names,
                             total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list,
@@ -1172,9 +1171,6 @@ with tab2:
 
     else:
         st.warning("No data available for the selected filters.")
-
-
-
 
 ############################################
 # Message Templates Section
