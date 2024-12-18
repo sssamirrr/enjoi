@@ -1362,59 +1362,8 @@ with tab5:
     with col3:
         st.metric("Recovery Rate", "---")
 with tab6:
-    st.header("OpenPhone Stats")
-    # Add OpenPhone Stats content
-    
-    # Date filter
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date")
-    with col2:
-        end_date = st.date_input("End Date")
-        
-    # Overview metrics
-    st.subheader("Call Statistics")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Calls", "---")
-    with col2:
-        st.metric("Answered Calls", "---")
-    with col3:
-        st.metric("Missed Calls", "---")
-    with col4:
-        st.metric("Answer Rate", "---%")
-        
-    # Detailed statistics
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Call Volume by Hour")
-        # Placeholder for hourly call volume chart
-        st.info("Hourly call volume chart coming soon...")
-        
-    with col2:
-        st.subheader("Call Volume by Day")
-        # Placeholder for daily call volume chart
-        st.info("Daily call volume chart coming soon...")
-        
-    # Call details table
-    st.subheader("Recent Calls")
-    call_data = {
-        "Date": [],
-        "Time": [],
-        "Phone Number": [],
-        "Duration": [],
-        "Status": [],
-        "Agent": []
-    }
-    st.dataframe(call_data)
-    
-    # Download section
-    st.download_button(
-        label="Download Call Data",
-        data="",  # Add your CSV data here
-        file_name="openphone_stats.csv",
-        mime="text/csv",
-    )
+    import openphone
+    openphone.run_openphone_tab()
 ############################################
 # Raw Data Viewer
 ############################################
