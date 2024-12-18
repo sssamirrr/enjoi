@@ -797,7 +797,6 @@ with tab2:
                         'phone_calls_under_40_sec': short_calls if short_calls is not None else 0
                     }
 
-                    for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, calls, texts_after_checkin, short_calls
                     # Update session state scoped to the selected resort
                     for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, calls, texts_after_checkin, short_calls in zip(
                         display_df['Phone Number'], statuses, dates, durations, agent_names,
