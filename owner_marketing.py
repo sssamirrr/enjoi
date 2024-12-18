@@ -10,8 +10,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 import pgeocode  # For geocoding ZIP codes to latitude and longitude
 import communication  # Import the communication module
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-from st_aggrid.shared import JsCode
 
 # Define a global flag for demo mode
 DEMO_MODE = True  # Set to False to enable live functionality
@@ -166,7 +164,7 @@ def run_owner_marketing_tab(owner_df):
     # Campaign Type Selection
     campaign_tabs = st.tabs(["📱 Text Message Campaign", "✉️ Email Campaign"])
 
-    # Now, loop over the campaign tabs
+    # Loop over the campaign tabs
     for idx, campaign_type in enumerate(["Text", "Email"]):
         with campaign_tabs[idx]:
             st.header(f"{campaign_type} Campaign Management")
@@ -258,39 +256,41 @@ def run_owner_marketing_tab(owner_df):
                 st.error("Duplicate Phone Numbers found in the data. Please ensure each owner has a unique phone number.")
                 st.stop()
 
-            # Add a checkbox for each row to select owners using AgGrid
+            # Add a checkbox for each row to select owners using Streamlit's native widgets
             st.subheader("Select Owners to Fetch Communication Status")
 
             if display_df.empty:
                 st.warning("No data matches the selected filters.")
             else:
-                # Configure AgGrid options with a checkbox selection
-                gb = GridOptionsBuilder.from_dataframe(display_df)
-                gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren=True, groupSelectsFiltered=True)
-                gb.configure_grid_options(domLayout='normal')
-                grid_options = gb.build()
+                # Create table headers
+                header_cols = st.columns([1, 2, 2, 3, 2])  # Adjust the widths as needed
+                header_cols[0].markdown("**Select**")
+                header_cols[1].markdown("**First Name**")
+                header_cols[2].markdown("**Last Name**")
+                header_cols[3].markdown("**Phone Number**")
+                header_cols[4].markdown("**Email**")
 
-                grid_response = AgGrid(
-                    display_df,
-                    gridOptions=grid_options,
-                    enable_enterprise_modules=False,
-                    update_mode=GridUpdateMode.SELECTION_CHANGED,
-                    height=400,
-                    width='100%',
-                    allow_unsafe_jscode=True  # Set to True to allow checkbox integration
-                )
-
-                selected_rows_df = pd.DataFrame(grid_response['selected_rows'])
-                selected_indices = selected_rows_df.index.tolist()
+                selected_indices = []
+                for idx, row in display_df.iterrows():
+                    row_cols = st.columns([1, 2, 2, 3, 2])
+                    # Checkbox in the first column
+                    checked = row_cols[0].checkbox("", key=f"owner_{idx}")
+                    # Display owner details
+                    row_cols[1].write(row['First Name'])
+                    row_cols[2].write(row['Last Name'])
+                    row_cols[3].write(row['Phone Number'])
+                    row_cols[4].write(row['Email'])
+                    if checked:
+                        selected_indices.append(idx)
 
                 # Add "Fetch Communication Status" button
                 fetch_button = st.button("Fetch Communication Status", key=f'fetch_comm_{campaign_type}')
 
                 if fetch_button:
-                    if selected_rows_df.empty:
+                    if not selected_indices:
                         st.warning("No owners selected for fetching communication status.")
                     else:
-                        selected_owners = selected_rows_df
+                        selected_owners = display_df.loc[selected_indices]
                         headers = {
                             "Authorization": communication.OPENPHONE_API_KEY,  # Removed 'Bearer'
                             "Content-Type": "application/json"
@@ -342,13 +342,18 @@ def run_owner_marketing_tab(owner_df):
 
                 # Display the updated DataFrame with communication data
                 st.subheader("Owner Sheets Data with Communication Status")
-                AgGrid(
-                    display_df,
-                    fit_columns_on_grid_load=True,
-                    height=400,
-                    width='100%',
-                    enable_enterprise_modules=False
-                )
+                # Display only relevant columns
+                display_columns = [
+                    'First Name', 'Last Name', 'Phone Number', 'Email',
+                    'Communication Status', 'Last Communication Date',
+                    'Call Duration (seconds)', 'Agent Name',
+                    'Total Messages', 'Total Calls',
+                    'Answered Calls', 'Missed Calls',
+                    'Call Attempts', 'Calls Under 40 sec'
+                ]
+                # Ensure all columns exist
+                existing_columns = [col for col in display_columns if col in display_df.columns]
+                st.dataframe(display_df[existing_columns])
 
             # **Add Map of Owners' Locations**
             st.subheader("Map of Owner Locations")
