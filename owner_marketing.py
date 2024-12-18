@@ -64,6 +64,9 @@ def get_owner_sheet_data():
         if 'Campaign Type' not in df.columns:
             df['Campaign Type'] = 'Text'  # Default campaign type
 
+        # Display DataFrame columns for debugging
+        st.write("**DataFrame Columns:**", df.columns.tolist())
+
         return df
 
     except gspread.exceptions.SpreadsheetNotFound:
@@ -262,24 +265,33 @@ def run_owner_marketing_tab(owner_df):
             if display_df.empty:
                 st.warning("No data matches the selected filters.")
             else:
+                # Display DataFrame columns for debugging
+                st.write("**DataFrame Columns:**", display_df.columns.tolist())
+
+                # Check if 'Email Address' column exists
+                if 'Email Address' not in display_df.columns:
+                    st.error("The DataFrame does not contain an 'Email Address' column. Please ensure your Google Sheet includes it.")
+                    logger.error("Missing 'Email Address' column in the DataFrame.")
+                    st.stop()
+
                 # Create table headers
-                header_cols = st.columns([1, 2, 2, 3, 2])  # Adjust the widths as needed
+                header_cols = st.columns([1, 2, 2, 3, 3])  # Adjust the widths as needed
                 header_cols[0].markdown("**Select**")
                 header_cols[1].markdown("**First Name**")
                 header_cols[2].markdown("**Last Name**")
                 header_cols[3].markdown("**Phone Number**")
-                header_cols[4].markdown("**Email**")
+                header_cols[4].markdown("**Email Address**")
 
                 selected_indices = []
                 for idx, row in display_df.iterrows():
-                    row_cols = st.columns([1, 2, 2, 3, 2])
+                    row_cols = st.columns([1, 2, 2, 3, 3])
                     # Checkbox in the first column
-                    checked = row_cols[0].checkbox("", key=f"owner_{idx}")
+                    checked = row_cols[0].checkbox("", key=f"owner_{campaign_type}_{idx}")
                     # Display owner details
                     row_cols[1].write(row['First Name'])
                     row_cols[2].write(row['Last Name'])
                     row_cols[3].write(row['Phone Number'])
-                    row_cols[4].write(row['Email'])
+                    row_cols[4].write(row['Email Address'])
                     if checked:
                         selected_indices.append(idx)
 
@@ -344,7 +356,7 @@ def run_owner_marketing_tab(owner_df):
                 st.subheader("Owner Sheets Data with Communication Status")
                 # Display only relevant columns
                 display_columns = [
-                    'First Name', 'Last Name', 'Phone Number', 'Email',
+                    'First Name', 'Last Name', 'Phone Number', 'Email Address',
                     'Communication Status', 'Last Communication Date',
                     'Call Duration (seconds)', 'Agent Name',
                     'Total Messages', 'Total Calls',
@@ -547,7 +559,7 @@ def run_owner_marketing_tab(owner_df):
                     for idx, row in campaign_df.iterrows():
                         try:
                             if campaign_type == "Email":
-                                recipient_email = row['Email']
+                                recipient_email = row['Email Address']
                                 if pd.notna(recipient_email) and '@' in recipient_email and '.' in recipient_email.split('@')[-1]:
                                     personalized_subject = subject.format(first_name=row['First Name'])
                                     personalized_body = body.format(first_name=row['First Name'])
@@ -596,13 +608,17 @@ def run_owner_marketing_tab(owner_df):
                     campaign_df.to_csv(filename, index=False)
 
                     # Offer download of results
-                    with open(filename, 'rb') as f:
-                        st.download_button(
-                            label="Download Campaign Results",
-                            data=f,
-                            file_name=filename,
-                            mime="text/csv"
-                        )
+                    try:
+                        with open(filename, 'rb') as f:
+                            st.download_button(
+                                label="Download Campaign Results",
+                                data=f,
+                                file_name=filename,
+                                mime="text/csv"
+                            )
+                    except Exception as e:
+                        st.error(f"Error offering download: {str(e)}")
+                        logger.error(f"Download Button Error: {str(e)}")
 
 def run_minimal_app():
     st.title("Owner Marketing Dashboard")
