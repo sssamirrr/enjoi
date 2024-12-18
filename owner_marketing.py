@@ -5,6 +5,7 @@ import gspread
 from google.oauth2 import service_account
 import logging
 from logging.handlers import RotatingFileHandler
+import pgeocode  # For geocoding ZIP codes to latitude and longitude
 import requests
 
 # Define a global flag for demo mode
@@ -35,7 +36,7 @@ def get_owner_sheet_data():
         data = worksheet.get_all_records()
 
         if not data:
-            st.warning("The Google Sheet is empty. Please ensure it contains data.")
+            st.warning("The Google Sheet is empty.")
             return pd.DataFrame()
 
         df = pd.DataFrame(data)
@@ -98,6 +99,24 @@ def fetch_openphone_data(phone_number):
             "Total Messages": 0
         }
 
+# Map Visualization
+def display_map(df):
+    if 'Zip Code' in df.columns:
+        nomi = pgeocode.Nominatim('us')
+        df['Zip Code'] = df['Zip Code'].apply(lambda x: str(x)[:5])
+        valid_zips = df['Zip Code'].dropna().unique()
+
+        lat_lon = nomi.query_postal_code(valid_zips)
+        map_data = pd.DataFrame({
+            'lat': lat_lon['latitude'],
+            'lon': lat_lon['longitude']
+        }).dropna()
+
+        if not map_data.empty:
+            st.map(map_data)
+        else:
+            st.warning("No valid ZIP codes for map visualization.")
+
 # Update communication info
 def update_communication_info(df, selected_rows):
     for idx in selected_rows:
@@ -109,27 +128,25 @@ def update_communication_info(df, selected_rows):
         df.at[idx, "Total Messages"] = communication_data["Total Messages"]
     return df
 
-# Main App Function
+# Main App
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
     # Filters
     st.subheader("Filters")
     col1, col2, col3 = st.columns(3)
-
     with col1:
         states = owner_df['State'].dropna().unique()
         selected_states = st.multiselect("Filter by State", states)
 
     with col2:
         min_date, max_date = owner_df['Sale Date'].min(), owner_df['Sale Date'].max()
-        date_range = st.date_input("Filter by Sale Date Range", [min_date, max_date])
+        date_range = st.date_input("Filter by Sale Date", [min_date, max_date])
 
     with col3:
         ficos = owner_df['Primary FICO'].dropna()
         min_fico, max_fico = st.slider("Filter by FICO Score", int(ficos.min()), int(ficos.max()), (int(ficos.min()), int(ficos.max())))
 
-    # Apply filters
     filtered_df = owner_df.copy()
     if selected_states:
         filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
@@ -138,36 +155,37 @@ def run_owner_marketing_tab(owner_df):
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
     filtered_df = filtered_df[(filtered_df['Primary FICO'] >= min_fico) & (filtered_df['Primary FICO'] <= max_fico)]
 
-    # Add checkboxes for row selection
+    # Select Rows
     st.subheader("Owner Data")
     selected_rows = []
-    for idx in filtered_df.index:
-        selected = st.checkbox(f"Select Row {idx}", key=f"select_{idx}")
-        filtered_df.at[idx, "Select"] = selected
-        if selected:
+    for idx, row in filtered_df.iterrows():
+        if st.checkbox(f"Select {row['Last Name']} {row['First Name']}", key=idx):
             selected_rows.append(idx)
 
-    # Display filtered table
-    st.dataframe(filtered_df.drop(columns=["Select"]), use_container_width=True)
+    st.dataframe(filtered_df.drop(columns=["Select"]))
 
-    # Update Communication Info Button
-    if st.button("Update Communication Info"):
-        if not selected_rows:
-            st.warning("No rows selected. Please select rows to update.")
-        else:
-            with st.spinner("Fetching communication info..."):
-                updated_df = update_communication_info(filtered_df, selected_rows)
-            st.success("Communication info updated successfully!")
-            st.dataframe(updated_df)
+    # Map Visualization
+    st.subheader("Owner Locations Map")
+    display_map(filtered_df)
 
     # Campaign Management
-    st.subheader("Message Templates")
+    st.subheader("Campaign Management")
     campaign_type = st.radio("Choose Campaign Type", ["Text", "Email"])
     if campaign_type == "Text":
         message_template = st.text_area("Text Message", "Welcome to our premium ownership program!")
     else:
         subject = st.text_input("Email Subject", "Welcome to Our Program")
         email_body = st.text_area("Email Body", "Dear Customer,\n\nWelcome to our program!")
+
+    # Buttons
+    if st.button("Update Communication Info"):
+        if selected_rows:
+            with st.spinner("Fetching communication info..."):
+                updated_df = update_communication_info(filtered_df, selected_rows)
+            st.success("Communication info updated successfully!")
+            st.dataframe(updated_df)
+        else:
+            st.warning("No rows selected.")
 
     if st.button("Send Campaign"):
         for idx in selected_rows:
@@ -184,7 +202,7 @@ def run_minimal_app():
     if not owner_df.empty:
         run_owner_marketing_tab(owner_df)
     else:
-        st.error("No owner data available to display.")
+        st.error("No owner data available.")
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Owner Marketing", layout="wide")
