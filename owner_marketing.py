@@ -1,523 +1,1061 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from datetime import datetime
 import gspread
 from google.oauth2 import service_account
+import math
+import requests
 import time
-import phonenumbers
-import logging
-from logging.handlers import RotatingFileHandler
-import pgeocode  # For geocoding ZIP codes to latitude and longitude
+import owner_marketing  # Ensure owner_marketing.py is in the same directory or adjust the path accordingly
 
-# Define a global flag for demo mode
-DEMO_MODE = True  # Set to False to enable live functionality
 
-# Setup logging with rotation to manage log file sizes
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-handler = RotatingFileHandler('campaign.log', maxBytes=1000000, backupCount=5)
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
-# Cache data fetching to improve performance
-@st.cache_data(ttl=600)
-def get_owner_sheet_data():
-    """
-    Fetch owner data from Google Sheets.
-    Returns a pandas DataFrame containing owner information.
-    """
+
+
+
+def init_session_state():
+    if 'default_dates' not in st.session_state:
+        st.session_state['default_dates'] = {}
+    if 'communication_data' not in st.session_state:
+        st.session_state['communication_data'] = {}
+    if "reset_trigger" not in st.session_state:
+        st.session_state["reset_trigger"] = False
+    if "updated_df" not in st.session_state:
+        st.session_state["updated_df"] = None
+
+# Call the initialization function
+init_session_state()
+
+
+# Set page configuration
+st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
+
+# Add CSS for optional styling (can be customized or removed)
+st.markdown("""
+    <style>
+    .stDateInput {
+        width: 100%;
+    }
+    .stTextInput, .stNumberInput {
+        max-width: 200px;
+    }
+    div[data-baseweb="input"] {
+        width: 100%;
+    }
+    .stDateInput > div {
+        width: 100%;
+    }
+    div[data-baseweb="input"] > div {
+        width: 100%;
+    }
+    .stDataFrame {
+        width: 100%;
+    }
+    .dataframe-container {
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
+# Define all tabs
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "Dashboard", 
+    "Marketing", 
+    "Tour Prediction",
+    "Owner Marketing",
+    "Overnight Misses",
+    "OpenPhone Stats"
+])
+
+############################################
+# Hard-coded OpenPhone Credentials
+############################################
+
+# Replace with your actual OpenPhone API key and number
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_NUMBER = "+18438972426"
+
+############################################
+# Connect to Google Sheets
+############################################
+
+@st.cache_resource
+def get_google_sheet_data():
     try:
+        # Retrieve Google Sheets credentials from st.secrets
+        service_account_info = st.secrets["gcp_service_account"]
+
         credentials = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
+            service_account_info,
             scopes=[
                 "https://www.googleapis.com/auth/spreadsheets.readonly",
                 "https://www.googleapis.com/auth/drive.readonly"
             ],
         )
 
-        client = gspread.authorize(credentials)
-        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
-        sheet = client.open_by_key(sheet_key)
-        worksheet = sheet.get_worksheet(0)
+        gc = gspread.authorize(credentials)
+        spreadsheet = gc.open_by_key(st.secrets["sheets"]["sheet_key"])
+        worksheet = spreadsheet.get_worksheet(0)
         data = worksheet.get_all_records()
-        df = pd.DataFrame(data)
-
-        if df.empty:
-            st.warning("The Google Sheet is empty. Please ensure it contains data.")
-            logger.warning("Fetched data from Google Sheet is empty.")
-
-        # Data Cleaning
-        for date_col in ['Sale Date', 'Maturity Date']:
-            if date_col in df.columns:
-                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-
-        for num_col in ['Points', 'Primary FICO']:
-            if num_col in df.columns:
-                df[num_col] = pd.to_numeric(df[num_col], errors='coerce')
-
-        if 'Phone Number' in df.columns:
-            df['Phone Number'] = df['Phone Number'].astype(str)
-
-        if 'Campaign Type' not in df.columns:
-            df['Campaign Type'] = 'Text'  # Default campaign type
-
-        return df
-
-    except gspread.exceptions.SpreadsheetNotFound:
-        st.error("Google Sheet not found. Please check the sheet key and permissions.")
-        logger.error("Google Sheet not found. Check the sheet key and permissions.")
-        return pd.DataFrame()
+        return pd.DataFrame(data)
 
     except Exception as e:
-        st.error(f"Error accessing Google Sheet: {str(e)}")
-        logger.error(f"Google Sheet Access Error: {str(e)}")
-        return pd.DataFrame()
-
-def format_phone_number(phone):
-    """Format phone number to E.164 format"""
-    try:
-        parsed_phone = phonenumbers.parse(phone, "US")
-        if phonenumbers.is_valid_number(parsed_phone):
-            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
-    except phonenumbers.NumberParseException:
-        pass
-    return None
-# Add this function here
-def clean_zip_code(zip_code):
-    """Clean and validate ZIP code"""
-    if pd.isna(zip_code):
+        st.error(f"Error connecting to Google Sheets: {str(e)}")
         return None
-    zip_str = str(zip_code)
-    zip_digits = ''.join(filter(str.isdigit, zip_str))
-    return zip_digits[:5] if len(zip_digits) >= 5 else None
-def send_email(recipient, subject, body):
-    """
-    Mock function to simulate sending an email.
-    """
-    if DEMO_MODE:
-        logger.info(f"Demo Mode: Pretended to send email to {recipient} with subject '{subject}'.")
-        return True
-    else:
-        # Live email sending logic using SendGrid
-        try:
-            import sendgrid
-            from sendgrid.helpers.mail import Mail
 
-            sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid_api_key"])
-            email = Mail(
-                from_email=st.secrets["sendgrid_from_email"],
-                to_emails=recipient,
-                subject=subject,
-                plain_text_content=body
-            )
-            response = sg.send(email)
-            if response.status_code in [200, 202]:
-                logger.info(f"Email sent to {recipient}")
-                return True
+# Load the data
+df = get_google_sheet_data()
+if df is None:
+    st.error("Failed to load data. Please check your connection and credentials.")
+    st.stop()
+
+############################################
+# OpenPhone API Functions
+############################################
+
+import time
+import requests
+import streamlit as st
+from datetime import datetime
+import pandas as pd
+
+def rate_limited_request(url, headers, params, request_type='get'):
+    """
+    Make an API request while respecting rate limits.
+    """
+    time.sleep(1 / 5)  # 5 requests per second max
+    try:
+        st.write(f"Making API call to {url} with params: {params}")
+        start_time = time.time()
+        response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
+        elapsed_time = time.time() - start_time
+        st.write(f"API call completed in {elapsed_time:.2f} seconds")
+
+        if response and response.status_code == 200:
+            return response.json()
+        else:
+            st.warning(f"API Error: {response.status_code}")
+            st.warning(f"Response: {response.text}")
+    except Exception as e:
+        st.warning(f"Exception during request: {str(e)}")
+    return None
+
+def get_all_phone_number_ids(headers):
+    """
+    Retrieve all phoneNumberIds associated with your OpenPhone account.
+    """
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+
+def get_communication_info(phone_number, headers):
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        return {
+            'status': "No Communications",
+            'last_date': None,
+            'call_duration': None,
+            'agent_name': None,
+            'total_messages': 0,
+            'total_calls': 0,
+            'answered_calls': 0,
+            'missed_calls': 0,
+            'call_attempts': 0
+        }
+
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
+    call_duration = None
+    agent_name = None
+
+    total_messages = 0
+    total_calls = 0
+    answered_calls = 0
+    missed_calls = 0
+    call_attempts = 0
+
+    for phone_number_id in phone_number_ids:
+        # Messages pagination
+        next_page = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "participants": [phone_number],
+                "maxResults": 50
+            }
+            if next_page:
+                params['pageToken'] = next_page
+
+            # Fetch messages
+            messages_response = rate_limited_request(messages_url, headers, params)
+            if messages_response and 'data' in messages_response:
+                messages = messages_response['data']
+                total_messages += len(messages)
+                for message in messages:
+                    msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                    if not latest_datetime or msg_time > latest_datetime:
+                        latest_datetime = msg_time
+                        latest_type = "Message"
+                        latest_direction = message.get("direction", "unknown")
+                        agent_name = message.get("user", {}).get("name", "Unknown Agent")
+                next_page = messages_response.get('nextPageToken')
+                if not next_page:
+                    break
             else:
-                logger.error(f"Failed to send email to {recipient}: {response.status_code}")
-                return False
-        except Exception as e:
-            st.error(f"Error sending email to {recipient}: {str(e)}")
-            logger.error(f"SendGrid Error for {recipient}: {str(e)}")
-            return False
+                break
 
-def send_text_message(phone_number, message):
-    """
-    Mock function to simulate sending a text message.
-    """
-    if DEMO_MODE:
-        logger.info(f"Demo Mode: Pretended to send SMS to {phone_number} with message '{message}'.")
-        return True
-    else:
-        # Live SMS sending logic using Twilio
-        try:
-            from twilio.rest import Client
+        # Calls pagination
+        next_page = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "participants": [phone_number],
+                "maxResults": 50
+            }
+            if next_page:
+                params['pageToken'] = next_page
 
-            client = Client(
-                st.secrets["twilio_account_sid"],
-                st.secrets["twilio_auth_token"]
-            )
-            msg = client.messages.create(
-                body=message,
-                from_=st.secrets["twilio_phone_number"],
-                to=phone_number
-            )
-            if msg.sid:
-                logger.info(f"SMS sent to {phone_number}")
-                return True
+            # Fetch calls
+            calls_response = rate_limited_request(calls_url, headers, params)
+            if calls_response and 'data' in calls_response:
+                calls = calls_response['data']
+                total_calls += len(calls)
+                for call in calls:
+                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                    if not latest_datetime or call_time > latest_datetime:
+                        latest_datetime = call_time
+                        latest_type = "Call"
+                        latest_direction = call.get("direction", "unknown")
+                        call_duration = call.get("duration")
+                        agent_name = call.get("user", {}).get("name", "Unknown Agent")
+
+                    call_attempts += 1
+
+                    # Determine if the call was answered
+                    call_status = call.get('status', 'unknown')
+                    if call_status == 'completed':
+                        answered_calls += 1
+                    elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
+                        missed_calls += 1
+                next_page = calls_response.get('nextPageToken')
+                if not next_page:
+                    break
             else:
-                logger.error(f"Failed to send SMS to {phone_number}")
-                return False
-        except Exception as e:
-            st.error(f"Error sending SMS to {phone_number}: {str(e)}")
-            logger.error(f"Twilio Error for {phone_number}: {str(e)}")
-            return False
+                break
 
-def run_owner_marketing_tab(owner_df):
-    st.title("Owner Marketing Dashboard")
-
-    # Display Demo Mode Notification
-    if DEMO_MODE:
-        st.warning("**Demo Mode Enabled:** No real emails or SMS messages will be sent.")
+    if not latest_datetime:
+        status = "No Communications"
     else:
-        st.success("**Live Mode Enabled:** Emails and SMS messages will be sent as configured.")
+        status = f"{latest_type} - {latest_direction}"
 
-    # Campaign Type Selection
-    campaign_tabs = st.tabs([" \U0001F4F1 Text Message Campaign", " \U0001F4E9 Email Campaign"])
-
-    # Now, loop over the campaign tabs
-    for idx, campaign_type in enumerate(["Text", "Email"]):
-        with campaign_tabs[idx]:
-            st.header(f"{campaign_type} Campaign Management")
-
-            # Apply filters inside the tab
-            with st.expander(" \u2699\ufe0f", expanded=True):
-                col1, col2, col3 = st.columns(3)
-
-                # Column 1 Filters
-                with col1:
-                    selected_states = []
-                    if 'State' in owner_df.columns:
-                        states = sorted(owner_df['State'].dropna().unique().tolist())
-                        selected_states = st.multiselect(
-                            'Select States',
-                            states,
-                            key=f'states_{campaign_type}'
-                        )
-
-                    selected_unit = 'All'
-                    if 'Unit' in owner_df.columns:
-                        units = ['All'] + sorted(owner_df['Unit'].dropna().unique().tolist())
-                        selected_unit = st.selectbox(
-                            'Unit Type',
-                            units,
-                            key=f'unit_{campaign_type}'
-                        )
-
-                # Column 2 Filters
-                with col2:
-                    sale_date_min = owner_df['Sale Date'].min().date() if 'Sale Date' in owner_df.columns else datetime.today().date()
-                    sale_date_max = owner_df['Sale Date'].max().date() if 'Sale Date' in owner_df.columns else datetime.today().date()
-                    date_range = st.date_input(
-                        'Sale Date Range',
-                        value=(sale_date_min, sale_date_max),
-                        key=f'dates_{campaign_type}'
-                    )
-
-                # Column 3 Filters (FICO)
-                with col3:
-                    fico_range = (300, 850)
-                    if 'Primary FICO' in owner_df.columns:
-                        valid_fico = owner_df['Primary FICO'].dropna()
-                        if not valid_fico.empty:
-                            min_fico = max(300, int(valid_fico.min()))
-                            max_fico = min(850, int(valid_fico.max()))
-                            fico_range = st.slider(
-                                'FICO Score Range',
-                                min_value=300,
-                                max_value=850,
-                                value=(min_fico, max_fico),
-                                key=f'fico_{campaign_type}'
-                            )
-                        else:
-                            fico_range = st.slider(
-                                'FICO Score Range',
-                                min_value=300,
-                                max_value=850,
-                                value=(300, 850),
-                                key=f'fico_{campaign_type}'
-                            )
-
-            # Apply filters to the data
-            campaign_filtered_df = owner_df.copy()
-
-            if selected_states:
-                campaign_filtered_df = campaign_filtered_df[campaign_filtered_df['State'].isin(selected_states)]
-
-            if selected_unit != 'All':
-                campaign_filtered_df = campaign_filtered_df[campaign_filtered_df['Unit'] == selected_unit]
-
-            if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
-                campaign_filtered_df = campaign_filtered_df[
-                    (campaign_filtered_df['Sale Date'].dt.date >= date_range[0]) &
-                    (campaign_filtered_df['Sale Date'].dt.date <= date_range[1])
-                ]
-
-            if 'Primary FICO' in campaign_filtered_df.columns:
-                campaign_filtered_df = campaign_filtered_df[
-                    (campaign_filtered_df['Primary FICO'] >= fico_range[0]) &
-                    (campaign_filtered_df['Primary FICO'] <= fico_range[1])
-                ]
-
-            # Display Filtered Data as a Table
-            st.subheader("Filtered Owner Sheets Data")
-            if campaign_filtered_df.empty:
-                st.warning("No data matches the selected filters.")
-            else:
-                st.dataframe(campaign_filtered_df)
-
-                        
-            # **Add Map of Owners' Locations**
-            st.subheader("Map of Owner Locations")
-            
-            # Create a toggle for the map
-            show_map = st.expander("Show/Hide Owners Map", expanded=False)
-            
-            with show_map:  # Everything related to the map should be inside this block
-                if 'Zip Code' in campaign_filtered_df.columns:
-                    # Clean and prepare ZIP codes
-                    campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
-                    campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
-
-                    if not campaign_filtered_df.empty:
-                        try:
-                            # Geocode ZIP codes
-                            nomi = pgeocode.Nominatim('us')
-                            geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'].tolist())
-                            
-                            # Create map data
-                            map_data = pd.DataFrame({
-                                'lat': geocode_df['latitude'],
-                                'lon': geocode_df['longitude']
-                            }).dropna()
-
-                            if not map_data.empty:
-                                st.map(map_data)
-                                st.info(f"Showing {len(map_data)} locations on the map")
-                            else:
-                                st.info("No valid coordinates available for mapping")
-                        except Exception as e:
-                            st.error(f"Error creating map: {str(e)}")
-                    else:
-                        st.info("No valid ZIP codes available for mapping")
-                else:
-                    st.info("ZIP Code data is not available to display the map")
+    return {
+        'status': status,
+        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
+        'call_duration': call_duration,
+        'agent_name': agent_name,
+        'total_messages': total_messages,
+        'total_calls': total_calls,
+        'answered_calls': answered_calls,
+        'missed_calls': missed_calls,
+        'call_attempts': call_attempts
+    }
 
 
-            # Display metrics
-            metrics_cols = st.columns(4)
-            with metrics_cols[0]:
-                st.metric("Total Owners", len(campaign_filtered_df))
-            with metrics_cols[1]:
-                if 'Primary FICO' in campaign_filtered_df.columns:
-                    mean_fico = campaign_filtered_df['Primary FICO'].mean()
-                    if pd.notna(mean_fico):
-                        avg_fico = int(mean_fico)
-                    else:
-                        avg_fico = 'N/A'
-                else:
-                    avg_fico = 'N/A'
-                st.metric("Average FICO", avg_fico)
-            with metrics_cols[2]:
-                if 'Points' in campaign_filtered_df.columns:
-                    mean_points = campaign_filtered_df['Points'].mean()
-                    if pd.notna(mean_points):
-                        avg_points = int(mean_points)
-                    else:
-                        avg_points = 'N/A'
-                else:
-                    avg_points = 'N/A'
-                st.metric("Average Points", avg_points)
-            with metrics_cols[3]:
-                if 'Points' in campaign_filtered_df.columns:
-                    total_points = campaign_filtered_df['Points'].sum()
-                    if pd.notna(total_points):
-                        total_value = total_points * 0.20  # Example value calculation
-                    else:
-                        total_value = 0
-                else:
-                    total_value = 0
-                st.metric("Total Value", f"${total_value:,.2f}")
+def fetch_communication_info(guest_df, headers):
+    if 'Phone Number' not in guest_df.columns:
+        num_rows = len(guest_df)
+        return (
+            ["No Status"] * num_rows,
+            [None] * num_rows,
+            [None] * num_rows,
+            ["Unknown"] * num_rows,
+            [0] * num_rows,  # total_messages
+            [0] * num_rows,  # total_calls
+            [0] * num_rows,  # answered_calls
+            [0] * num_rows,  # missed_calls
+            [0] * num_rows   # call_attempts
+        )
 
-            # Campaign Setup
-            st.subheader("Campaign Setup")
+    statuses, dates, durations, agent_names = [], [], [], []
+    total_messages_list, total_calls_list = [], []
+    answered_calls_list, missed_calls_list, call_attempts_list = [], [], []
 
-            # A/B Testing setup
-            col1, col2 = st.columns(2)
-            with col1:
-                ab_split = st.slider(
-                    "A/B Testing Split (A:B)",
-                    0, 100, 50,
-                    key=f'{campaign_type}_split'
-                )
-            with col2:
-                group_a_size = len(campaign_filtered_df) * ab_split // 100
-                group_b_size = len(campaign_filtered_df) * (100 - ab_split) // 100
-                st.metric("Group A Size", f"{group_a_size}")
-                st.metric("Group B Size", f"{group_b_size}")
+    for _, row in guest_df.iterrows():
+        phone = row['Phone Number']
+        if phone and phone != 'No Data':
+            try:
+                comm_info = get_communication_info(phone, headers)
+                statuses.append(comm_info['status'])
+                dates.append(comm_info['last_date'])
+                durations.append(comm_info['call_duration'])
+                agent_names.append(comm_info['agent_name'])
+                total_messages_list.append(comm_info['total_messages'])
+                total_calls_list.append(comm_info['total_calls'])
+                answered_calls_list.append(comm_info['answered_calls'])
+                missed_calls_list.append(comm_info['missed_calls'])
+                call_attempts_list.append(comm_info['call_attempts'])
+            except Exception as e:
+                statuses.append("Error")
+                dates.append(None)
+                durations.append(None)
+                agent_names.append("Unknown")
+                total_messages_list.append(0)
+                total_calls_list.append(0)
+                answered_calls_list.append(0)
+                missed_calls_list.append(0)
+                call_attempts_list.append(0)
+        else:
+            statuses.append("Invalid Number")
+            dates.append(None)
+            durations.append(None)
+            agent_names.append("Unknown")
+            total_messages_list.append(0)
+            total_calls_list.append(0)
+            answered_calls_list.append(0)
+            missed_calls_list.append(0)
+            call_attempts_list.append(0)
 
-            # Message Templates
-            st.subheader("Message Templates")
+    # Return the collected data
+    return (
+        statuses, dates, durations, agent_names,
+        total_messages_list, total_calls_list,
+        answered_calls_list, missed_calls_list,
+        call_attempts_list
+    )
 
-            if campaign_type == "Email":
-                email_templates = {
-                    "Welcome": {
-                        "subject": "Welcome to Our Premium Ownership Family",
-                        "body": "Dear {first_name},\n\nWelcome to our exclusive community..."
-                    },
-                    "Upgrade Offer": {
-                        "subject": "Exclusive Upgrade Opportunity",
-                        "body": "Dear {first_name},\n\nAs a valued member, we are excited to offer you..."
-                    },
-                    "Custom": {
-                        "subject": "",
-                        "body": ""
-                    }
+
+    # Output results for debugging
+    st.write("Statuses:", statuses)
+    st.write("Dates:", dates)
+    return statuses, dates
+
+
+with tab4:
+    st.header("Owner Marketing")
+    # Placeholder for Owner Marketing functionality
+    st.info("Owner Marketing functionality coming soon...")
+    
+    # You can add some basic structure for future development
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Owner Statistics")
+        # Placeholder for owner stats
+        
+    with col2:
+        st.subheader("Marketing Campaigns")
+        # Placeholder for marketing campaigns
+
+with tab5:
+    st.header("Overnight Misses")
+    # Placeholder for Overnight Misses functionality
+    st.info("Overnight Misses functionality coming soon...")
+    
+    # You can add some basic structure for future development
+    st.subheader("Missed Opportunities")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Misses", "---")
+    with col2:
+        st.metric("Revenue Impact", "$---")
+    with col3:
+        st.metric("Recovery Rate", "---")
+
+############################################
+# Dashboard Tab
+############################################
+with tab1:
+    st.title("🏨 Hotel Reservations Dashboard")
+    st.markdown("Real-time analysis of hotel reservations")
+
+    # Filters
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        selected_hotel = st.multiselect(
+            "Select Hotel",
+            options=sorted(df['Market'].unique()),
+            default=[]
+        )
+
+    with col2:
+        min_date = pd.to_datetime(df['Arrival Date Short']).min()
+        max_date = pd.to_datetime(df['Arrival Date Short']).max()
+        date_range = st.date_input(
+            "Select Date Range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date
+        )
+
+    with col3:
+        selected_rate_codes = st.multiselect(
+            "Select Rate Codes",
+            options=sorted(df['Rate Code Name'].unique()),
+            default=[]
+        )
+
+    # Filter data
+    filtered_df = df.copy()
+    
+    if selected_hotel:
+        filtered_df = filtered_df[filtered_df['Market'].isin(selected_hotel)]
+    
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        filtered_df = filtered_df[
+            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date >= date_range[0]) &
+            (pd.to_datetime(filtered_df['Arrival Date Short']).dt.date <= date_range[1])
+        ]
+    
+    if selected_rate_codes:
+        filtered_df = filtered_df[filtered_df['Rate Code Name'].isin(selected_rate_codes)]
+
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Reservations", len(filtered_df))
+    with col2:
+        average_nights = filtered_df['# Nights'].mean()
+        st.metric("Average Nights", f"{average_nights:.1f}" if not math.isnan(average_nights) else "0")
+    with col3:
+        total_room_nights = filtered_df['# Nights'].sum()
+        st.metric("Total Room Nights", f"{total_room_nights:,.0f}")
+    with col4:
+        unique_guests = filtered_df['Name'].nunique()
+        st.metric("Unique Guests", unique_guests)
+
+    # Charts
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Reservations by Hotel using groupby
+        reservations_by_hotel = filtered_df.groupby('Market').size().reset_index(name='Reservations')
+        reservations_by_hotel = reservations_by_hotel.rename(columns={'Market': 'Hotel'})
+        
+        # Conditional Plotting
+        if reservations_by_hotel.empty:
+            st.warning("No reservation data available for the selected filters.")
+        else:
+            fig_hotels = px.bar(
+                reservations_by_hotel,
+                x='Hotel',
+                y='Reservations',
+                labels={'Hotel': 'Hotel', 'Reservations': 'Reservations'},
+                title='Reservations by Hotel'
+            )
+            st.plotly_chart(fig_hotels, use_container_width=True)
+
+    with col2:
+        # Length of Stay Distribution
+        fig_los = px.histogram(
+            filtered_df,
+            x='# Nights',
+            title='Length of Stay Distribution'
+        )
+        st.plotly_chart(fig_los, use_container_width=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Rate Code Distribution
+        fig_rate = px.pie(
+            filtered_df,
+            names='Rate Code Name',
+            title='Rate Code Distribution'
+        )
+        st.plotly_chart(fig_rate, use_container_width=True)
+
+    with col2:
+        # Arrivals by Date
+        daily_arrivals = filtered_df['Arrival Date Short'].value_counts().sort_index()
+        
+        if daily_arrivals.empty:
+            st.warning("No arrival data available for the selected filters.")
+        else:
+            fig_arrivals = px.line(
+                x=daily_arrivals.index,
+                y=daily_arrivals.values,
+                labels={'x': 'Date', 'y': 'Arrivals'},
+                title='Arrivals by Date'
+            )
+            st.plotly_chart(fig_arrivals, use_container_width=True)
+
+
+
+
+
+import pandas as pd
+import requests
+import time
+import json
+
+############################################
+# Marketing Tab
+############################################
+
+# Helper Functions
+def cleanup_phone_number(phone):
+    """Clean up phone number format"""
+    if pd.isna(phone):
+        return 'No Data'
+    # Remove spaces and non-numeric characters
+    phone = ''.join(filter(str.isdigit, str(phone)))
+    if len(phone) == 10:
+        return f"+1{phone}"
+    elif len(phone) == 11 and phone.startswith('1'):
+        return f"+{phone}"
+    return 'No Data'
+
+def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max):
+    """
+    Reset filter-related session state variables based on the provided resort and date range.
+    """
+    try:
+        # Set the reset trigger to True
+        st.session_state['reset_trigger'] = True
+
+        # Store the new defaults in session state
+        st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
+        st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
+        st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
+        st.session_state[f'default_check_out_end_{selected_resort}'] = max_check_out
+        st.session_state[f'default_total_price_{selected_resort}'] = (float(total_price_min), float(total_price_max))
+        st.session_state[f'default_rate_code_{selected_resort}'] = "All"
+    except Exception as e:
+        st.error(f"Error resetting filters: {e}")
+
+# Main Tab2 Content
+with tab2:
+    st.title("��️ Marketing Information by Resort")
+
+    # Resort selection
+    selected_resort = st.selectbox(
+        "Select Resort",
+        options=sorted(df['Market'].unique())
+    )
+
+    # Filter for selected resort
+    resort_df = df[df['Market'] == selected_resort].copy()
+    st.subheader(f"Guest Information for {selected_resort}")
+
+    # Set default dates based on the selected resort
+    if not resort_df.empty:
+        arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        arrival_dates = arrival_dates.dropna()
+        departure_dates = departure_dates.dropna()
+
+        min_check_in = arrival_dates.min().date() if not arrival_dates.empty else pd.to_datetime('today').date()
+        max_check_out = departure_dates.max().date() if not departure_dates.empty else pd.to_datetime('today').date()
+    else:
+        today = pd.to_datetime('today').date()
+        min_check_in = today
+        max_check_out = today
+
+    # Date filters with unique keys to reset when a new resort is selected
+    col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
+    with col1:
+        check_in_start = st.date_input(
+            "Check In Date (Start)",
+            value=min_check_in,
+            key=f'check_in_start_input_{selected_resort}'
+        )
+        check_in_end = st.date_input(
+            "Check In Date (End)",
+            value=max_check_out,
+            key=f'check_in_end_input_{selected_resort}'
+        )
+
+    with col2:
+        check_out_start = st.date_input(
+            "Check Out Date (Start)",
+            value=min_check_in,
+            key=f'check_out_start_input_{selected_resort}'
+        )
+        check_out_end = st.date_input(
+            "Check Out Date (End)",
+            value=max_check_out,
+            key=f'check_out_end_input_{selected_resort}'
+        )
+
+    with col3:
+        # Slider for Total Price
+        if 'Total Price' in resort_df.columns and not resort_df['Total Price'].isnull().all():
+            total_price_min = resort_df['Total Price'].min()
+            total_price_max = resort_df['Total Price'].max()
+
+            # Handle single-value range by adding a buffer
+            if total_price_min == total_price_max:
+                total_price_min = total_price_min - 1  # Add a buffer of 1 unit
+                total_price_max = total_price_max + 1
+
+            total_price_range = st.slider(
+                "Total Price Range",
+                min_value=float(total_price_min),
+                max_value=float(total_price_max),
+                value=(float(total_price_min), float(total_price_max)),
+                key=f'total_price_slider_{selected_resort}'
+            )
+        else:
+            st.warning("No valid Total Price data available for filtering.")
+            total_price_range = (0, 0)  # Default range if no valid data
+
+        # Dropdown for Rate Code
+        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
+        selected_rate_code = st.selectbox(
+            "Select Rate Code",
+            options=["All"] + rate_code_options,
+            key=f'rate_code_filter_{selected_resort}'
+        )
+
+    with st.container():
+        # Reset Filters Button
+        if st.button("Reset Filters"):
+            reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
+
+    # Process and display data
+    if not resort_df.empty:
+        resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+        resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
+
+        filtered_df = resort_df[
+            (resort_df['Arrival Date Short'].dt.date >= check_in_start) &
+            (resort_df['Arrival Date Short'].dt.date <= check_in_end) &
+            (resort_df['Departure Date Short'].dt.date >= check_out_start) &
+            (resort_df['Departure Date Short'].dt.date <= check_out_end)
+        ]
+
+        # Apply Total Price filter
+        if 'Total Price' in filtered_df.columns:
+            filtered_df = filtered_df[
+                (filtered_df['Total Price'] >= total_price_range[0]) &
+                (filtered_df['Total Price'] <= total_price_range[1])
+            ]
+
+        # Apply Rate Code filter
+        if selected_rate_code != "All" and 'Rate Code Name' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Rate Code Name'] == selected_rate_code]
+
+        if not filtered_df.empty:
+            # Prepare display DataFrame
+            display_df = filtered_df.rename(columns={
+                'Name': 'Guest Name',
+                'Arrival Date Short': 'Check In',
+                'Departure Date Short': 'Check Out',
+                'Rate Code Name': 'Rate Code',
+                'Total Price': 'Price'
+            })
+
+            # Ensure required columns are present
+            required_columns = [
+                'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
+                'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
+                'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
+            ]
+            for col in required_columns:
+                if col not in display_df.columns:
+                    display_df[col] = None  # Add missing column with default value
+
+            # Format phone numbers
+            display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
+
+            # Add Select All checkbox
+            select_all = st.checkbox("Select All Guests", key=f'select_all_{selected_resort}')
+            display_df['Select'] = select_all
+
+            # Initialize session state for communication data, scoped by resort
+            if 'communication_data' not in st.session_state:
+                st.session_state['communication_data'] = {}
+            if selected_resort not in st.session_state['communication_data']:
+                st.session_state['communication_data'][selected_resort] = {}
+
+            # Update display_df with saved communication data from session state
+            for idx, row in display_df.iterrows():
+                phone = row['Phone Number']
+                if phone in st.session_state['communication_data'][selected_resort]:
+                    comm_data = st.session_state['communication_data'][selected_resort][phone]
+                    display_df.at[idx, 'Communication Status'] = comm_data.get('status', 'Not Checked')
+                    display_df.at[idx, 'Last Communication Date'] = comm_data.get('date', None)
+                    display_df.at[idx, 'Call Duration (seconds)'] = comm_data.get('duration', None)
+                    display_df.at[idx, 'Agent Name'] = comm_data.get('agent', 'Unknown')
+                    display_df.at[idx, 'Total Messages'] = comm_data.get('total_messages', 0)
+                    display_df.at[idx, 'Total Calls'] = comm_data.get('total_calls', 0)
+                    display_df.at[idx, 'Answered Calls'] = comm_data.get('answered_calls', 0)
+                    display_df.at[idx, 'Missed Calls'] = comm_data.get('missed_calls', 0)
+                    display_df.at[idx, 'Call Attempts'] = comm_data.get('call_attempts', 0)
+
+            # Fetch Communication Info Button
+            if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
+                headers = {
+                    "Authorization": OPENPHONE_API_KEY,
+                    "Content-Type": "application/json"
                 }
 
-                template_choice = st.selectbox(
-                    "Select Email Template",
-                    list(email_templates.keys()),
-                    key=f'email_template_{campaign_type}'
-                )
+                with st.spinner('Fetching communication information...'):
+                    (
+                        statuses, dates, durations, agent_names,
+                        total_messages_list, total_calls_list,
+                        answered_calls_list, missed_calls_list,
+                        call_attempts_list
+                    ) = fetch_communication_info(display_df, headers)
 
-                subject = st.text_input(
-                    "Email Subject",
-                    value=email_templates[template_choice]["subject"],
-                    key=f'email_subject_{campaign_type}'
-                )
+                    # Update session state scoped to the selected resort
+                    for idx, (
+                        phone, status, date, duration, agent,
+                        total_msgs, total_cls, answered_cls, missed_cls, call_atpts
+                    ) in enumerate(zip(
+                        display_df['Phone Number'], statuses, dates, durations, agent_names,
+                        total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list
+                    )):
+                        st.session_state['communication_data'][selected_resort][phone] = {
+                            'status': status,
+                            'date': date,
+                            'duration': duration,
+                            'agent': agent,
+                            'total_messages': total_msgs,
+                            'total_calls': total_cls,
+                            'answered_calls': answered_cls,
+                            'missed_calls': missed_cls,
+                            'call_attempts': call_atpts
+                        }
 
-                body = st.text_area(
-                    "Email Body",
-                    value=email_templates[template_choice]["body"],
-                    height=200,
-                    key=f'email_body_{campaign_type}'
-                )
+                        # Update display_df
+                        display_df.at[idx, 'Communication Status'] = status
+                        display_df.at[idx, 'Last Communication Date'] = date
+                        display_df.at[idx, 'Call Duration (seconds)'] = duration
+                        display_df.at[idx, 'Agent Name'] = agent
+                        display_df.at[idx, 'Total Messages'] = total_msgs
+                        display_df.at[idx, 'Total Calls'] = total_cls
+                        display_df.at[idx, 'Answered Calls'] = answered_cls
+                        display_df.at[idx, 'Missed Calls'] = missed_cls
+                        display_df.at[idx, 'Call Attempts'] = call_atpts
 
+            # Reorder columns
+            display_df = display_df[
+                [
+                    'Select', 'Guest Name', 'Check In', 'Check Out',
+                    'Phone Number', 'Rate Code', 'Price',
+                    'Communication Status', 'Last Communication Date',
+                    'Call Duration (seconds)', 'Agent Name',
+                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
+                ]
+            ]
+
+            # Display the interactive data editor
+            # Ensure 'Select' column has proper boolean values           
+            # Clean DataFrame before passing to st.data_editor
+            def clean_dataframe(df):
+                """
+                Cleans the DataFrame by replacing missing values and enforcing consistent data types.
+                """
+                # Replace None/NaN in text columns with 'N/A'
+                for col in df.select_dtypes(include='object').columns:
+                    df[col] = df[col].fillna("N/A").astype(str)
+            
+                # Replace None/NaN in numeric columns with 0
+                for col in df.select_dtypes(include='number').columns:
+                    df[col] = df[col].fillna(0).astype(int)
+            
+                # Replace None/NaN in date columns with a placeholder date
+                for col in df.select_dtypes(include='datetime').columns:
+                    df[col] = df[col].fillna(pd.Timestamp("1970-01-01"))
+            
+                # Ensure 'Select' column is boolean
+                if 'Select' in df.columns:
+                    df['Select'] = df['Select'].fillna(False).astype(bool)
+                return df
+            
+            # Apply cleaning to display_df
+            display_df = clean_dataframe(display_df)
+            
+                      
+            # Drop rows where Guest Name is missing
+            display_df = display_df[display_df['Guest Name'].notna()].reset_index(drop=True)
+            
+            # Display cleaned data in the interactive data editor
+            edited_df = st.data_editor(
+                display_df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select"),
+                    "Guest Name": st.column_config.TextColumn("Guest Name"),
+                    "Check In": st.column_config.DateColumn("Check In"),
+                    "Check Out": st.column_config.DateColumn("Check Out"),
+                    "Phone Number": st.column_config.TextColumn("Phone Number"),
+                    "Rate Code": st.column_config.TextColumn("Rate Code"),
+                    "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                    "Communication Status": st.column_config.TextColumn("Communication Status", disabled=True),
+                    "Last Communication Date": st.column_config.TextColumn("Last Communication Date", disabled=True),
+                    "Call Duration (seconds)": st.column_config.NumberColumn("Call Duration (seconds)", format="%d", disabled=True),
+                    "Agent Name": st.column_config.TextColumn("Agent Name", disabled=True),
+                    "Total Messages": st.column_config.NumberColumn("Total Messages", format="%d", disabled=True),
+                    "Total Calls": st.column_config.NumberColumn("Total Calls", format="%d", disabled=True),
+                    "Answered Calls": st.column_config.NumberColumn("Answered Calls", format="%d", disabled=True),
+                    "Missed Calls": st.column_config.NumberColumn("Missed Calls", format="%d", disabled=True),
+                    "Call Attempts": st.column_config.NumberColumn("Call Attempts", format="%d", disabled=True)
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+
+
+            # Ensure 'Select' column contains valid boolean values
+            if 'Select' in edited_df.columns:
+                # Map string representations to booleans
+                edited_df['Select'] = edited_df['Select'].map({True: True, False: False, 'True': True, 'False': False})
+                # Fill any NaN values with False
+                edited_df['Select'] = edited_df['Select'].fillna(False)
+                # Ensure the 'Select' column is of boolean data type
+                edited_df['Select'] = edited_df['Select'].astype(bool)
+                # Now select the guests safely
+                selected_guests = edited_df[edited_df['Select']]
             else:
-                text_templates = {
-                    "Welcome": "Welcome to our premium ownership family! Reply STOP to opt out.",
-                    "Upgrade": "Exclusive upgrade opportunity available! Reply STOP to opt out.",
-                    "Custom": ""
+                st.error("The 'Select' column is missing from the edited data.")
+
+
+        else:
+            st.warning("No data available for the selected filters.")
+
+
+
+
+############################################
+# Message Templates Section
+############################################
+st.markdown("---")
+st.subheader("Message Templates")
+
+message_templates = {
+    "Welcome Message": f"Welcome to {selected_resort}! Please visit our concierge desk for your welcome gift! 🎁",
+    "Check-in Follow-up": f"Hello, we hope you're enjoying your stay at {selected_resort}. Don't forget to collect your welcome gift at the concierge desk! 🎁",
+    "Checkout Message": f"Thank you for staying with us at {selected_resort}! We hope you had a great stay. Please stop by the concierge desk before you leave for a special gift! 🎁"
+}
+
+selected_template = st.selectbox(
+    "Choose a Message Template",
+    options=list(message_templates.keys())
+)
+
+message_preview = message_templates[selected_template]
+st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
+
+############################################
+# Send SMS to Selected Guests
+############################################
+if 'edited_df' in locals() and not edited_df.empty:
+    selected_guests = edited_df[edited_df['Select']]
+    num_selected = len(selected_guests)
+    if not selected_guests.empty:
+        button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected!= 1 else ''}"
+        if st.button(button_label):
+            openphone_url = "https://api.openphone.com/v1/messages"
+            headers_sms = {
+                "Authorization": OPENPHONE_API_KEY,
+                "Content-Type": "application/json"
+            }
+            sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
+
+            for idx, row in selected_guests.iterrows():
+                recipient_phone = row['Phone Number']  # Use actual guest's phone number
+                payload = {
+                    "content": message_preview,
+                    "from": sender_phone_number,
+                    "to": [recipient_phone]
                 }
 
-                template_choice = st.selectbox(
-                    "Select Text Template",
-                    list(text_templates.keys()),
-                    key=f'text_template_{campaign_type}'
-                )
-
-                message = st.text_area(
-                    "Message Text",
-                    value=text_templates[template_choice],
-                    height=100,
-                    key=f'sms_message_{campaign_type}'
-                )
-
-            # Preview Section
-            st.subheader("Campaign Preview")
-            preview_cols = st.columns(2)
-            with preview_cols[0]:
-                st.write("Group A Preview:")
-                if campaign_type == "Email":
-                    st.info(f"Subject: {subject}\n\n{body}")
-                else:
-                    st.info(message)
-
-            with preview_cols[1]:
-                st.write("Group B Preview:")
-                if campaign_type == "Email":
-                    st.info(f"Subject: {subject}\n\n{body}")
-                else:
-                    st.info(message)
-
-            # Campaign Execution
-            st.subheader("Campaign Execution")
-
-            if st.button(f"Launch {campaign_type} Campaign", key=f'launch_{campaign_type}'):
-                if campaign_filtered_df.empty:
-                    st.warning("No data available for the selected filters.")
-                    return
-
-                # Split the dataset for A/B testing
-                campaign_filtered_df = campaign_filtered_df.sample(frac=1).reset_index(drop=True)  # Shuffle the DataFrame
-                split_index = group_a_size
-                group_a = campaign_filtered_df.iloc[:split_index].copy()
-                group_b = campaign_filtered_df.iloc[split_index:].copy()
-
-                # Combine groups with labels
-                group_a['Group'] = 'A'
-                group_b['Group'] = 'B'
-                campaign_df = pd.concat([group_a, group_b], ignore_index=True)
-
-                # Execute campaign
-                with st.spinner(f"Sending {campaign_type} messages..."):
-                    success_count = 0
-                    fail_count = 0
-
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-
-                    total = len(campaign_df)
-                    for idx, row in campaign_df.iterrows():
+                try:
+                    response = requests.post(openphone_url, json=payload, headers=headers_sms)
+                    if response.status_code == 202:
+                        st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
+                    else:
+                        st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
+                        st.write("Response Status Code:", response.status_code)
                         try:
-                            if campaign_type == "Email":
-                                recipient_email = row['Email']
-                                if pd.notna(recipient_email) and '@' in recipient_email and '.' in recipient_email.split('@')[-1]:
-                                    personalized_subject = subject.format(first_name=row['First Name'])
-                                    personalized_body = body.format(first_name=row['First Name'])
-                                    success = send_email(recipient_email, personalized_subject, personalized_body)
-                                else:
-                                    success = False
-                            else:
-                                phone = format_phone_number(row['Phone Number'])
-                                if phone:
-                                    personalized_message = message.format(first_name=row['First Name'])
-                                    success = send_text_message(phone, personalized_message)
-                                else:
-                                    success = False
+                            st.write("Response Body:", response.json())
+                        except:
+                            st.write("Response Body:", response.text)
+                except Exception as e:
+                    st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
 
-                            if success:
-                                success_count += 1
-                            else:
-                                fail_count += 1
-
-                            # Update progress
-                            progress = (idx + 1) / total
-                            progress_bar.progress(progress)
-                            status_text.text(
-                                f"Processing: {idx + 1}/{total} "
-                                f"({success_count} successful, {fail_count} failed)"
-                            )
-
-                            # Optional: Remove sleep in production
-                            time.sleep(0.05)
-
-                        except Exception as e:
-                            st.error(f"Error processing row {idx}: {str(e)}")
-                            logger.error(f"Error processing row {idx}: {str(e)}")
-                            fail_count += 1
-
-                    # Final summary
-                    st.success(
-                        f"Campaign completed: {success_count} successful, "
-                        f"{fail_count} failed"
-                    )
-
-                    # Save campaign results
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"{campaign_type}_campaign_{timestamp}.csv"
-                    campaign_df.to_csv(filename, index=False)
-
-                    # Offer download of results
-                    with open(filename, 'rb') as f:
-                        st.download_button(
-                            label="Download Campaign Results",
-                            data=f,
-                            file_name=filename,
-                            mime="text/csv"
-                        )
-
-def run_minimal_app():
-    st.title("Owner Marketing Dashboard")
-    owner_df = get_owner_sheet_data()
-    if not owner_df.empty:
-        run_owner_marketing_tab(owner_df)
+                time.sleep(0.2)  # Respect rate limits
     else:
-        st.error("No owner data available to display.")
+        st.info("No guests selected to send SMS.")
+else:
+    st.info("No guest data available to send SMS.")
 
-if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    run_minimal_app()
+
+############################################
+# Tour Prediction Tab
+############################################
+with tab3:
+    st.title("🔮 Tour Prediction Dashboard")
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input(
+            "Start Date for Tour Prediction", 
+            value=pd.to_datetime(df['Arrival Date Short']).min().date()
+        )
+    with col2:
+        end_date = st.date_input(
+            "End Date for Tour Prediction", 
+            value=pd.to_datetime(df['Arrival Date Short']).max().date()
+        )
+
+    # Validate date range
+    if start_date > end_date:
+        st.error("Start Date cannot be after End Date.")
+    else:
+        # Prepare a DataFrame to collect all resort data
+        all_resorts_tour_data = []
+        
+        for resort in sorted(df['Market'].unique()):
+            resort_df = df[df['Market'] == resort].copy()
+            resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
+            filtered_resort_df = resort_df[
+                (resort_df['Arrival Date Short'].dt.date >= start_date) & 
+                (resort_df['Arrival Date Short'].dt.date <= end_date)
+            ]
+
+            # Daily Arrivals
+            daily_arrivals = filtered_resort_df.groupby(filtered_resort_df['Arrival Date Short'].dt.date).size().reset_index(name='Arrivals')
+            daily_arrivals = daily_arrivals.rename(columns={'Arrival Date Short': 'Date'})  # Rename for consistency
+
+            st.subheader(f"{resort}")
+
+            # Conversion Rate Input
+            conversion_rate = st.number_input(
+                f"Conversion Rate for {resort} (%)", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=10.0, 
+                step=0.5,
+                key=f"conversion_{resort}"
+            ) / 100
+
+            # Calculate Tours, rounded down using math.floor
+            daily_arrivals['Tours'] = daily_arrivals['Arrivals'].apply(
+                lambda a: math.floor(a * conversion_rate)
+            )
+
+            st.dataframe(daily_arrivals)
+
+            # Aggregate summaries for visualization later
+            all_resorts_tour_data.append(daily_arrivals.assign(Market=resort))
+
+        # Concatenate all resort data
+        if all_resorts_tour_data:
+            full_summary_df = pd.concat(all_resorts_tour_data, ignore_index=True)
+
+            # Check if 'Date' column exists
+            if 'Date' not in full_summary_df.columns:
+                st.error("The 'Date' column is missing from the tour summary data.")
+            else:
+                # Overall Summary
+                st.markdown("---")
+                st.subheader("Overall Tour Summary Across All Resorts")
+
+                # Handle empty DataFrame
+                if full_summary_df.empty:
+                    st.warning("No tour data available for the selected date range.")
+                else:
+                    overall_summary = full_summary_df.groupby('Date').sum().reset_index()
+
+                    # Check if 'Date' column exists
+                    if 'Date' not in overall_summary.columns:
+                        st.error("The 'Date' column is missing from the overall summary data.")
+                    else:
+                        st.dataframe(overall_summary)
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Total Arrivals for All Resorts", overall_summary['Arrivals'].sum())
+                        with col2:
+                            st.metric("Total Estimated Tours for All Resorts", overall_summary['Tours'].sum())
+        else:
+            st.info("No tour data available for the selected date range.")
+
+with tab4:
+    # Pass the owner DataFrame to the Owner Marketing module
+    owner_df = owner_marketing.get_owner_sheet_data()
+    owner_marketing.run_owner_marketing_tab(owner_df=owner_df)
+    # Ensure that `get_owner_sheet_data` is properly defined in owner_marketing.py
+    # Alternatively, pass `owner_df` from the main app if it's already loaded
+
+with tab5:
+    st.header("Overnight Misses")
+    # Placeholder for Overnight Misses functionality
+    st.info("Overnight Misses functionality coming soon...")
+    
+    # You can add some basic structure for future development
+    st.subheader("Missed Opportunities")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Misses", "---")
+    with col2:
+        st.metric("Revenue Impact", "$---")
+    with col3:
+        st.metric("Recovery Rate", "---")
+with tab6:
+    st.header("OpenPhone Stats")
+    # Add OpenPhone Stats content
+    
+    # Date filter
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Start Date")
+    with col2:
+        end_date = st.date_input("End Date")
+        
+    # Overview metrics
+    st.subheader("Call Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Calls", "---")
+    with col2:
+        st.metric("Answered Calls", "---")
+    with col3:
+        st.metric("Missed Calls", "---")
+    with col4:
+        st.metric("Answer Rate", "---%")
+        
+    # Detailed statistics
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Call Volume by Hour")
+        # Placeholder for hourly call volume chart
+        st.info("Hourly call volume chart coming soon...")
+        
+    with col2:
+        st.subheader("Call Volume by Day")
+        # Placeholder for daily call volume chart
+        st.info("Daily call volume chart coming soon...")
+        
+    # Call details table
+    st.subheader("Recent Calls")
+    call_data = {
+        "Date": [],
+        "Time": [],
+        "Phone Number": [],
+        "Duration": [],
+        "Status": [],
+        "Agent": []
+    }
+    st.dataframe(call_data)
+    
+    # Download section
+    st.download_button(
+        label="Download Call Data",
+        data="",  # Add your CSV data here
+        file_name="openphone_stats.csv",
+        mime="text/csv",
+    )
+############################################
+# Raw Data Viewer
+############################################
+with st.expander("Show Raw Data"):
+    st.dataframe(df)
