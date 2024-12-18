@@ -744,25 +744,15 @@ with tab2:
             ]
 
             # Display the interactive data editor
-            # Ensure 'Select' column has proper boolean values
-            if 'Select' in display_df.columns:
-                display_df['Select'] = display_df['Select'].fillna(False).astype(bool)
-            
-            # Add missing columns if not already in display_df
-            required_columns = ['Communication Status', 'Last Communication Date', 'Call Duration (seconds)',
-                                'Agent Name', 'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts']
-            for col in required_columns:
-                if col not in display_df.columns:
-                    display_df[col] = None
-            
-            # Store updated DataFrame in session state
-            st.session_state['updated_df'] = display_df
-            
             # Display the interactive data editor
             edited_df = st.data_editor(
-                st.session_state['updated_df'],
+                display_df,
                 column_config={
-                    "Select": st.column_config.CheckboxColumn("Select"),
+                    "Select": st.column_config.CheckboxColumn(
+                        "Select",
+                        help="Select or deselect this guest",
+                        default=False  # Ensure default value is False
+                    ),
                     "Guest Name": st.column_config.TextColumn("Guest Name"),
                     "Check In": st.column_config.DateColumn("Check In"),
                     "Check Out": st.column_config.DateColumn("Check Out"),
@@ -783,7 +773,7 @@ with tab2:
                 use_container_width=True,
                 key=f"guest_editor_{selected_resort}"
             )
-
+            
             # Ensure 'Select' column contains valid boolean values
             if 'Select' in edited_df.columns:
                 # Map string representations to booleans
