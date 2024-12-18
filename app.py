@@ -493,9 +493,6 @@ import json
 ############################################
 # Marketing Tab
 ############################################
-############################################
-# Marketing Tab
-############################################
 
 # Helper Functions
 def cleanup_phone_number(phone):
@@ -534,9 +531,238 @@ def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min,
     except Exception as e:
         st.error(f"Error resetting filters: {e}")
 
+# Updated fetch_communication_info function
+def fetch_communication_info(guest_df, headers):
+    statuses, dates, durations, agent_names = [], [], [], []
+    total_messages_list, total_calls_list = [], []
+    answered_calls_list, missed_calls_list, call_attempts_list = [], [], []
+    pre_arrival_calls_list, pre_arrival_texts_list = [], []
+    post_arrival_calls_list, post_arrival_texts_list = [], []
+    calls_under_40sec_list = []
+
+    for _, row in guest_df.iterrows():
+        phone = row['Phone Number']
+        arrival_date = row['Arrival Date Short']
+        if phone and phone != 'No Data':
+            try:
+                comm_info = get_communication_info(phone, headers, arrival_date)
+                statuses.append(comm_info['status'])
+                dates.append(comm_info['last_date'])
+                durations.append(comm_info['call_duration'])
+                agent_names.append(comm_info['agent_name'])
+                total_messages_list.append(comm_info['total_messages'])
+                total_calls_list.append(comm_info['total_calls'])
+                answered_calls_list.append(comm_info['answered_calls'])
+                missed_calls_list.append(comm_info['missed_calls'])
+                call_attempts_list.append(comm_info['call_attempts'])
+                pre_arrival_calls_list.append(comm_info['pre_arrival_calls'])
+                pre_arrival_texts_list.append(comm_info['pre_arrival_texts'])
+                post_arrival_calls_list.append(comm_info['post_arrival_calls'])
+                post_arrival_texts_list.append(comm_info['post_arrival_texts'])
+                calls_under_40sec_list.append(comm_info['calls_under_40sec'])
+            except Exception as e:
+                statuses.append("Error")
+                dates.append(None)
+                durations.append(None)
+                agent_names.append("Unknown")
+                total_messages_list.append(0)
+                total_calls_list.append(0)
+                answered_calls_list.append(0)
+                missed_calls_list.append(0)
+                call_attempts_list.append(0)
+                pre_arrival_calls_list.append(0)
+                pre_arrival_texts_list.append(0)
+                post_arrival_calls_list.append(0)
+                post_arrival_texts_list.append(0)
+                calls_under_40sec_list.append(0)
+        else:
+            statuses.append("Invalid Number")
+            dates.append(None)
+            durations.append(None)
+            agent_names.append("Unknown")
+            total_messages_list.append(0)
+            total_calls_list.append(0)
+            answered_calls_list.append(0)
+            missed_calls_list.append(0)
+            call_attempts_list.append(0)
+            pre_arrival_calls_list.append(0)
+            pre_arrival_texts_list.append(0)
+            post_arrival_calls_list.append(0)
+            post_arrival_texts_list.append(0)
+            calls_under_40sec_list.append(0)
+
+    return (
+        statuses, dates, durations, agent_names,
+        total_messages_list, total_calls_list,
+        answered_calls_list, missed_calls_list,
+        call_attempts_list,
+        pre_arrival_calls_list, pre_arrival_texts_list,
+        post_arrival_calls_list, post_arrival_texts_list,
+        calls_under_40sec_list
+    )
+
+# Updated get_communication_info function
+def get_communication_info(phone_number, headers, arrival_date):
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        return {
+            'status': "No Communications",
+            'last_date': None,
+            'call_duration': None,
+            'agent_name': None,
+            'total_messages': 0,
+            'total_calls': 0,
+            'answered_calls': 0,
+            'missed_calls': 0,
+            'call_attempts': 0,
+            'pre_arrival_calls': 0,
+            'pre_arrival_texts': 0,
+            'post_arrival_calls': 0,
+            'post_arrival_texts': 0,
+            'calls_under_40sec': 0
+        }
+
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
+    call_duration = None
+    agent_name = None
+
+    total_messages = 0
+    total_calls = 0
+    answered_calls = 0
+    missed_calls = 0
+    call_attempts = 0
+
+    pre_arrival_calls = 0
+    pre_arrival_texts = 0
+    post_arrival_calls = 0
+    post_arrival_texts = 0
+    calls_under_40sec = 0
+
+    # Convert arrival_date to datetime
+    if isinstance(arrival_date, str):
+        arrival_date = datetime.fromisoformat(arrival_date)
+    elif isinstance(arrival_date, pd.Timestamp):
+        arrival_date = arrival_date.to_pydatetime()
+    else:
+        # Assuming it's already datetime
+        pass
+    arrival_date_only = arrival_date.date()
+
+    for phone_number_id in phone_number_ids:
+        # Messages pagination
+        next_page = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "participants": [phone_number],
+                "maxResults": 50
+            }
+            if next_page:
+                params['pageToken'] = next_page
+
+            # Fetch messages
+            messages_response = rate_limited_request(messages_url, headers, params)
+            if messages_response and 'data' in messages_response:
+                messages = messages_response['data']
+                total_messages += len(messages)
+                for message in messages:
+                    msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                    msg_date = msg_time.date()
+                    if msg_date <= arrival_date_only:
+                        pre_arrival_texts += 1
+                    else:
+                        post_arrival_texts += 1
+
+                    if not latest_datetime or msg_time > latest_datetime:
+                        latest_datetime = msg_time
+                        latest_type = "Message"
+                        latest_direction = message.get("direction", "unknown")
+                        agent_name = message.get("user", {}).get("name", "Unknown Agent")
+                next_page = messages_response.get('nextPageToken')
+                if not next_page:
+                    break
+            else:
+                break
+
+        # Calls pagination
+        next_page = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "participants": [phone_number],
+                "maxResults": 50
+            }
+            if next_page:
+                params['pageToken'] = next_page
+
+            # Fetch calls
+            calls_response = rate_limited_request(calls_url, headers, params)
+            if calls_response and 'data' in calls_response:
+                calls = calls_response['data']
+                total_calls += len(calls)
+                for call in calls:
+                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                    call_date = call_time.date()
+                    call_duration = call.get("duration", 0)
+                    if call_date <= arrival_date_only:
+                        pre_arrival_calls += 1
+                    else:
+                        post_arrival_calls += 1
+
+                    if call_duration < 40:
+                        calls_under_40sec += 1
+
+                    if not latest_datetime or call_time > latest_datetime:
+                        latest_datetime = call_time
+                        latest_type = "Call"
+                        latest_direction = call.get("direction", "unknown")
+                        call_duration = call.get("duration")
+                        agent_name = call.get("user", {}).get("name", "Unknown Agent")
+
+                    call_attempts += 1
+
+                    # Determine if the call was answered
+                    call_status = call.get('status', 'unknown')
+                    if call_status == 'completed':
+                        answered_calls += 1
+                    elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
+                        missed_calls += 1
+                next_page = calls_response.get('nextPageToken')
+                if not next_page:
+                    break
+            else:
+                break
+
+    if not latest_datetime:
+        status = "No Communications"
+    else:
+        status = f"{latest_type} - {latest_direction}"
+
+    return {
+        'status': status,
+        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
+        'call_duration': call_duration,
+        'agent_name': agent_name,
+        'total_messages': total_messages,
+        'total_calls': total_calls,
+        'answered_calls': answered_calls,
+        'missed_calls': missed_calls,
+        'call_attempts': call_attempts,
+        'pre_arrival_calls': pre_arrival_calls,
+        'pre_arrival_texts': pre_arrival_texts,
+        'post_arrival_calls': post_arrival_calls,
+        'post_arrival_texts': post_arrival_texts,
+        'calls_under_40sec': calls_under_40sec
+    }
+
 # Main Tab2 Content
 with tab2:
-    st.title("📈 Marketing Information by Resort")
+    st.title("�� Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -669,7 +895,8 @@ with tab2:
             required_columns = [
                 'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
                 'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
-                'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
+                'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+                'Pre-Arrival Calls', 'Pre-Arrival Texts', 'Post-Arrival Calls', 'Post-Arrival Texts', 'Calls Under 40 sec'
             ]
             for col in required_columns:
                 if col not in display_df.columns:
@@ -706,6 +933,11 @@ with tab2:
                     display_df.at[idx, 'Answered Calls'] = comm_data.get('answered_calls', 0)
                     display_df.at[idx, 'Missed Calls'] = comm_data.get('missed_calls', 0)
                     display_df.at[idx, 'Call Attempts'] = comm_data.get('call_attempts', 0)
+                    display_df.at[idx, 'Pre-Arrival Calls'] = comm_data.get('pre_arrival_calls', 0)
+                    display_df.at[idx, 'Pre-Arrival Texts'] = comm_data.get('pre_arrival_texts', 0)
+                    display_df.at[idx, 'Post-Arrival Calls'] = comm_data.get('post_arrival_calls', 0)
+                    display_df.at[idx, 'Post-Arrival Texts'] = comm_data.get('post_arrival_texts', 0)
+                    display_df.at[idx, 'Calls Under 40 sec'] = comm_data.get('calls_under_40sec', 0)
 
             # **Fetch Communication Info Button**
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
@@ -719,7 +951,10 @@ with tab2:
                         statuses, dates, durations, agent_names,
                         total_messages_list, total_calls_list,
                         answered_calls_list, missed_calls_list,
-                        call_attempts_list
+                        call_attempts_list,
+                        pre_arrival_calls_list, pre_arrival_texts_list,
+                        post_arrival_calls_list, post_arrival_texts_list,
+                        calls_under_40sec_list
                     ) = fetch_communication_info(display_df, headers)
 
                     # Verify that all lists have the same length as display_df
@@ -728,7 +963,10 @@ with tab2:
                         statuses, dates, durations, agent_names,
                         total_messages_list, total_calls_list,
                         answered_calls_list, missed_calls_list,
-                        call_attempts_list
+                        call_attempts_list,
+                        pre_arrival_calls_list, pre_arrival_texts_list,
+                        post_arrival_calls_list, post_arrival_texts_list,
+                        calls_under_40sec_list
                     ]]
                     if not all(length == expected_length for length in actual_lengths):
                         st.error("Mismatch in communication data lengths. Aborting update to prevent data misalignment.")
@@ -744,6 +982,11 @@ with tab2:
                     display_df['Answered Calls'] = answered_calls_list
                     display_df['Missed Calls'] = missed_calls_list
                     display_df['Call Attempts'] = call_attempts_list
+                    display_df['Pre-Arrival Calls'] = pre_arrival_calls_list
+                    display_df['Pre-Arrival Texts'] = pre_arrival_texts_list
+                    display_df['Post-Arrival Calls'] = post_arrival_calls_list
+                    display_df['Post-Arrival Texts'] = post_arrival_texts_list
+                    display_df['Calls Under 40 sec'] = calls_under_40sec_list
 
                     # Update session state scoped to the selected resort
                     st.session_state['communication_data'][selected_resort] = {
@@ -756,12 +999,21 @@ with tab2:
                             'total_calls': total_cls,
                             'answered_calls': answered_cls,
                             'missed_calls': missed_cls,
-                            'call_attempts': call_atpts
+                            'call_attempts': call_atpts,
+                            'pre_arrival_calls': pre_calls,
+                            'pre_arrival_texts': pre_texts,
+                            'post_arrival_calls': post_calls,
+                            'post_arrival_texts': post_texts,
+                            'calls_under_40sec': under_40sec
                         }
-                        for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts
+                        for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts,
+                            pre_calls, pre_texts, post_calls, post_texts, under_40sec
                         in zip(
                             display_df['Phone Number'], statuses, dates, durations, agent_names,
-                            total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list
+                            total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list,
+                            pre_arrival_calls_list, pre_arrival_texts_list,
+                            post_arrival_calls_list, post_arrival_texts_list,
+                            calls_under_40sec_list
                         )
                     }
 
@@ -774,7 +1026,8 @@ with tab2:
                     'Phone Number', 'Rate Code', 'Price',
                     'Communication Status', 'Last Communication Date',
                     'Call Duration (seconds)', 'Agent Name',
-                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts'
+                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+                    'Pre-Arrival Calls', 'Pre-Arrival Texts', 'Post-Arrival Calls', 'Post-Arrival Texts', 'Calls Under 40 sec'
                 ]
             ]
 
@@ -863,13 +1116,43 @@ with tab2:
                         format="%d",
                         disabled=True,
                         width="120px"
-                    )
+                    ),
+                    "Pre-Arrival Calls": st.column_config.NumberColumn(
+                        "Pre-Arrival Calls",
+                        format="%d",
+                        disabled=True,
+                        width="140px"
+                    ),
+                    "Pre-Arrival Texts": st.column_config.NumberColumn(
+                        "Pre-Arrival Texts",
+                        format="%d",
+                        disabled=True,
+                        width="140px"
+                    ),
+                    "Post-Arrival Calls": st.column_config.NumberColumn(
+                        "Post-Arrival Calls",
+                        format="%d",
+                        disabled=True,
+                        width="140px"
+                    ),
+                    "Post-Arrival Texts": st.column_config.NumberColumn(
+                        "Post-Arrival Texts",
+                        format="%d",
+                        disabled=True,
+                        width="140px"
+                    ),
+                    "Calls Under 40 sec": st.column_config.NumberColumn(
+                        "Calls Under 40 sec",
+                        format="%d",
+                        disabled=True,
+                        width="140px"
+                    ),
                 },
                 hide_index=True,
                 use_container_width=True,
                 key=f"guest_editor_{selected_resort}"
             )
-            
+
             # Ensure 'Select' column contains valid boolean values
             if 'Select' in edited_df.columns:
                 # Map string representations to booleans
