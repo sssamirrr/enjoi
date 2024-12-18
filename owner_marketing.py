@@ -36,6 +36,7 @@ def get_owner_sheet_data():
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         df['Select'] = False  # Selection column
+        df = df[['Select'] + [col for col in df.columns if col != 'Select']]  # Move Select to first column
         return df
 
     except Exception as e:
@@ -94,7 +95,7 @@ def run_owner_marketing_tab(owner_df):
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
     filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
 
-    # Display Table with Checkboxes
+    # Display Table with Checkboxes (Checkmarks on the Left)
     st.subheader("Owner Data")
     edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
         "Select": st.column_config.CheckboxColumn("Select")
