@@ -64,8 +64,8 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ############################################
 
 # Replace with your actual OpenPhone API key and number
-OPENPHONE_API_KEY = "your_openphone_api_key_here"  # Replace with your OpenPhone API key
-OPENPHONE_NUMBER = "+1xxxxxxxxxx"  # Replace with your OpenPhone number
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_NUMBER = "+18438972426"
 
 ############################################
 # Connect to Google Sheets
