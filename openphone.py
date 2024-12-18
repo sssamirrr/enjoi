@@ -43,6 +43,30 @@ def run_openphone_tab():
     calls = filtered_data[filtered_data['type'] == 'call']
     messages = filtered_data[filtered_data['type'] == 'message']
 
+    # Response Rate Slider
+    st.subheader("Filter by Call Duration")
+    min_duration = int(calls['duration'].min()) if 'duration' in calls.columns and not calls['duration'].isnull().all() else 0
+    max_duration = int(calls['duration'].max()) if 'duration' in calls.columns and not calls['duration'].isnull().all() else 60
+
+    selected_duration = st.slider(
+        "Minimum Call Duration (seconds) for Valid Response",
+        min_value=min_duration,
+        max_value=max_duration,
+        value=min_duration,
+        step=1
+    )
+
+    # Filter calls based on the selected duration
+    if 'duration' in calls.columns:
+        filtered_calls = calls[calls['duration'] >= selected_duration]
+        valid_responses = filtered_calls[filtered_calls['status'] == 'completed']
+    else:
+        st.warning("Duration data not found. Using all answered calls for response rate calculation.")
+        valid_responses = calls[calls['status'] == 'completed']
+
+    # Calculate response rate with filtered calls
+    response_rate_filtered = (len(valid_responses) / len(calls) * 100) if len(calls) > 0 else 0
+
     # Metrics
     st.subheader("Metrics")
     col1, col2, col3, col4 = st.columns(4)
@@ -53,33 +77,4 @@ def run_openphone_tab():
     with col3:
         st.metric("Answered Calls", len(calls[calls['status'] == 'completed']))
     with col4:
-        st.metric("Missed Calls", len(calls[calls['status'].isin(['missed', 'no-answer'])]))
-
-    # Agent Performance
-    st.subheader("Agent Performance")
-    filtered_data['userId'] = filtered_data['userId'].fillna('Unknown')
-    agent_calls = calls.groupby('userId').size().reset_index(name='total_calls')
-    agent_messages = messages.groupby('userId').size().reset_index(name='total_messages')
-
-    agent_performance = pd.merge(agent_calls, agent_messages, on='userId', how='outer').fillna(0)
-    agent_performance['success_rate_calls'] = (
-        calls[calls['status'] == 'completed'].groupby('userId').size().reindex(agent_performance['userId'], fill_value=0)
-    ) / agent_performance['total_calls']
-    agent_performance['success_rate_calls'] = agent_performance['success_rate_calls'].fillna(0) * 100
-
-    fig = px.bar(
-        agent_performance,
-        x='userId',
-        y=['total_calls', 'total_messages'],
-        title="Agent Performance: Calls and Messages",
-        barmode='group',
-    )
-    st.plotly_chart(fig)
-    st.dataframe(agent_performance.rename(columns={
-        'userId': 'Agent',
-        'total_calls': 'Total Calls',
-        'total_messages': 'Total Messages',
-        'success_rate_calls': 'Success Rate (%)'
-    }))
-
-    st.success("Dashboard Ready!")
+        st.metric("Response Rate (Filtered)", f"{response_rate_filtered:.2f}%")
