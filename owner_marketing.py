@@ -21,8 +21,6 @@ logger.addHandler(handler)
 # Fetch Google Sheets data
 def get_owner_sheet_data():
     try:
-        logger.info("Attempting to fetch data from Google Sheets...")
-
         credentials = service_account.Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=[
@@ -30,7 +28,6 @@ def get_owner_sheet_data():
                 "https://www.googleapis.com/auth/drive.readonly"
             ],
         )
-
         client = gspread.authorize(credentials)
         sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
         sheet = client.open_by_key(sheet_key)
@@ -38,7 +35,6 @@ def get_owner_sheet_data():
         data = worksheet.get_all_records()
 
         if not data:
-            logger.warning("Google Sheet is empty.")
             st.warning("The Google Sheet is empty. Please ensure it contains data.")
             return pd.DataFrame()
 
@@ -63,12 +59,10 @@ def get_owner_sheet_data():
         df['Total Messages'] = 0
         df['Select'] = False
 
-        logger.info("Added communication-related columns to the DataFrame.")
         return df
 
     except Exception as e:
         st.error(f"Error accessing Google Sheet: {str(e)}")
-        logger.error(f"Google Sheet Access Error: {str(e)}")
         return pd.DataFrame()
 
 # Fetch OpenPhone data
@@ -96,28 +90,13 @@ def fetch_openphone_data(phone_number):
                 "Total Calls": total_calls,
                 "Total Messages": total_messages
             }
-    except Exception as e:
+    except Exception:
         return {
             "Last Communication Status": "Error",
             "Last Communication Date": None,
             "Total Calls": 0,
             "Total Messages": 0
         }
-
-# Campaign Functionality
-def send_email(recipient, subject, body):
-    if DEMO_MODE:
-        logger.info(f"Demo Mode: Sent email to {recipient}")
-    else:
-        # Email API logic here
-        pass
-
-def send_text(phone_number, message):
-    if DEMO_MODE:
-        logger.info(f"Demo Mode: Sent text to {phone_number}")
-    else:
-        # SMS API logic here
-        pass
 
 # Update communication info
 def update_communication_info(df, selected_rows):
@@ -159,36 +138,19 @@ def run_owner_marketing_tab(owner_df):
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
     filtered_df = filtered_df[(filtered_df['Primary FICO'] >= min_fico) & (filtered_df['Primary FICO'] <= max_fico)]
 
-    # Display the filtered table
+    # Add checkboxes for row selection
     st.subheader("Owner Data")
     selected_rows = []
-    for i in filtered_df.index:
-        if st.checkbox(f"Select Row {i}", key=f"row_{i}"):
-            selected_rows.append(i)
+    for idx in filtered_df.index:
+        selected = st.checkbox(f"Select Row {idx}", key=f"select_{idx}")
+        filtered_df.at[idx, "Select"] = selected
+        if selected:
+            selected_rows.append(idx)
 
-    st.dataframe(filtered_df, use_container_width=True)
+    # Display filtered table
+    st.dataframe(filtered_df.drop(columns=["Select"]), use_container_width=True)
 
-    # Campaign Setup
-    st.subheader("Message Templates")
-    campaign_type = st.radio("Choose Campaign Type", ["Text", "Email"])
-    if campaign_type == "Text":
-        message_template = st.text_area("Text Message", "Welcome to our premium ownership program!")
-    else:
-        subject = st.text_input("Email Subject", "Welcome to Our Program")
-        email_body = st.text_area("Email Body", "Dear Customer,\n\nWelcome to our program!")
-
-    # Button to send messages
-    if st.button("Send Campaign"):
-        for idx in selected_rows:
-            if campaign_type == "Text":
-                phone = filtered_df.at[idx, "Phone Number"]
-                send_text(phone, message_template)
-            else:
-                email = filtered_df.at[idx, "Email"]
-                send_email(email, subject, email_body)
-        st.success("Campaign sent successfully!")
-
-    # Update Communication Info
+    # Update Communication Info Button
     if st.button("Update Communication Info"):
         if not selected_rows:
             st.warning("No rows selected. Please select rows to update.")
@@ -198,13 +160,10 @@ def run_owner_marketing_tab(owner_df):
             st.success("Communication info updated successfully!")
             st.dataframe(updated_df)
 
-def run_minimal_app():
-    owner_df = get_owner_sheet_data()
-    if not owner_df.empty:
-        run_owner_marketing_tab(owner_df)
+    # Campaign Management
+    st.subheader("Message Templates")
+    campaign_type = st.radio("Choose Campaign Type", ["Text", "Email"])
+    if campaign_type == "Text":
+        message_template = st.text_area("Text Message", "Welcome to our premium ownership program!")
     else:
-        st.error("No owner data available to display.")
-
-if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    run_minimal_app()
+        subject = st.text_input("Email Sub
