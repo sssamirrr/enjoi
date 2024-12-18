@@ -271,6 +271,7 @@ def run_owner_marketing_tab(owner_df):
             else:
                 # Display DataFrame columns for debugging
                 st.write("**DataFrame Columns:**", display_df.columns.tolist())
+                st.write("**Sample Data:**", display_df.head())
 
                 # Check if 'Email Address' and 'Phone Number' columns exist
                 required_columns = ['Email Address', 'Phone Number']
@@ -281,12 +282,12 @@ def run_owner_marketing_tab(owner_df):
                     st.stop()
 
                 # Create table headers
-                header_cols = st.columns([1, 2, 2, 3, 3])  # Adjust the widths as needed
-                header_cols[0].markdown("**Select**")
-                header_cols[1].markdown("**First Name**")
-                header_cols[2].markdown("**Last Name**")
-                header_cols[3].markdown("**Phone Number**")
-                header_cols[4].markdown("**Email Address**")
+                header_columns = st.columns([1, 2, 2, 3, 3])  # Renamed from header_cols to header_columns
+                header_columns[0].markdown("**Select**")
+                header_columns[1].markdown("**First Name**")
+                header_columns[2].markdown("**Last Name**")
+                header_columns[3].markdown("**Phone Number**")
+                header_columns[4].markdown("**Email Address**")
 
                 selected_indices = []
                 for idx, row in display_df.iterrows():
@@ -407,7 +408,7 @@ def run_owner_marketing_tab(owner_df):
                     else:
                         st.info("No valid ZIP codes available for mapping")
                 else:
-                    st.info("ZIP Code data is not available to display the map")
+                    st.info("Zip Code data is not available to display the map")
 
             # Display metrics
             metrics_cols = st.columns(4)
