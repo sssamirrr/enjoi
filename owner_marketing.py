@@ -18,11 +18,8 @@ formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+# Fetch Google Sheets data
 def get_owner_sheet_data():
-    """
-    Fetch owner data from Google Sheets.
-    Returns a pandas DataFrame containing owner information.
-    """
     try:
         logger.info("Attempting to fetch data from Google Sheets...")
 
@@ -46,7 +43,6 @@ def get_owner_sheet_data():
             return pd.DataFrame()
 
         df = pd.DataFrame(data)
-        logger.info(f"Successfully fetched {len(df)} rows from Google Sheets.")
 
         # Data Cleaning
         for date_col in ['Sale Date', 'Maturity Date']:
@@ -75,20 +71,18 @@ def get_owner_sheet_data():
         logger.error(f"Google Sheet Access Error: {str(e)}")
         return pd.DataFrame()
 
+# Fetch OpenPhone data
 def fetch_openphone_data(phone_number):
-    """
-    Fetch communication data (calls and messages) for a given phone number from OpenPhone.
-    """
-    # Replace with your actual OpenPhone API key and number
-    OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
-    OPENPHONE_NUMBER = "+18438972426"
+    OPENPHONE_API_KEY = st.secrets["openphone_api_key"]
+    headers = {
+        "Authorization": f"Bearer {OPENPHONE_API_KEY}",
+        "Content-Type": "application/json"
+    }
     url = "https://api.openphone.co/v1/calls"
     params = {"participants": [phone_number], "maxResults": 50}
 
     try:
-        logger.info(f"Fetching OpenPhone data for {phone_number}...")
         response = requests.get(url, headers=headers, params=params)
-
         if response.status_code == 200:
             data = response.json().get('data', [])
             total_calls = len([d for d in data if d.get("type") == "call"])
@@ -103,7 +97,6 @@ def fetch_openphone_data(phone_number):
                 "Total Messages": total_messages
             }
     except Exception as e:
-        logger.error(f"Error fetching OpenPhone data for {phone_number}: {str(e)}")
         return {
             "Last Communication Status": "Error",
             "Last Communication Date": None,
@@ -111,10 +104,23 @@ def fetch_openphone_data(phone_number):
             "Total Messages": 0
         }
 
+# Campaign Functionality
+def send_email(recipient, subject, body):
+    if DEMO_MODE:
+        logger.info(f"Demo Mode: Sent email to {recipient}")
+    else:
+        # Email API logic here
+        pass
+
+def send_text(phone_number, message):
+    if DEMO_MODE:
+        logger.info(f"Demo Mode: Sent text to {phone_number}")
+    else:
+        # SMS API logic here
+        pass
+
+# Update communication info
 def update_communication_info(df, selected_rows):
-    """
-    Update the communication info for selected rows in the DataFrame.
-    """
     for idx in selected_rows:
         phone_number = df.at[idx, "Phone Number"]
         communication_data = fetch_openphone_data(phone_number)
@@ -124,6 +130,7 @@ def update_communication_info(df, selected_rows):
         df.at[idx, "Total Messages"] = communication_data["Total Messages"]
     return df
 
+# Main App Function
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
@@ -150,8 +157,7 @@ def run_owner_marketing_tab(owner_df):
     if date_range:
         filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) &
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
-    if 'Primary FICO' in filtered_df.columns:
-        filtered_df = filtered_df[(filtered_df['Primary FICO'] >= min_fico) & (filtered_df['Primary FICO'] <= max_fico)]
+    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= min_fico) & (filtered_df['Primary FICO'] <= max_fico)]
 
     # Display the filtered table
     st.subheader("Owner Data")
@@ -162,7 +168,27 @@ def run_owner_marketing_tab(owner_df):
 
     st.dataframe(filtered_df, use_container_width=True)
 
-    # Button to update communication info
+    # Campaign Setup
+    st.subheader("Message Templates")
+    campaign_type = st.radio("Choose Campaign Type", ["Text", "Email"])
+    if campaign_type == "Text":
+        message_template = st.text_area("Text Message", "Welcome to our premium ownership program!")
+    else:
+        subject = st.text_input("Email Subject", "Welcome to Our Program")
+        email_body = st.text_area("Email Body", "Dear Customer,\n\nWelcome to our program!")
+
+    # Button to send messages
+    if st.button("Send Campaign"):
+        for idx in selected_rows:
+            if campaign_type == "Text":
+                phone = filtered_df.at[idx, "Phone Number"]
+                send_text(phone, message_template)
+            else:
+                email = filtered_df.at[idx, "Email"]
+                send_email(email, subject, email_body)
+        st.success("Campaign sent successfully!")
+
+    # Update Communication Info
     if st.button("Update Communication Info"):
         if not selected_rows:
             st.warning("No rows selected. Please select rows to update.")
