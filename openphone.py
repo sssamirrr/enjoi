@@ -83,4 +83,45 @@ def run_openphone_tab():
     with col2:
         st.metric("Total Messages", len(messages))
     with col3:
-        st.metric("Answer
+        st.metric("Answered Calls", len(calls[calls['status'] == 'completed']))
+    with col4:
+        st.metric("Response Rate (Calls)", f"{response_rate_filtered:.2f}%")
+
+    # Text Response Rate Metric
+    st.metric("Response Rate (Texts)", f"{text_response_rate:.2f}%")
+
+    # Call Effectiveness by Hour
+    st.subheader("Call Effectiveness by Hour")
+    calls['hour'] = calls['createdAtPT'].dt.hour
+    hourly_stats = calls.groupby(['hour', 'direction']).size().reset_index(name='count')
+    fig = px.bar(hourly_stats, x='hour', y='count', color='direction', barmode='group', title='Calls by Hour')
+    st.plotly_chart(fig)
+
+    # Agent Performance
+    st.subheader("Agent Performance")
+    filtered_data['userId'] = filtered_data['userId'].fillna('Unknown')
+    agent_calls = calls.groupby('userId').size().reset_index(name='total_calls')
+    agent_messages = messages.groupby('userId').size().reset_index(name='total_messages')
+
+    agent_performance = pd.merge(agent_calls, agent_messages, on='userId', how='outer').fillna(0)
+    agent_performance['success_rate_calls'] = (
+        calls[calls['status'] == 'completed'].groupby('userId').size().reindex(agent_performance['userId'], fill_value=0)
+    ) / agent_performance['total_calls']
+    agent_performance['success_rate_calls'] = agent_performance['success_rate_calls'].fillna(0) * 100
+
+    fig = px.bar(
+        agent_performance,
+        x='userId',
+        y=['total_calls', 'total_messages'],
+        title="Agent Performance: Calls and Messages",
+        barmode='group',
+    )
+    st.plotly_chart(fig)
+    st.dataframe(agent_performance.rename(columns={
+        'userId': 'Agent',
+        'total_calls': 'Total Calls',
+        'total_messages': 'Total Messages',
+        'success_rate_calls': 'Success Rate (%)'
+    }))
+
+    st.success("Dashboard Ready!")
