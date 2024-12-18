@@ -692,8 +692,7 @@ with tab2:
             if selected_resort not in st.session_state['communication_data']:
                 st.session_state['communication_data'][selected_resort] = {}
 
-            # ***Old Code: Row-by-Row Communication Data Assignment***
-            """
+            # **Retrieve and Apply Existing Communication Data**
             for idx, row in display_df.iterrows():
                 phone = row['Phone Number']
                 if phone in st.session_state['communication_data'][selected_resort]:
@@ -707,12 +706,8 @@ with tab2:
                     display_df.at[idx, 'Answered Calls'] = comm_data.get('answered_calls', 0)
                     display_df.at[idx, 'Missed Calls'] = comm_data.get('missed_calls', 0)
                     display_df.at[idx, 'Call Attempts'] = comm_data.get('call_attempts', 0)
-            """
 
-            # ***New Code: Vectorized Communication Data Assignment***
-            # (This section replaces the old row-by-row loop above)
-
-            # Fetch Communication Info Button
+            # **Fetch Communication Info Button**
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
@@ -894,6 +889,7 @@ with tab2:
 
     else:
         st.warning("No data available for the selected filters.")
+
 
 
 
