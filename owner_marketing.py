@@ -149,7 +149,7 @@ def run_owner_marketing_tab(owner_df):
     # Access the DataFrame from session state
     df = st.session_state["owner_df"]
 
-    # Display the DataFrame with checkboxes
+    # Display the table with checkboxes
     st.subheader("Owner Data")
     edited_df = st.experimental_data_editor(df, key="owner_data_editor", use_container_width=True)
 
@@ -168,7 +168,6 @@ def run_owner_marketing_tab(owner_df):
                 updated_df = update_communication_info(edited_df, selected_rows)
             st.success("Communication info updated successfully!")
             st.dataframe(updated_df)  # Display updated DataFrame
-
 
 def run_minimal_app():
     st.title("Owner Marketing Dashboard")
