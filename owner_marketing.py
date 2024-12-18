@@ -3,23 +3,13 @@ import pandas as pd
 from datetime import datetime
 import gspread
 from google.oauth2 import service_account
-import logging
-from logging.handlers import RotatingFileHandler
 import pgeocode  # For geocoding ZIP codes to latitude and longitude
 import requests
 
-# Define a global flag for demo mode
+# Define DEMO Mode
 DEMO_MODE = True  # Set to False to enable live functionality
 
-# Setup logging with rotation to manage log file sizes
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-handler = RotatingFileHandler('campaign.log', maxBytes=1000000, backupCount=5)
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
-# Fetch Google Sheets data
+# Fetch Google Sheets Data
 def get_owner_sheet_data():
     try:
         credentials = service_account.Credentials.from_service_account_info(
@@ -41,94 +31,46 @@ def get_owner_sheet_data():
 
         df = pd.DataFrame(data)
 
-        # Data Cleaning
-        for date_col in ['Sale Date', 'Maturity Date']:
-            if date_col in df.columns:
-                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-
-        for num_col in ['Points', 'Primary FICO']:
-            if num_col in df.columns:
-                df[num_col] = pd.to_numeric(df[num_col], errors='coerce')
-
-        if 'Phone Number' in df.columns:
-            df['Phone Number'] = df['Phone Number'].astype(str)
-
-        # Add communication-related columns
-        df['Last Communication Status'] = ""
-        df['Last Communication Date'] = ""
-        df['Total Calls'] = 0
-        df['Total Messages'] = 0
-        df['Select'] = False
-
+        # Clean Data
+        for col in ['Sale Date', 'Maturity Date']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+        df['Select'] = False  # Selection column
         return df
 
     except Exception as e:
-        st.error(f"Error accessing Google Sheet: {str(e)}")
+        st.error(f"Error accessing Google Sheet: {e}")
         return pd.DataFrame()
 
-# Fetch OpenPhone data
+# Fetch OpenPhone Data
 def fetch_openphone_data(phone_number):
     OPENPHONE_API_KEY = st.secrets["openphone_api_key"]
-    headers = {
-        "Authorization": f"Bearer {OPENPHONE_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}"}
     url = "https://api.openphone.co/v1/calls"
-    params = {"participants": [phone_number], "maxResults": 50}
 
     try:
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=headers, params={"participants": [phone_number], "maxResults": 50})
         if response.status_code == 200:
-            data = response.json().get('data', [])
-            total_calls = len([d for d in data if d.get("type") == "call"])
-            total_messages = len([d for d in data if d.get("type") == "message"])
-            last_communication = max(data, key=lambda x: x.get('createdAt', 0), default=None)
-            status = last_communication.get("status", "") if last_communication else "No Communications"
-            last_date = last_communication.get("createdAt", "") if last_communication else None
-            return {
-                "Last Communication Status": status,
-                "Last Communication Date": last_date,
-                "Total Calls": total_calls,
-                "Total Messages": total_messages
-            }
-    except Exception:
-        return {
-            "Last Communication Status": "Error",
-            "Last Communication Date": None,
-            "Total Calls": 0,
-            "Total Messages": 0
-        }
+            data = response.json().get("data", [])
+            last_date = max([d.get('createdAt') for d in data], default="N/A")
+            total_calls = sum(1 for d in data if d.get("type") == "call")
+            total_messages = sum(1 for d in data if d.get("type") == "message")
+            return {"Last Communication Date": last_date, "Total Calls": total_calls, "Total Messages": total_messages}
+    except:
+        return {"Last Communication Date": "Error", "Total Calls": 0, "Total Messages": 0}
 
-# Map Visualization
+# Display Map
 def display_map(df):
-    if 'Zip Code' in df.columns:
-        nomi = pgeocode.Nominatim('us')
-        df['Zip Code'] = df['Zip Code'].apply(lambda x: str(x)[:5])
-        valid_zips = df['Zip Code'].dropna().unique()
+    nomi = pgeocode.Nominatim('us')
+    valid_zips = df['Zip Code'].dropna().unique()
+    zip_data = nomi.query_postal_code(valid_zips)
+    map_data = pd.DataFrame({'lat': zip_data['latitude'], 'lon': zip_data['longitude']}).dropna()
+    if not map_data.empty:
+        st.map(map_data)
+    else:
+        st.warning("No valid ZIP codes for visualization.")
 
-        lat_lon = nomi.query_postal_code(valid_zips)
-        map_data = pd.DataFrame({
-            'lat': lat_lon['latitude'],
-            'lon': lat_lon['longitude']
-        }).dropna()
-
-        if not map_data.empty:
-            st.map(map_data)
-        else:
-            st.warning("No valid ZIP codes for map visualization.")
-
-# Update communication info
-def update_communication_info(df, selected_rows):
-    for idx in selected_rows:
-        phone_number = df.at[idx, "Phone Number"]
-        communication_data = fetch_openphone_data(phone_number)
-        df.at[idx, "Last Communication Status"] = communication_data["Last Communication Status"]
-        df.at[idx, "Last Communication Date"] = communication_data["Last Communication Date"]
-        df.at[idx, "Total Calls"] = communication_data["Total Calls"]
-        df.at[idx, "Total Messages"] = communication_data["Total Messages"]
-    return df
-
-# Main App
+# Main App Function
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
@@ -136,67 +78,71 @@ def run_owner_marketing_tab(owner_df):
     st.subheader("Filters")
     col1, col2, col3 = st.columns(3)
     with col1:
-        states = owner_df['State'].dropna().unique()
-        selected_states = st.multiselect("Filter by State", states)
-
+        selected_states = st.multiselect("Select States", owner_df['State'].dropna().unique())
     with col2:
-        min_date, max_date = owner_df['Sale Date'].min(), owner_df['Sale Date'].max()
-        date_range = st.date_input("Filter by Sale Date", [min_date, max_date])
-
+        date_range = st.date_input("Sale Date Range", [owner_df['Sale Date'].min(), owner_df['Sale Date'].max()])
     with col3:
-        ficos = owner_df['Primary FICO'].dropna()
-        min_fico, max_fico = st.slider("Filter by FICO Score", int(ficos.min()), int(ficos.max()), (int(ficos.min()), int(ficos.max())))
+        fico_range = st.slider("FICO Score", int(owner_df['Primary FICO'].min()), int(owner_df['Primary FICO'].max()), 
+                               (int(owner_df['Primary FICO'].min()), int(owner_df['Primary FICO'].max())))
 
+    # Apply Filters
     filtered_df = owner_df.copy()
     if selected_states:
         filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
     if date_range:
         filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) &
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
-    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= min_fico) & (filtered_df['Primary FICO'] <= max_fico)]
+    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
 
-    # Select Rows
+    # Display Table with Checkboxes
     st.subheader("Owner Data")
-    selected_rows = []
-    for idx, row in filtered_df.iterrows():
-        if st.checkbox(f"Select {row['Last Name']} {row['First Name']}", key=idx):
-            selected_rows.append(idx)
+    edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
+        "Select": st.column_config.CheckboxColumn("Select")
+    })
 
-    st.dataframe(filtered_df.drop(columns=["Select"]))
+    # Show/Hide Map Toggle
+    if st.toggle("Show/Hide Owner Locations Map"):
+        display_map(filtered_df)
 
-    # Map Visualization
-    st.subheader("Owner Locations Map")
-    display_map(filtered_df)
+    # Update Communication Info
+    selected_rows = edited_df[edited_df['Select']].index.tolist()
+    if st.button("Update Communication Info"):
+        if not selected_rows:
+            st.warning("No rows selected!")
+        else:
+            with st.spinner("Fetching communication info..."):
+                for idx in selected_rows:
+                    phone_number = filtered_df.at[idx, "Phone Number"]
+                    comm_data = fetch_openphone_data(phone_number)
+                    for key, value in comm_data.items():
+                        filtered_df.at[idx, key] = value
+            st.success("Communication info updated!")
+            st.dataframe(filtered_df)
 
     # Campaign Management
     st.subheader("Campaign Management")
-    campaign_type = st.radio("Choose Campaign Type", ["Text", "Email"])
+    campaign_type = st.radio("Select Campaign Type", ["Text", "Email"])
     if campaign_type == "Text":
-        message_template = st.text_area("Text Message", "Welcome to our premium ownership program!")
+        message = st.text_area("Enter Text Message", "Welcome to our premium ownership program!")
     else:
         subject = st.text_input("Email Subject", "Welcome to Our Program")
-        email_body = st.text_area("Email Body", "Dear Customer,\n\nWelcome to our program!")
+        email_body = st.text_area("Email Body", "Dear Owner,\n\nWelcome to our exclusive community!")
 
-    # Buttons
-    if st.button("Update Communication Info"):
-        if selected_rows:
-            with st.spinner("Fetching communication info..."):
-                updated_df = update_communication_info(filtered_df, selected_rows)
-            st.success("Communication info updated successfully!")
-            st.dataframe(updated_df)
-        else:
-            st.warning("No rows selected.")
-
+    # Send Campaign
     if st.button("Send Campaign"):
-        for idx in selected_rows:
-            if campaign_type == "Text":
-                phone = filtered_df.at[idx, "Phone Number"]
-                st.write(f"Sending text to {phone}: {message_template}")
-            else:
-                email = filtered_df.at[idx, "Email"]
-                st.write(f"Sending email to {email}: {subject} - {email_body}")
-        st.success("Campaign sent successfully!")
+        if not selected_rows:
+            st.warning("No rows selected!")
+        else:
+            for idx in selected_rows:
+                if campaign_type == "Text":
+                    phone = filtered_df.at[idx, "Phone Number"]
+                    st.write(f"Sent Text: '{message}' to {phone}")
+                else:
+                    email = filtered_df.at[idx, "Email"]
+                    st.write(f"Sent Email: '{subject}' to {email}")
+            st.success("Campaign Sent Successfully!")
 
+# Run Minimal App
 def run_minimal_app():
     owner_df = get_owner_sheet_data()
     if not owner_df.empty:
