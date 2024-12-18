@@ -855,17 +855,19 @@ with tab2:
             total_price_range = (0, 0)  # Default range if no valid data
 
         # Dropdown for Rate Code
-        # Dropdown for Rate Code
+        # Multiselect for Rate Code
         rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
-        selected_rate_code = st.selectbox(
-            "Select Rate Code",
-            options=["All"] + rate_code_options,
+        selected_rate_codes = st.multiselect(
+            "Select Rate Code(s)",
+            options=rate_code_options,
+            default=rate_code_options,  # Default to all options selected
             key=f'rate_code_filter_{selected_resort}'
         )
         
         # Apply Rate Code filter
-        if selected_rate_code != "All" and 'Rate Code Name' in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df['Rate Code Name'] == selected_rate_code]
+        if selected_rate_codes and 'Rate Code Name' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Rate Code Name'].isin(selected_rate_codes)]
+
 
 
     with st.container():
