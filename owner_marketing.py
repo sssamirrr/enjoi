@@ -8,7 +8,6 @@ import phonenumbers
 import logging
 from logging.handlers import RotatingFileHandler
 import pgeocode  # For geocoding ZIP codes to latitude and longitude
-import requests  # For OpenPhone API requests
 
 # Define a global flag for demo mode
 DEMO_MODE = True  # Set to False to enable live functionality
@@ -84,7 +83,7 @@ def format_phone_number(phone):
     except phonenumbers.NumberParseException:
         pass
     return None
-
+# Add this function here
 def clean_zip_code(zip_code):
     """Clean and validate ZIP code"""
     if pd.isna(zip_code):
@@ -92,125 +91,69 @@ def clean_zip_code(zip_code):
     zip_str = str(zip_code)
     zip_digits = ''.join(filter(str.isdigit, zip_str))
     return zip_digits[:5] if len(zip_digits) >= 5 else None
-
-def get_communication_info(phone_number, headers):
+def send_email(recipient, subject, body):
     """
-    Fetch communication data for a given phone number from OpenPhone.
-    Returns a dictionary with communication details.
+    Mock function to simulate sending an email.
     """
-    phone_number_ids = get_all_phone_number_ids(headers)
-    if not phone_number_ids:
-        return {
-            'status': "No Communications",
-            'last_date': None,
-            'call_duration': None,
-            'agent_name': None,
-            'total_messages': 0,
-            'total_calls': 0,
-            'answered_calls': 0,
-            'missed_calls': 0,
-            'call_attempts': 0
-        }
+    if DEMO_MODE:
+        logger.info(f"Demo Mode: Pretended to send email to {recipient} with subject '{subject}'.")
+        return True
+    else:
+        # Live email sending logic using SendGrid
+        try:
+            import sendgrid
+            from sendgrid.helpers.mail import Mail
 
-    messages_url = "https://api.openphone.com/v1/messages"
-    calls_url = "https://api.openphone.com/v1/calls"
-
-    latest_datetime = None
-    call_duration = None
-    agent_name = None
-
-    total_messages = 0
-    total_calls = 0
-    answered_calls = 0
-    missed_calls = 0
-    call_attempts = 0
-
-    for phone_number_id in phone_number_ids:
-        # Messages pagination
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
-
-            # Fetch messages
-            messages_response = requests.get(messages_url, headers=headers, params=params)
-            if messages_response and messages_response.status_code == 200:
-                messages = messages_response.json()['data']
-                total_messages += len(messages)
-                for message in messages:
-                    msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
-                    if not latest_datetime or msg_time > latest_datetime:
-                        latest_datetime = msg_time
-                        latest_direction = message.get("direction", "unknown")
-                        agent_name = message.get("user", {}).get("name", "Unknown Agent")
-
-                next_page = messages_response.json().get('nextPageToken')
-                if not next_page:
-                    break
+            sg = sendgrid.SendGridAPIClient(api_key=st.secrets["sendgrid_api_key"])
+            email = Mail(
+                from_email=st.secrets["sendgrid_from_email"],
+                to_emails=recipient,
+                subject=subject,
+                plain_text_content=body
+            )
+            response = sg.send(email)
+            if response.status_code in [200, 202]:
+                logger.info(f"Email sent to {recipient}")
+                return True
             else:
-                break
+                logger.error(f"Failed to send email to {recipient}: {response.status_code}")
+                return False
+        except Exception as e:
+            st.error(f"Error sending email to {recipient}: {str(e)}")
+            logger.error(f"SendGrid Error for {recipient}: {str(e)}")
+            return False
 
-        # Calls pagination
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
+def send_text_message(phone_number, message):
+    """
+    Mock function to simulate sending a text message.
+    """
+    if DEMO_MODE:
+        logger.info(f"Demo Mode: Pretended to send SMS to {phone_number} with message '{message}'.")
+        return True
+    else:
+        # Live SMS sending logic using Twilio
+        try:
+            from twilio.rest import Client
 
-            # Fetch calls
-            calls_response = requests.get(calls_url, headers=headers, params=params)
-            if calls_response and calls_response.status_code == 200:
-                calls = calls_response.json()['data']
-                total_calls += len(calls)
-                for call in calls:
-                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
-                    if not latest_datetime or call_time > latest_datetime:
-                        latest_datetime = call_time
-                        call_duration = call.get("duration")
-                        agent_name = call.get("user", {}).get("name", "Unknown Agent")
-
-                    call_attempts += 1
-
-                    # Determine if the call was answered
-                    call_status = call.get('status', 'unknown')
-                    if call_status == 'completed':
-                        answered_calls += 1
-                    elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
-                        missed_calls += 1
-                next_page = calls_response.json().get('nextPageToken')
-                if not next_page:
-                    break
+            client = Client(
+                st.secrets["twilio_account_sid"],
+                st.secrets["twilio_auth_token"]
+            )
+            msg = client.messages.create(
+                body=message,
+                from_=st.secrets["twilio_phone_number"],
+                to=phone_number
+            )
+            if msg.sid:
+                logger.info(f"SMS sent to {phone_number}")
+                return True
             else:
-                break
-    
-    return {
-        'status': "Communication Found",
-        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
-        'call_duration': call_duration,
-        'agent_name': agent_name,
-        'total_messages': total_messages,
-        'total_calls': total_calls,
-        'answered_calls': answered_calls,
-        'missed_calls': missed_calls,
-        'call_attempts': call_attempts
-    }
-
-def get_all_phone_number_ids(headers):
-    """
-    Retrieve all phoneNumberIds associated with your OpenPhone account.
-    """
-    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    response_data = requests.get(phone_numbers_url, headers=headers)
-    return [pn.get('id') for pn in response_data.json().get('data', [])] if response_data else []
+                logger.error(f"Failed to send SMS to {phone_number}")
+                return False
+        except Exception as e:
+            st.error(f"Error sending SMS to {phone_number}: {str(e)}")
+            logger.error(f"Twilio Error for {phone_number}: {str(e)}")
+            return False
 
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
@@ -308,73 +251,264 @@ def run_owner_marketing_tab(owner_df):
                     (campaign_filtered_df['Primary FICO'] <= fico_range[1])
                 ]
 
-            # Show Dataframe with Selectable Rows
+            # Display Filtered Data as a Table
             st.subheader("Filtered Owner Sheets Data")
             if campaign_filtered_df.empty:
                 st.warning("No data matches the selected filters.")
             else:
-                # Add a 'Select' checkbox for each row
-                selected_rows = []
-                for index, row in campaign_filtered_df.iterrows():
-                    if st.checkbox(f"{row['Phone Number']} (Owner Name: {row.get('Owner Name', 'N/A')})", key=index):
-                        selected_rows.append(row)
+                st.dataframe(campaign_filtered_df)
 
-                if st.button("Fetch Communication Info for Selected"):
-                    headers = {
-                        "Authorization": st.secrets["openphone_api_key"],
-                        "Content-Type": "application/json"
-                    }
+                        
+            # **Add Map of Owners' Locations**
+            st.subheader("Map of Owner Locations")
+            
+            # Create a toggle for the map
+            show_map = st.expander("Show/Hide Owners Map", expanded=False)
+            
+            with show_map:  # Everything related to the map should be inside this block
+                if 'Zip Code' in campaign_filtered_df.columns:
+                    # Clean and prepare ZIP codes
+                    campaign_filtered_df['Zip Code'] = campaign_filtered_df['Zip Code'].apply(clean_zip_code)
+                    campaign_filtered_df = campaign_filtered_df.dropna(subset=['Zip Code'])
 
-                    # Initialize lists to hold fetched communication information
-                    statuses, dates, durations, agent_names = [], [], [], []
-                    total_messages_list, total_calls_list = [], []
-                    answered_calls_list, missed_calls_list, call_attempts_list = [], [], []
-
-                    # Iterate over the selected rows and fetch their communication info
-                    for row in selected_rows:
-                        phone = row['Phone Number']
+                    if not campaign_filtered_df.empty:
                         try:
-                            comm_info = get_communication_info(phone, headers)
-                            statuses.append(comm_info['status'])
-                            dates.append(comm_info['last_date'])
-                            durations.append(comm_info['call_duration'])
-                            agent_names.append(comm_info['agent_name'])
-                            total_messages_list.append(comm_info['total_messages'])
-                            total_calls_list.append(comm_info['total_calls'])
-                            answered_calls_list.append(comm_info['answered_calls'])
-                            missed_calls_list.append(comm_info['missed_calls'])
-                            call_attempts_list.append(comm_info['call_attempts'])
+                            # Geocode ZIP codes
+                            nomi = pgeocode.Nominatim('us')
+                            geocode_df = nomi.query_postal_code(campaign_filtered_df['Zip Code'].tolist())
+                            
+                            # Create map data
+                            map_data = pd.DataFrame({
+                                'lat': geocode_df['latitude'],
+                                'lon': geocode_df['longitude']
+                            }).dropna()
+
+                            if not map_data.empty:
+                                st.map(map_data)
+                                st.info(f"Showing {len(map_data)} locations on the map")
+                            else:
+                                st.info("No valid coordinates available for mapping")
                         except Exception as e:
-                            statuses.append("Error")
-                            dates.append(None)
-                            durations.append(None)
-                            agent_names.append("Unknown")
-                            total_messages_list.append(0)
-                            total_calls_list.append(0)
-                            answered_calls_list.append(0)
-                            missed_calls_list.append(0)
-                            call_attempts_list.append(0)
+                            st.error(f"Error creating map: {str(e)}")
+                    else:
+                        st.info("No valid ZIP codes available for mapping")
+                else:
+                    st.info("ZIP Code data is not available to display the map")
 
-                    # Create a DataFrame from the fetched data
-                    comm_df = pd.DataFrame({
-                        'Phone Number': [row['Phone Number'] for row in selected_rows],
-                        'Status': statuses,
-                        'Last Date': dates,
-                        'Call Duration (s)': durations,
-                        'Agent Name': agent_names,
-                        'Total Messages': total_messages_list,
-                        'Total Calls': total_calls_list,
-                        'Answered Calls': answered_calls_list,
-                        'Missed Calls': missed_calls_list,
-                        'Call Attempts': call_attempts_list
-                    })
 
-                    # Display the communication info DataFrame
-                    st.subheader("Fetched Communication Information")
-                    st.dataframe(comm_df)
+            # Display metrics
+            metrics_cols = st.columns(4)
+            with metrics_cols[0]:
+                st.metric("Total Owners", len(campaign_filtered_df))
+            with metrics_cols[1]:
+                if 'Primary FICO' in campaign_filtered_df.columns:
+                    mean_fico = campaign_filtered_df['Primary FICO'].mean()
+                    if pd.notna(mean_fico):
+                        avg_fico = int(mean_fico)
+                    else:
+                        avg_fico = 'N/A'
+                else:
+                    avg_fico = 'N/A'
+                st.metric("Average FICO", avg_fico)
+            with metrics_cols[2]:
+                if 'Points' in campaign_filtered_df.columns:
+                    mean_points = campaign_filtered_df['Points'].mean()
+                    if pd.notna(mean_points):
+                        avg_points = int(mean_points)
+                    else:
+                        avg_points = 'N/A'
+                else:
+                    avg_points = 'N/A'
+                st.metric("Average Points", avg_points)
+            with metrics_cols[3]:
+                if 'Points' in campaign_filtered_df.columns:
+                    total_points = campaign_filtered_df['Points'].sum()
+                    if pd.notna(total_points):
+                        total_value = total_points * 0.20  # Example value calculation
+                    else:
+                        total_value = 0
+                else:
+                    total_value = 0
+                st.metric("Total Value", f"${total_value:,.2f}")
 
-            # Continue with the existing campaign setup and execution logic...
-            # Add here the metrics and message templates along with the campaign execution buttons...
+            # Campaign Setup
+            st.subheader("Campaign Setup")
+
+            # A/B Testing setup
+            col1, col2 = st.columns(2)
+            with col1:
+                ab_split = st.slider(
+                    "A/B Testing Split (A:B)",
+                    0, 100, 50,
+                    key=f'{campaign_type}_split'
+                )
+            with col2:
+                group_a_size = len(campaign_filtered_df) * ab_split // 100
+                group_b_size = len(campaign_filtered_df) * (100 - ab_split) // 100
+                st.metric("Group A Size", f"{group_a_size}")
+                st.metric("Group B Size", f"{group_b_size}")
+
+            # Message Templates
+            st.subheader("Message Templates")
+
+            if campaign_type == "Email":
+                email_templates = {
+                    "Welcome": {
+                        "subject": "Welcome to Our Premium Ownership Family",
+                        "body": "Dear {first_name},\n\nWelcome to our exclusive community..."
+                    },
+                    "Upgrade Offer": {
+                        "subject": "Exclusive Upgrade Opportunity",
+                        "body": "Dear {first_name},\n\nAs a valued member, we are excited to offer you..."
+                    },
+                    "Custom": {
+                        "subject": "",
+                        "body": ""
+                    }
+                }
+
+                template_choice = st.selectbox(
+                    "Select Email Template",
+                    list(email_templates.keys()),
+                    key=f'email_template_{campaign_type}'
+                )
+
+                subject = st.text_input(
+                    "Email Subject",
+                    value=email_templates[template_choice]["subject"],
+                    key=f'email_subject_{campaign_type}'
+                )
+
+                body = st.text_area(
+                    "Email Body",
+                    value=email_templates[template_choice]["body"],
+                    height=200,
+                    key=f'email_body_{campaign_type}'
+                )
+
+            else:
+                text_templates = {
+                    "Welcome": "Welcome to our premium ownership family! Reply STOP to opt out.",
+                    "Upgrade": "Exclusive upgrade opportunity available! Reply STOP to opt out.",
+                    "Custom": ""
+                }
+
+                template_choice = st.selectbox(
+                    "Select Text Template",
+                    list(text_templates.keys()),
+                    key=f'text_template_{campaign_type}'
+                )
+
+                message = st.text_area(
+                    "Message Text",
+                    value=text_templates[template_choice],
+                    height=100,
+                    key=f'sms_message_{campaign_type}'
+                )
+
+            # Preview Section
+            st.subheader("Campaign Preview")
+            preview_cols = st.columns(2)
+            with preview_cols[0]:
+                st.write("Group A Preview:")
+                if campaign_type == "Email":
+                    st.info(f"Subject: {subject}\n\n{body}")
+                else:
+                    st.info(message)
+
+            with preview_cols[1]:
+                st.write("Group B Preview:")
+                if campaign_type == "Email":
+                    st.info(f"Subject: {subject}\n\n{body}")
+                else:
+                    st.info(message)
+
+            # Campaign Execution
+            st.subheader("Campaign Execution")
+
+            if st.button(f"Launch {campaign_type} Campaign", key=f'launch_{campaign_type}'):
+                if campaign_filtered_df.empty:
+                    st.warning("No data available for the selected filters.")
+                    return
+
+                # Split the dataset for A/B testing
+                campaign_filtered_df = campaign_filtered_df.sample(frac=1).reset_index(drop=True)  # Shuffle the DataFrame
+                split_index = group_a_size
+                group_a = campaign_filtered_df.iloc[:split_index].copy()
+                group_b = campaign_filtered_df.iloc[split_index:].copy()
+
+                # Combine groups with labels
+                group_a['Group'] = 'A'
+                group_b['Group'] = 'B'
+                campaign_df = pd.concat([group_a, group_b], ignore_index=True)
+
+                # Execute campaign
+                with st.spinner(f"Sending {campaign_type} messages..."):
+                    success_count = 0
+                    fail_count = 0
+
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+
+                    total = len(campaign_df)
+                    for idx, row in campaign_df.iterrows():
+                        try:
+                            if campaign_type == "Email":
+                                recipient_email = row['Email']
+                                if pd.notna(recipient_email) and '@' in recipient_email and '.' in recipient_email.split('@')[-1]:
+                                    personalized_subject = subject.format(first_name=row['First Name'])
+                                    personalized_body = body.format(first_name=row['First Name'])
+                                    success = send_email(recipient_email, personalized_subject, personalized_body)
+                                else:
+                                    success = False
+                            else:
+                                phone = format_phone_number(row['Phone Number'])
+                                if phone:
+                                    personalized_message = message.format(first_name=row['First Name'])
+                                    success = send_text_message(phone, personalized_message)
+                                else:
+                                    success = False
+
+                            if success:
+                                success_count += 1
+                            else:
+                                fail_count += 1
+
+                            # Update progress
+                            progress = (idx + 1) / total
+                            progress_bar.progress(progress)
+                            status_text.text(
+                                f"Processing: {idx + 1}/{total} "
+                                f"({success_count} successful, {fail_count} failed)"
+                            )
+
+                            # Optional: Remove sleep in production
+                            time.sleep(0.05)
+
+                        except Exception as e:
+                            st.error(f"Error processing row {idx}: {str(e)}")
+                            logger.error(f"Error processing row {idx}: {str(e)}")
+                            fail_count += 1
+
+                    # Final summary
+                    st.success(
+                        f"Campaign completed: {success_count} successful, "
+                        f"{fail_count} failed"
+                    )
+
+                    # Save campaign results
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{campaign_type}_campaign_{timestamp}.csv"
+                    campaign_df.to_csv(filename, index=False)
+
+                    # Offer download of results
+                    with open(filename, 'rb') as f:
+                        st.download_button(
+                            label="Download Campaign Results",
+                            data=f,
+                            file_name=filename,
+                            mime="text/csv"
+                        )
 
 def run_minimal_app():
     st.title("Owner Marketing Dashboard")
