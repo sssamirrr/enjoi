@@ -762,21 +762,20 @@ with tab2:
                     display_df.at[idx, 'Call Attempts'] = comm_data.get('call_attempts', 0)
 
             # **Fetch Communication Info Button**
-            # Fetch Communication Info Button              
-                         # **Fetch Communication Info Button**
+           # **Fetch Communication Info Button**
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
-
+            
                 with st.spinner('Fetching communication information...'):
                     (
                         statuses, dates, durations, agent_names,
                         total_messages_list, total_calls_list,
                         answered_calls_list, missed_calls_list, call_attempts_list
                     ) = fetch_communication_info(display_df, headers)
-
+            
                     # Initialize lists for new column data
                     calls_before_checkin_list = []
                     texts_before_checkin_list = []
@@ -784,7 +783,7 @@ with tab2:
                     texts_after_checkin_list = []
                     short_calls_list = []
                     total_calls_list = []
-
+            
                     # Process each guest's communication data
                     for idx, row in display_df.iterrows():
                         phone = row['Phone Number']
@@ -798,7 +797,7 @@ with tab2:
                             short_calls_list.append(0)
                             total_calls_list.append(0)
                             continue
-
+            
                         # Convert check_in_date to datetime
                         try:
                             check_in_date = pd.to_datetime(row['Check In'])
@@ -811,11 +810,10 @@ with tab2:
                             short_calls_list.append(0)
                             total_calls_list.append(0)
                             continue
-
-                        # Filter communications
+            
+                        # Calculate communications
                         comm_dates = [pd.to_datetime(date) for date in dates if date]
                         
-                        # Calculate communications before and after check-in
                         calls_before_checkin = sum(1 for date, status in zip(comm_dates, statuses) 
                                                  if date <= check_in_date and 'Call' in str(status))
                         texts_before_checkin = sum(1 for date, status in zip(comm_dates, statuses) 
@@ -825,12 +823,9 @@ with tab2:
                         texts_after_checkin = sum(1 for date, status in zip(comm_dates, statuses) 
                                                 if date > check_in_date and 'Message' in str(status))
                         
-                        # Calculate short calls
                         short_calls = sum(1 for d in durations if d is not None and d < 40)
-                        
-                        # Calculate total calls
                         total_calls = sum(1 for status in statuses if 'Call' in str(status))
-
+            
                         # Append results
                         calls_before_checkin_list.append(calls_before_checkin)
                         texts_before_checkin_list.append(texts_before_checkin)
@@ -838,8 +833,8 @@ with tab2:
                         texts_after_checkin_list.append(texts_after_checkin)
                         short_calls_list.append(short_calls)
                         total_calls_list.append(total_calls)
-
-                    # Update display DataFrame
+            
+                    # Update DataFrame if all lists have correct length
                     if all(len(lst) == len(display_df) for lst in [
                         calls_before_checkin_list, texts_before_checkin_list,
                         calls_after_checkin_list, texts_after_checkin_list,
@@ -850,11 +845,12 @@ with tab2:
                         display_df['Calls On/After Check-In'] = calls_after_checkin_list
                         display_df['Texts On/After Check-In'] = texts_after_checkin_list
                         display_df['Phone Calls Under 40 Seconds'] = short_calls_list
-                        display_df['# Calls after check in'] = total_calls_list
-
+                        display_df['How Many Times Called'] = total_calls_list
+            
                         st.success("Communication information successfully fetched and updated.")
                     else:
                         st.error("Data length mismatch. Please try again.")
+
 
 
 
