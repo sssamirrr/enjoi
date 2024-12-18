@@ -125,6 +125,18 @@ def run_openphone_tab():
     fig = px.bar(incoming_message_times, x='hour', y='count', title='Incoming Messages by Hour')
     st.plotly_chart(fig)
 
+    # Heatmap for Messages
+    st.subheader("Message Volume Heatmap")
+    messages['day'] = messages['createdAtPT'].dt.day_name()
+    message_heatmap_data = messages.groupby(['day', 'hour']).size().reset_index(name='count')
+    message_heatmap_pivot = message_heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
+    fig = px.imshow(
+        message_heatmap_pivot,
+        title="Heatmap of Message Volume by Day and Hour",
+        labels=dict(x="Hour", y="Day", color="Volume"),
+    )
+    st.plotly_chart(fig)
+
     # Agent Performance
     st.subheader("Agent Performance")
     fig = px.bar(
