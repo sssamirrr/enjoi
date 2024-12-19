@@ -7,8 +7,8 @@ import pgeocode
 import requests
 import time
 
-# Define DEMO Mode
-DEMO_MODE = True  # Set to False to enable live functionality
+# Hardcoded OpenPhone Credentials
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
 # Fetch Google Sheets Data
 def get_owner_sheet_data():
@@ -67,7 +67,6 @@ def get_communication_info(phone_number, headers):
     response_data = rate_limited_request(phone_numbers_url, headers, {})
     phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
-    # If no phone numbers are associated with the account
     if not phone_number_ids:
         return {
             'status': "No Communications",
@@ -159,7 +158,7 @@ def fetch_communication_info(guest_df, headers):
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    headers = {"Authorization": f"Bearer {st.secrets['openphone']['api_key']}"}
+    headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}"}
 
     # Apply Filters
     st.subheader("Owner Data")
