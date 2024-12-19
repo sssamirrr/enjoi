@@ -140,40 +140,41 @@ def get_communication_info(phone_number):
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
+    # Create a session state to store the DataFrame if it doesn't exist
+    if 'working_df' not in st.session_state:
+        st.session_state.working_df = owner_df.copy()
+
     # Filters
     st.subheader("Filters")
     col1, col2, col3 = st.columns(3)
     with col1:
-        selected_states = st.multiselect("Select States", owner_df['State'].dropna().unique())
+        selected_states = st.multiselect("Select States", st.session_state.working_df['State'].dropna().unique())
     with col2:
-        date_range = st.date_input("Sale Date Range", [owner_df['Sale Date'].min(), owner_df['Sale Date'].max()])
+        date_range = st.date_input("Sale Date Range", 
+                                  [st.session_state.working_df['Sale Date'].min(), 
+                                   st.session_state.working_df['Sale Date'].max()])
     with col3:
-        fico_range = st.slider("FICO Score", int(owner_df['Primary FICO'].min()), int(owner_df['Primary FICO'].max()), 
-                               (int(owner_df['Primary FICO'].min()), int(owner_df['Primary FICO'].max())))
+        fico_range = st.slider("FICO Score", 
+                             int(st.session_state.working_df['Primary FICO'].min()), 
+                             int(st.session_state.working_df['Primary FICO'].max()), 
+                             (int(st.session_state.working_df['Primary FICO'].min()), 
+                              int(st.session_state.working_df['Primary FICO'].max())))
 
     # Apply Filters
-    filtered_df = owner_df.copy()
+    filtered_df = st.session_state.working_df.copy()
     if selected_states:
         filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
     if date_range:
         filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) & 
-                                  (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
-    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
+                                (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
+    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & 
+                            (filtered_df['Primary FICO'] <= fico_range[1])]
 
     # Display Table
     st.subheader("Owner Data")
     edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
         "Select": st.column_config.CheckboxColumn("Select")
-    })
-
-    # Email and Text Campaign
-    st.subheader("Campaign Management")
-    campaign_type = st.radio("Select Campaign Type", ["Email", "Text"])
-    if campaign_type == "Email":
-        email_subject = st.text_input("Email Subject", "Welcome to our Premium Ownership Family")
-        email_body = st.text_area("Email Body", "We are excited to have you as part of our community.")
-    else:
-        text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
+    }, key='data_editor')
 
     # Communication Updates
     if st.button("Update Communication Info"):
@@ -183,12 +184,24 @@ def run_owner_marketing_tab(owner_df):
         else:
             with st.spinner("Fetching communication info..."):
                 for idx in selected_rows:
-                    phone_number = filtered_df.at[idx, "Phone Number"]
+                    phone_number = edited_df.at[idx, "Phone Number"]
                     comm_data = get_communication_info(phone_number)
                     for key, value in comm_data.items():
-                        filtered_df.at[idx, key] = value
+                        # Update both DataFrames
+                        edited_df.at[idx, key] = value
+                        st.session_state.working_df.at[idx, key] = value
+                
+                # Update the session state
+                st.session_state.working_df.update(edited_df)
             st.success("Communication info updated!")
-            st.dataframe(filtered_df)
+
+    # Map of Owner Locations
+    st.subheader("Map of Owner Locations")
+    valid_map_data = filtered_df.dropna(subset=['latitude', 'longitude'])
+    if not valid_map_data.empty:
+        st.map(valid_map_data[['latitude', 'longitude']])
+    else:
+        st.info("No valid geographic data available for mapping.")
 
 # Run Minimal App
 def run_minimal_app():
