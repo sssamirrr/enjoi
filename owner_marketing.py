@@ -53,7 +53,7 @@ OPENPHONE_NUMBER = "+18438972426"
 # Fetch OpenPhone Data
 def fetch_openphone_data(phone_number):
     try:
-        OPENPHONE_API_KEY = st.secrets["api_key"]
+        
         headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
