@@ -195,13 +195,6 @@ def run_owner_marketing_tab(owner_df):
                 st.success("Communication info updated!")
                 st.rerun()
 
-    # Map of Owner Locations
-    st.subheader("Map of Owner Locations")
-    valid_map_data = filtered_df.dropna(subset=['latitude', 'longitude'])
-    if not valid_map_data.empty:
-        st.map(valid_map_data[['latitude', 'longitude']])
-    else:
-        st.info("No valid geographic data available for mapping.")
 
 
 
