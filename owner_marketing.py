@@ -46,8 +46,11 @@ def get_owner_sheet_data():
 # Fetch OpenPhone Data
 def fetch_openphone_data(phone_number):
     try:
-        OPENPHONE_API_KEY = st.secrets["openphone_api_key"]
-        headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}"}
+        OPENPHONE_API_KEY = st.secrets["api_key"]
+        headers = {
+                    "Authorization": OPENPHONE_API_KEY,
+                    "Content-Type": "application/json"
+                }
         url = "https://api.openphone.co/v1/calls"
         response = requests.get(url, headers=headers, params={"participants": [phone_number], "maxResults": 50})
         if response.status_code == 200:
