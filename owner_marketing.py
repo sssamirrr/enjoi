@@ -108,7 +108,7 @@ def get_communication_info(phone_number, headers):
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}"}
+    headers = {"Authorization": OPENPHONE_API_KEY"}
 
     # Filters
     st.subheader("Filters")
