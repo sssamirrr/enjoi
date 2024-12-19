@@ -144,8 +144,6 @@ def run_owner_marketing_tab(owner_df):
     # Initialize session state
     if 'working_df' not in st.session_state:
         st.session_state.working_df = owner_df.copy()
-    if 'update_pressed' not in st.session_state:
-        st.session_state.update_pressed = False
 
     # Filters
     st.subheader("Filters")
@@ -180,38 +178,22 @@ def run_owner_marketing_tab(owner_df):
     }, key='data_editor')
 
     # Communication Updates
-    if st.button("Update Communication Info", key='update_button'):
-        st.session_state.update_pressed = True
-
-    if st.session_state.update_pressed:
+    if st.button("Update Communication Info", key="update_button"):
         selected_rows = edited_df[edited_df['Select']].index.tolist()
         if not selected_rows:
             st.warning("No rows selected!")
         else:
             with st.spinner("Fetching communication info..."):
-                updated_data = []
                 for idx in selected_rows:
                     phone_number = edited_df.at[idx, "Phone Number"]
                     comm_data = get_communication_info(phone_number)
-                    updated_data.append((idx, comm_data))
-                
-                # Update the DataFrames with all the collected data
-                for idx, comm_data in updated_data:
                     for key, value in comm_data.items():
+                        # Update both DataFrames
                         filtered_df.at[idx, key] = value
                         st.session_state.working_df.at[idx, key] = value
                 
-                # Display updated data
-                st.data_editor(filtered_df, use_container_width=True, column_config={
-                    "Select": st.column_config.CheckboxColumn("Select")
-                }, key='updated_data_editor')
-                
                 st.success("Communication info updated!")
-        
-        # Add a button to clear the update state
-        if st.button("Clear Updates"):
-            st.session_state.update_pressed = False
-            st.experimental_rerun()
+                st.rerun()
 
     # Map of Owner Locations
     st.subheader("Map of Owner Locations")
@@ -221,14 +203,10 @@ def run_owner_marketing_tab(owner_df):
     else:
         st.info("No valid geographic data available for mapping.")
 
-# Run Minimal App
-def run_minimal_app():
-    owner_df = get_owner_sheet_data()
-    if not owner_df.empty:
-        run_owner_marketing_tab(owner_df)
-    else:
-        st.error("No owner data available.")
+# Initialize the page with data
+owner_df = get_owner_sheet_data()
+if not owner_df.empty:
+    run_owner_marketing_tab(owner_df)
+else:
+    st.error("No owner data available.")
 
-if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    run_minimal_app()
