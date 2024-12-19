@@ -232,7 +232,3 @@ def run_minimal_app():
 if __name__ == "__main__":
     st.set_page_config(page_title="Owner Marketing", layout="wide")
     run_minimal_app()
-
-if __name__ == "__main__":
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    run_minimal_app()
