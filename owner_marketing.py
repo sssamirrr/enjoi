@@ -109,15 +109,20 @@ def run_owner_marketing_tab(owner_df):
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
     filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
 
-    # Display Filtered Table
+    # Display Filtered Table with Checkboxes
     st.subheader("Filtered Owner Data")
     filtered_df = filtered_df.reset_index(drop=True)  # Reset index for consistency
-    st.dataframe(filtered_df)
+    edited_df = st.data_editor(
+        filtered_df,
+        use_container_width=True,
+        column_config={
+            "Select": st.column_config.CheckboxColumn("Select", help="Select rows for updates")
+        }
+    )
 
-    # Update Communication Info
-    st.subheader("Update Communication Information")
-    selected_rows = filtered_df[filtered_df['Select']].index.tolist()
+    # Communication Updates
     if st.button("Update Communication Info"):
+        selected_rows = edited_df[edited_df['Select']].index.tolist()
         if not selected_rows:
             st.warning("No rows selected!")
         else:
