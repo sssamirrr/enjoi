@@ -210,3 +210,13 @@ if not owner_df.empty:
 else:
     st.error("No owner data available.")
 
+def run_minimal_app():
+    owner_df = get_owner_sheet_data()
+    if not owner_df.empty:
+        run_owner_marketing_tab(owner_df)
+    else:
+        st.error("No owner data available.")
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    run_minimal_app()
