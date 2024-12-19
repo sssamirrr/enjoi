@@ -162,9 +162,15 @@ def run_owner_marketing_tab(owner_df):
 
     # Display Table
     st.subheader("Owner Data")
-    edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
-        "Select": st.column_config.CheckboxColumn("Select")
-    })
+    if 'updated_df' in st.session_state:
+        edited_df = st.data_editor(st.session_state['updated_df'], use_container_width=True, column_config={
+            "Select": st.column_config.CheckboxColumn("Select")
+        })
+    else:
+        edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
+            "Select": st.column_config.CheckboxColumn("Select")
+        })
+
 
     # Email and Text Campaign
     st.subheader("Campaign Management")
@@ -175,6 +181,7 @@ def run_owner_marketing_tab(owner_df):
     else:
         text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
 
+    # Communication Updates
     # Communication Updates
     if st.button("Update Communication Info"):
         selected_rows = edited_df[edited_df['Select']].index.tolist()
@@ -187,8 +194,12 @@ def run_owner_marketing_tab(owner_df):
                     comm_data = get_communication_info(phone_number)
                     for key, value in comm_data.items():
                         filtered_df.at[idx, key] = value
-            st.success("Communication info updated!")
-            st.dataframe(filtered_df)
+                        
+                # Update the original data in edited_df instead of creating a new dataframe
+                st.session_state['updated_df'] = filtered_df
+                st.success("Communication info updated!")
+                # Force a rerun to update the table
+            st.experimental_rerun()
 
 # Run Minimal App
 def run_minimal_app():
