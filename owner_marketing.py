@@ -71,10 +71,10 @@ def get_owner_sheet_data():
         if 'Zip Code' in df.columns:
             df['Zip Code'] = df['Zip Code'].apply(clean_zip_code)
             nomi = pgeocode.Nominatim('us')
-            df['Latitude'] = df['Zip Code'].apply(
+            df['latitude'] = df['Zip Code'].apply(
                 lambda z: nomi.query_postal_code(z).latitude if pd.notna(z) else None
             )
-            df['Longitude'] = df['Zip Code'].apply(
+            df['longitude'] = df['Zip Code'].apply(
                 lambda z: nomi.query_postal_code(z).longitude if pd.notna(z) else None
             )
 
@@ -202,9 +202,9 @@ def run_owner_marketing_tab(owner_df):
 
     # Map of Owner Locations
     st.subheader("Map of Owner Locations")
-    valid_map_data = filtered_df.dropna(subset=['Latitude', 'Longitude'])
+    valid_map_data = filtered_df.dropna(subset=['latitude', 'longitude'])
     if not valid_map_data.empty:
-        st.map(valid_map_data[['Latitude', 'Longitude']])
+        st.map(valid_map_data[['latitude', 'longitude']])
     else:
         st.info("No valid geographic data available for mapping.")
 
