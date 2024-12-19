@@ -8,7 +8,7 @@ import requests
 import time
 
 # Hardcoded OpenPhone API Key and Headers
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6aebhl6lG6Z7"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
@@ -66,20 +66,6 @@ def get_owner_sheet_data():
         st.error(f"Error accessing Google Sheet: {e}")
         return pd.DataFrame()
 
-# Rate-Limited API Request
-def rate_limited_request(url, params):
-    time.sleep(1 / 5)
-    try:
-        response = requests.get(url, headers=HEADERS, params=params)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.warning(f"API Error: {response.status_code}")
-            st.warning(f"Response: {response.text}")
-    except Exception as e:
-        st.warning(f"Exception during request: {str(e)}")
-    return None
-
 # Fetch Detailed Communication Logs
 def get_detailed_logs(phone_number):
     formatted_phone = format_phone_number(phone_number)
@@ -91,7 +77,7 @@ def get_detailed_logs(phone_number):
     calls_url = "https://api.openphone.com/v1/calls"
 
     # Fetch all communication details
-    response_data = rate_limited_request(phone_numbers_url, {})
+    response_data = requests.get(phone_numbers_url, headers=HEADERS).json()
     phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
     if not phone_number_ids:
@@ -104,18 +90,18 @@ def get_detailed_logs(phone_number):
         params = {"phoneNumberId": phone_number_id, "participants": [formatted_phone], "maxResults": 50}
 
         # Fetch Messages
-        messages_response = rate_limited_request(messages_url, params)
+        messages_response = requests.get(messages_url, headers=HEADERS, params=params).json()
         if messages_response:
             messages.extend(messages_response.get('data', []))
 
         # Fetch Calls
-        calls_response = rate_limited_request(calls_url, params)
+        calls_response = requests.get(calls_url, headers=HEADERS, params=params).json()
         if calls_response:
             calls.extend(calls_response.get('data', []))
 
     return messages, calls
 
-# Page for detailed logs
+# Detailed Logs Page
 def detailed_logs_page(phone_number):
     st.title(f"Communication Logs for {phone_number}")
 
@@ -149,25 +135,26 @@ def detailed_logs_page(phone_number):
     if not messages and not calls:
         st.warning("No communication logs found.")
 
-# Main Tab with Logs Button
+# Main Tab with Links
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    # Initialize session state
-    if 'working_df' not in st.session_state:
-        st.session_state.working_df = owner_df.copy()
+    # Add links for communication logs
+    owner_df["Logs Link"] = owner_df["Phone Number"].apply(
+        lambda x: f'<a href="?phone={x}" target="_self">View Logs</a>'
+    )
 
-    # Display Table
+    # Display Table with Links
     st.subheader("Owner Data")
-    edited_df = st.data_editor(owner_df, use_container_width=True, column_config={
-        "Select": st.column_config.CheckboxColumn("Select")
-    }, key='data_editor')
+    st.markdown(
+        owner_df.to_html(escape=False, index=False), 
+        unsafe_allow_html=True
+    )
 
-    # Communication Logs Button
-    for idx in edited_df.index:
-        phone_number = edited_df.at[idx, "Phone Number"]
-        if st.button(f"View Logs for {phone_number}", key=f"logs_{idx}"):
-            detailed_logs_page(phone_number)
+    # Handle query parameter for phone number
+    phone_number = st.experimental_get_query_params().get("phone", [None])[0]
+    if phone_number:
+        detailed_logs_page(phone_number)
 
 # Main App Function
 def run_minimal_app():
