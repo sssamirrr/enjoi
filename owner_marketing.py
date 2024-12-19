@@ -4,7 +4,6 @@ from datetime import datetime
 import gspread
 from google.oauth2 import service_account
 
-
 # Fetch Google Sheets Data
 def get_owner_sheet_data():
     try:
@@ -32,24 +31,17 @@ def get_owner_sheet_data():
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors="coerce")
 
-        # Add communication columns
-        df["status"] = "Not Updated"
-        df["last_date"] = None
-        df["total_messages"] = 0
-        df["total_calls"] = 0
-
         return df
 
     except Exception as e:
         st.error(f"Error accessing Google Sheet: {e}")
         return pd.DataFrame()
 
-
 # Detailed Logs Page
 def detailed_logs_page(phone_number):
     st.title(f"Communication Logs for {phone_number}")
 
-    # Dummy data for messages and calls (replace with API calls if needed)
+    # Dummy data for messages and calls
     messages = [{"id": "msg1", "content": "Hello", "createdAt": "2024-12-01T10:00:00Z"}]
     calls = [{"id": "call1", "direction": "Outbound", "duration": 120, "createdAt": "2024-12-01T11:00:00Z"}]
 
@@ -85,7 +77,6 @@ def detailed_logs_page(phone_number):
     if not messages and not calls:
         st.warning("No communication logs found.")
 
-
 # Main Function for the Owner Marketing Tab
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
@@ -106,8 +97,8 @@ def run_owner_marketing_tab(owner_df):
         owner_df,
         column_config={
             "Logs Link": st.column_config.LinkColumn(
-                "View Logs",  # Column label in the table
-                label="Logs Link",  # Link text
+                "Logs Link",  # Column label
+                url=lambda x: x  # Function to define the link (uses the URL in the cell)
             )
         },
         use_container_width=True,
@@ -119,7 +110,6 @@ def run_owner_marketing_tab(owner_df):
     if phone_number:
         detailed_logs_page(phone_number[0])
 
-
 # Main App Function
 def run_minimal_app():
     owner_df = get_owner_sheet_data()
@@ -127,7 +117,6 @@ def run_minimal_app():
         run_owner_marketing_tab(owner_df)
     else:
         st.error("No owner data available.")
-
 
 # Run the App
 if __name__ == "__main__":
