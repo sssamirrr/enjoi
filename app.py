@@ -1,4 +1,10 @@
 import streamlit as st
+import owner_marketing
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    owner_marketing.run_minimal_app()
+
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
