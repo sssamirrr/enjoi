@@ -10,17 +10,14 @@ import time
 # Hardcoded OpenPhone API Key and Headers
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
-    "Authorization": OPENPHONE_API_KEY,  # Direct API key without "Bearer"
+    "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
 
 # Format phone number to E.164
 def format_phone_number(phone):
-    """
-    Format a phone number to E.164 format.
-    """
     try:
-        parsed_phone = phonenumbers.parse(phone, "US")  # Assuming US as the default region
+        parsed_phone = phonenumbers.parse(phone, "US")
         if phonenumbers.is_valid_number(parsed_phone):
             return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
         else:
@@ -54,6 +51,13 @@ def get_owner_sheet_data():
         for col in ['Sale Date', 'Maturity Date']:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        # Add communication columns
+        df['status'] = "Not Updated"
+        df['last_date'] = None
+        df['total_messages'] = 0
+        df['total_calls'] = 0
+
         df['Select'] = False  # Selection column
         df = df[['Select'] + [col for col in df.columns if col != 'Select']]  # Move Select to first column
         return df
@@ -64,7 +68,7 @@ def get_owner_sheet_data():
 
 # Rate-Limited API Request
 def rate_limited_request(url, params):
-    time.sleep(1 / 5)  # 5 requests per second max
+    time.sleep(1 / 5)
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         if response.status_code == 200:
