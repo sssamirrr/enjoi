@@ -6,6 +6,7 @@ import gspread
 from google.oauth2 import service_account
 import requests
 import time
+import pgeocode  # For geocoding ZIP codes to latitude and longitude
 
 # Hardcoded OpenPhone API Key and Headers
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
@@ -24,6 +25,14 @@ def format_phone_number(phone):
             return None
     except phonenumbers.NumberParseException:
         return None
+
+# Clean and validate ZIP code
+def clean_zip_code(zip_code):
+    if pd.isna(zip_code):
+        return None
+    zip_str = str(zip_code)
+    zip_digits = ''.join(filter(str.isdigit, zip_str))
+    return zip_digits[:5] if len(zip_digits) >= 5 else None
 
 # Fetch Google Sheets Data
 def get_owner_sheet_data():
@@ -57,6 +66,17 @@ def get_owner_sheet_data():
         df['last_date'] = None
         df['total_messages'] = 0
         df['total_calls'] = 0
+
+        # Add geocoding columns
+        if 'Zip Code' in df.columns:
+            df['Zip Code'] = df['Zip Code'].apply(clean_zip_code)
+            nomi = pgeocode.Nominatim('us')
+            df['Latitude'] = df['Zip Code'].apply(
+                lambda z: nomi.query_postal_code(z).latitude if pd.notna(z) else None
+            )
+            df['Longitude'] = df['Zip Code'].apply(
+                lambda z: nomi.query_postal_code(z).longitude if pd.notna(z) else None
+            )
 
         df['Select'] = False  # Selection column
         df = df[['Select'] + [col for col in df.columns if col != 'Select']]  # Move Select to first column
@@ -166,15 +186,6 @@ def run_owner_marketing_tab(owner_df):
         "Select": st.column_config.CheckboxColumn("Select")
     })
 
-    # Email and Text Campaign
-    st.subheader("Campaign Management")
-    campaign_type = st.radio("Select Campaign Type", ["Email", "Text"])
-    if campaign_type == "Email":
-        email_subject = st.text_input("Email Subject", "Welcome to our Premium Ownership Family")
-        email_body = st.text_area("Email Body", "We are excited to have you as part of our community.")
-    else:
-        text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
-
     # Communication Updates
     if st.button("Update Communication Info"):
         selected_rows = edited_df[edited_df['Select']].index.tolist()
@@ -188,7 +199,14 @@ def run_owner_marketing_tab(owner_df):
                     for key, value in comm_data.items():
                         filtered_df.at[idx, key] = value
             st.success("Communication info updated!")
-            st.dataframe(filtered_df)
+
+    # Map of Owner Locations
+    st.subheader("Map of Owner Locations")
+    valid_map_data = filtered_df.dropna(subset=['Latitude', 'Longitude'])
+    if not valid_map_data.empty:
+        st.map(valid_map_data[['Latitude', 'Longitude']])
+    else:
+        st.info("No valid geographic data available for mapping.")
 
 # Run Minimal App
 def run_minimal_app():
