@@ -166,6 +166,15 @@ def run_owner_marketing_tab(owner_df):
         "Select": st.column_config.CheckboxColumn("Select")
     })
 
+    # Email and Text Campaign
+    st.subheader("Campaign Management")
+    campaign_type = st.radio("Select Campaign Type", ["Email", "Text"])
+    if campaign_type == "Email":
+        email_subject = st.text_input("Email Subject", "Welcome to our Premium Ownership Family")
+        email_body = st.text_area("Email Body", "We are excited to have you as part of our community.")
+    else:
+        text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
+
     # Communication Updates
     if st.button("Update Communication Info"):
         selected_rows = edited_df[edited_df['Select']].index.tolist()
