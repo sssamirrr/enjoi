@@ -182,13 +182,21 @@ def run_owner_marketing_tab(owner_df):
             st.warning("No rows selected!")
         else:
             with st.spinner("Fetching communication info..."):
+                # Update the original DataFrame
                 for idx in selected_rows:
-                    phone_number = filtered_df.at[idx, "Phone Number"]
+                    phone_number = owner_df.at[idx, "Phone Number"]
                     comm_data = get_communication_info(phone_number)
                     for key, value in comm_data.items():
-                        filtered_df.at[idx, key] = value
+                        owner_df.at[idx, key] = value
+    
+            # Reflect changes directly in the editable table
             st.success("Communication info updated!")
-            st.dataframe(filtered_df)
+            edited_df = st.data_editor(
+                owner_df, 
+                use_container_width=True, 
+                column_config={"Select": st.column_config.CheckboxColumn("Select")}
+            )
+
 
 # Run Minimal App
 def run_minimal_app():
