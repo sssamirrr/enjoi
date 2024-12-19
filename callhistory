@@ -1,0 +1,108 @@
+# callhistory.py
+
+import requests
+import time
+from datetime import datetime
+import phonenumbers
+import streamlit as st
+
+# API Endpoint URLs
+PHONE_NUMBERS_URL = "https://api.openphone.com/v1/phone-numbers"
+MESSAGES_URL = "https://api.openphone.com/v1/messages"
+CALLS_URL = "https://api.openphone.com/v1/calls"
+
+# Rate-Limited API Request
+def rate_limited_request(url, headers, params):
+    time.sleep(1 / 5)  # Rate limit: 5 requests per second
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.warning(f"API Error: {response.status_code}")
+            st.warning(f"Response: {response.text}")
+    except Exception as e:
+        st.warning(f"Exception during request: {str(e)}")
+    return None
+
+# Format phone number to E.164
+def format_phone_number(phone):
+    try:
+        parsed_phone = phonenumbers.parse(phone, "US")
+        if phonenumbers.is_valid_number(parsed_phone):
+            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
+        else:
+            return None
+    except phonenumbers.NumberParseException:
+        return None
+
+# Function to generate call history link
+def generate_call_history_link(phone_number):
+    # Modify this URL according to your actual implementation for accessing call history
+    base_url = "https://yourapp.com/call-history"
+    formatted_number = format_phone_number(phone_number)
+
+    if formatted_number:
+        return f"{base_url}?number={formatted_number}"
+    return None
+
+# Fetch OpenPhone Communication Data
+def get_communication_info(phone_number, headers):
+    formatted_phone = format_phone_number(phone_number)
+    if not formatted_phone:
+        return {
+            'status': "Invalid Number",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0,
+            'call_history_link': None
+        }
+
+    response_data = rate_limited_request(PHONE_NUMBERS_URL, headers, {})
+    phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+
+    if not phone_number_ids:
+        return {
+            'status': "No Communications",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0,
+            'call_history_link': None
+        }
+
+    latest_datetime = None
+    total_messages = 0
+    total_calls = 0
+
+    for phone_number_id in phone_number_ids:
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [formatted_phone],
+            "maxResults": 50
+        }
+
+        # Fetch Messages
+        messages_response = rate_limited_request(MESSAGES_URL, headers, params)
+        if messages_response:
+            total_messages += len(messages_response.get('data', []))
+
+        # Fetch Calls
+        calls_response = rate_limited_request(CALLS_URL, headers, params)
+        if calls_response:
+            calls = calls_response.get('data', [])
+            total_calls += len(calls)
+            for call in calls:
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
+
+    status = "No Communications" if not latest_datetime else "Active"
+    call_history_link = generate_call_history_link(phone_number)
+
+    return {
+        'status': status,
+        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
+        'total_messages': total_messages,
+        'total_calls': total_calls,
+        'call_history_link': call_history_link
+    }
