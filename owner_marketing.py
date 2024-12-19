@@ -42,6 +42,13 @@ def get_owner_sheet_data():
     except Exception as e:
         st.error(f"Error accessing Google Sheet: {e}")
         return pd.DataFrame()
+############################################
+# Hard-coded OpenPhone Credentials
+############################################
+
+# Replace with your actual OpenPhone API key and number
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_NUMBER = "+18438972426"
 
 # Fetch OpenPhone Data
 def fetch_openphone_data(phone_number):
