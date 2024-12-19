@@ -6,7 +6,6 @@ import gspread
 from google.oauth2 import service_account
 import requests
 import time
-import pgeocode  # For geocoding ZIP codes to latitude and longitude
 
 # Hardcoded OpenPhone API Key and Headers
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
@@ -54,10 +53,10 @@ def get_owner_sheet_data():
                 df[col] = pd.to_datetime(df[col], errors='coerce')
 
         # Add communication columns
-        df['Status'] = "Not Updated"
-        df['Last Communication Date'] = None
-        df['Total Messages'] = 0
-        df['Total Calls'] = 0
+        df['status'] = "Not Updated"
+        df['last_date'] = None
+        df['total_messages'] = 0
+        df['total_calls'] = 0
 
         df['Select'] = False  # Selection column
         df = df[['Select'] + [col for col in df.columns if col != 'Select']]  # Move Select to first column
@@ -86,10 +85,10 @@ def get_communication_info(phone_number):
     formatted_phone = format_phone_number(phone_number)
     if not formatted_phone:
         return {
-            'Status': "Invalid Number",
-            'Last Communication Date': None,
-            'Total Messages': 0,
-            'Total Calls': 0
+            'status': "Invalid Number",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0
         }
 
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
@@ -101,10 +100,10 @@ def get_communication_info(phone_number):
 
     if not phone_number_ids:
         return {
-            'Status': "No Communications",
-            'Last Communication Date': None,
-            'Total Messages': 0,
-            'Total Calls': 0
+            'status': "No Communications",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0
         }
 
     latest_datetime = None
@@ -131,36 +130,17 @@ def get_communication_info(phone_number):
 
     status = "No Communications" if not latest_datetime else "Active"
     return {
-        'Status': status,
-        'Last Communication Date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
-        'Total Messages': total_messages,
-        'Total Calls': total_calls
+        'status': status,
+        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
+        'total_messages': total_messages,
+        'total_calls': total_calls
     }
 
 # Main App Function
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    # Communication Updates Button
-    st.subheader("Update Communication Info")
-    if st.button("Fetch Communication Info"):
-        selected_rows = owner_df[owner_df['Select']].index.tolist()
-        if not selected_rows:
-            st.warning("No rows selected!")
-        else:
-            with st.spinner("Fetching communication info..."):
-                for idx in selected_rows:
-                    phone_number = owner_df.at[idx, "Phone Number"]
-                    comm_data = get_communication_info(phone_number)
-                    for key, value in comm_data.items():
-                        owner_df.at[idx, key] = value
-            st.success("Communication info updated!")
-
-    # Display Table
-    st.subheader("Owner Data")
-    st.data_editor(owner_df, use_container_width=True)
-
-    # Filters Section
+    # Filters
     st.subheader("Filters")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -180,37 +160,35 @@ def run_owner_marketing_tab(owner_df):
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
     filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
 
-    # Add Owner Map
-   # Add Owner Map
-    st.subheader("Map of Owner Locations")
-    
-    if 'Zip Code' in filtered_df.columns:
-        # Initialize geocoder
-        nomi = pgeocode.Nominatim('us')
-        
-        # Add Latitude and Longitude columns if not already present
-        if 'Latitude' not in filtered_df.columns or 'Longitude' not in filtered_df.columns:
-            filtered_df['Latitude'] = filtered_df['Zip Code'].apply(
-                lambda z: nomi.query_postal_code(str(z)).latitude if pd.notna(z) else None
-            )
-            filtered_df['Longitude'] = filtered_df['Zip Code'].apply(
-                lambda z: nomi.query_postal_code(str(z)).longitude if pd.notna(z) else None
-            )
-        
-        # Filter rows with valid Latitude and Longitude
-        valid_map_data = filtered_df.dropna(subset=['Latitude', 'Longitude'])
-    
-        if not valid_map_data.empty:
-            # Ensure the DataFrame for st.map() has proper column names
-            map_data = valid_map_data[['Latitude', 'Longitude']].rename(
-                columns={'Latitude': 'lat', 'Longitude': 'lon'}
-            )
-            st.map(map_data)
-        else:
-            st.info("No valid geographic data available for mapping.")
-    else:
-        st.warning("Zip Code data is missing or invalid, unable to generate map.")
+    # Display Table
+    st.subheader("Owner Data")
+    edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
+        "Select": st.column_config.CheckboxColumn("Select")
+    })
 
+    # Email and Text Campaign
+    st.subheader("Campaign Management")
+    campaign_type = st.radio("Select Campaign Type", ["Email", "Text"])
+    if campaign_type == "Email":
+        email_subject = st.text_input("Email Subject", "Welcome to our Premium Ownership Family")
+        email_body = st.text_area("Email Body", "We are excited to have you as part of our community.")
+    else:
+        text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
+
+    # Communication Updates
+    if st.button("Update Communication Info"):
+        selected_rows = edited_df[edited_df['Select']].index.tolist()
+        if not selected_rows:
+            st.warning("No rows selected!")
+        else:
+            with st.spinner("Fetching communication info..."):
+                for idx in selected_rows:
+                    phone_number = filtered_df.at[idx, "Phone Number"]
+                    comm_data = get_communication_info(phone_number)
+                    for key, value in comm_data.items():
+                        filtered_df.at[idx, key] = value
+            st.success("Communication info updated!")
+            st.dataframe(filtered_df)
 
 # Run Minimal App
 def run_minimal_app():
