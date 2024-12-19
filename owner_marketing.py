@@ -139,40 +139,51 @@ def get_communication_info(phone_number):
 # Main App Function
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
-
+    
+    # Initialize session state
+    if 'owner_df' not in st.session_state:
+        st.session_state['owner_df'] = owner_df.copy()
+    
+    df = st.session_state['owner_df']
+    
     # Filters
     st.subheader("Filters")
     col1, col2, col3 = st.columns(3)
     with col1:
-        selected_states = st.multiselect("Select States", owner_df['State'].dropna().unique())
+        selected_states = st.multiselect("Select States", df['State'].dropna().unique())
     with col2:
-        date_range = st.date_input("Sale Date Range", [owner_df['Sale Date'].min(), owner_df['Sale Date'].max()])
+        min_date = df['Sale Date'].min()
+        max_date = df['Sale Date'].max()
+        date_range = st.date_input("Sale Date Range", [min_date, max_date])
     with col3:
-        fico_range = st.slider("FICO Score", int(owner_df['Primary FICO'].min()), int(owner_df['Primary FICO'].max()), 
-                               (int(owner_df['Primary FICO'].min()), int(owner_df['Primary FICO'].max())))
-
+        min_fico = int(df['Primary FICO'].min())
+        max_fico = int(df['Primary FICO'].max())
+        fico_range = st.slider("FICO Score", min_fico, max_fico, (min_fico, max_fico))
+    
     # Apply Filters
-    filtered_df = owner_df.copy()
+    filtered_df = df.copy()
     if selected_states:
         filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
     if date_range:
         filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) & 
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
-    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
-
+    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & 
+                              (filtered_df['Primary FICO'] <= fico_range[1])]
+    
+    # Initialize 'Select' column if not already
+    if 'Select' not in df.columns:
+        df['Select'] = False
+    
     # Display Table
     st.subheader("Owner Data")
-    if 'updated_df' in st.session_state:
-        edited_df = st.data_editor(st.session_state['updated_df'], use_container_width=True, column_config={
-            "Select": st.column_config.CheckboxColumn("Select")
-        })
-    else:
-        edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
-            "Select": st.column_config.CheckboxColumn("Select")
-        })
-
-
-    # Email and Text Campaign
+    edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
+        "Select": st.column_config.CheckboxColumn("Select")
+    })
+    
+    # Update 'Select' column in session state
+    st.session_state['owner_df'].loc[edited_df.index, 'Select'] = edited_df['Select']
+    
+    # Campaign Management
     st.subheader("Campaign Management")
     campaign_type = st.radio("Select Campaign Type", ["Email", "Text"])
     if campaign_type == "Email":
@@ -180,30 +191,21 @@ def run_owner_marketing_tab(owner_df):
         email_body = st.text_area("Email Body", "We are excited to have you as part of our community.")
     else:
         text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
-
-    # Communication Updates
-    # Communication Updates
+    
     # Communication Updates
     if st.button("Update Communication Info"):
-        selected_rows = edited_df[edited_df['Select']].index.tolist()
-        if not selected_rows:
+        selected_rows = edited_df[edited_df['Select']].index
+        if selected_rows.empty:
             st.warning("No rows selected!")
         else:
             with st.spinner("Fetching communication info..."):
                 for idx in selected_rows:
-                    phone_number = filtered_df.at[idx, "Phone Number"]
+                    phone_number = st.session_state['owner_df'].at[idx, "Phone Number"]
                     comm_data = get_communication_info(phone_number)
                     for key, value in comm_data.items():
-                        filtered_df.at[idx, key] = value
-                
-                # Update the display without creating a new table
-                edited_df = st.data_editor(
-                    filtered_df,
-                    use_container_width=True,
-                    column_config={"Select": st.column_config.CheckboxColumn("Select")},
-                    key="updated_table"  # Add a unique key to force refresh
-                )
+                        st.session_state['owner_df'].at[idx, key] = value
                 st.success("Communication info updated!")
+
 
 
 # Run Minimal App
