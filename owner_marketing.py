@@ -1,3 +1,4 @@
+import phonenumbers
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -6,8 +7,26 @@ from google.oauth2 import service_account
 import requests
 import time
 
-# Hardcoded OpenPhone API Key
+# Hardcoded OpenPhone API Key and Headers
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+HEADERS = {
+    "Authorization": OPENPHONE_API_KEY,  # Direct API key without "Bearer"
+    "Content-Type": "application/json"
+}
+
+# Format phone number to E.164
+def format_phone_number(phone):
+    """
+    Format a phone number to E.164 format.
+    """
+    try:
+        parsed_phone = phonenumbers.parse(phone, "US")  # Assuming US as the default region
+        if phonenumbers.is_valid_number(parsed_phone):
+            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
+        else:
+            return None
+    except phonenumbers.NumberParseException:
+        return None
 
 # Fetch Google Sheets Data
 def get_owner_sheet_data():
@@ -44,11 +63,11 @@ def get_owner_sheet_data():
         return pd.DataFrame()
 
 # Rate-Limited API Request
-def rate_limited_request(url, headers, params, request_type='get'):
+def rate_limited_request(url, params):
     time.sleep(1 / 5)  # 5 requests per second max
     try:
-        response = requests.get(url, headers=headers, params=params) if request_type == 'get' else None
-        if response and response.status_code == 200:
+        response = requests.get(url, headers=HEADERS, params=params)
+        if response.status_code == 200:
             return response.json()
         else:
             st.warning(f"API Error: {response.status_code}")
@@ -58,12 +77,21 @@ def rate_limited_request(url, headers, params, request_type='get'):
     return None
 
 # Fetch OpenPhone Communication Data
-def get_communication_info(phone_number, headers):
+def get_communication_info(phone_number):
+    formatted_phone = format_phone_number(phone_number)
+    if not formatted_phone:
+        return {
+            'status': "Invalid Number",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0
+        }
+
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
 
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    response_data = rate_limited_request(phone_numbers_url, {})
     phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
 
     if not phone_number_ids:
@@ -79,15 +107,15 @@ def get_communication_info(phone_number, headers):
     total_calls = 0
 
     for phone_number_id in phone_number_ids:
-        params = {"phoneNumberId": phone_number_id, "participants": [phone_number], "maxResults": 50}
+        params = {"phoneNumberId": phone_number_id, "participants": [formatted_phone], "maxResults": 50}
 
         # Fetch Messages
-        messages_response = rate_limited_request(messages_url, headers, params)
+        messages_response = rate_limited_request(messages_url, params)
         if messages_response:
             total_messages += len(messages_response.get('data', []))
 
         # Fetch Calls
-        calls_response = rate_limited_request(calls_url, headers, params)
+        calls_response = rate_limited_request(calls_url, params)
         if calls_response:
             calls = calls_response.get('data', [])
             total_calls += len(calls)
@@ -108,8 +136,6 @@ def get_communication_info(phone_number, headers):
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing Dashboard")
 
-    headers = {"Authorization": OPENPHONE_API_KEY}
-
     # Filters
     st.subheader("Filters")
     col1, col2, col3 = st.columns(3)
@@ -126,7 +152,7 @@ def run_owner_marketing_tab(owner_df):
     if selected_states:
         filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
     if date_range:
-        filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) &
+        filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) & 
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
     filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
 
@@ -135,15 +161,6 @@ def run_owner_marketing_tab(owner_df):
     edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
         "Select": st.column_config.CheckboxColumn("Select")
     })
-
-    # Email and Text Campaign
-    st.subheader("Campaign Management")
-    campaign_type = st.radio("Select Campaign Type", ["Email", "Text"])
-    if campaign_type == "Email":
-        email_subject = st.text_input("Email Subject", "Welcome to our Premium Ownership Family")
-        email_body = st.text_area("Email Body", "We are excited to have you as part of our community.")
-    else:
-        text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
 
     # Communication Updates
     if st.button("Update Communication Info"):
@@ -154,7 +171,7 @@ def run_owner_marketing_tab(owner_df):
             with st.spinner("Fetching communication info..."):
                 for idx in selected_rows:
                     phone_number = filtered_df.at[idx, "Phone Number"]
-                    comm_data = get_communication_info(phone_number, headers)
+                    comm_data = get_communication_info(phone_number)
                     for key, value in comm_data.items():
                         filtered_df.at[idx, key] = value
             st.success("Communication info updated!")
