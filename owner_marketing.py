@@ -203,12 +203,7 @@ def run_owner_marketing_tab(owner_df):
     else:
         st.info("No valid geographic data available for mapping.")
 
-# Initialize the page with data
-owner_df = get_owner_sheet_data()
-if not owner_df.empty:
-    run_owner_marketing_tab(owner_df)
-else:
-    st.error("No owner data available.")
+
 
 def run_minimal_app():
     owner_df = get_owner_sheet_data()
