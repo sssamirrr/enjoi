@@ -181,13 +181,30 @@ def run_owner_marketing_tab(owner_df):
     filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & (filtered_df['Primary FICO'] <= fico_range[1])]
 
     # Add Owner Map
+    # Add Owner Map
     st.subheader("Map of Owner Locations")
     if 'Zip Code' in filtered_df.columns:
         nomi = pgeocode.Nominatim('us')
-        filtered_df['Latitude'] = filtered_df['Zip Code'].apply(lambda z: nomi.query_postal_code(z).latitude)
-        filtered_df['Longitude'] = filtered_df['Zip Code'].apply(lambda z: nomi.query_postal_code(z).longitude)
-        map_data = filtered_df[['Latitude', 'Longitude']].dropna()
-        st.map(map_data)
+        
+        # Ensure 'Latitude' and 'Longitude' are added only if not already present
+        if 'Latitude' not in filtered_df.columns or 'Longitude' not in filtered_df.columns:
+            filtered_df['Latitude'] = filtered_df['Zip Code'].apply(
+                lambda z: nomi.query_postal_code(z).latitude if pd.notna(z) else None
+            )
+            filtered_df['Longitude'] = filtered_df['Zip Code'].apply(
+                lambda z: nomi.query_postal_code(z).longitude if pd.notna(z) else None
+            )
+        
+        # Drop rows with invalid or missing coordinates
+        valid_map_data = filtered_df.dropna(subset=['Latitude', 'Longitude'])
+        
+        if not valid_map_data.empty:
+            st.map(valid_map_data[['Latitude', 'Longitude']])
+        else:
+            st.info("No valid coordinates available for mapping.")
+    else:
+        st.warning("Zip Code data is missing, unable to generate map.")
+
 
 # Run Minimal App
 def run_minimal_app():
