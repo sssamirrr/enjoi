@@ -176,39 +176,19 @@ def run_owner_marketing_tab(owner_df):
         text_message = st.text_area("Text Message", "Welcome to our community! Reply STOP to opt out.")
 
     # Communication Updates
-   # Communication Updates
     if st.button("Update Communication Info"):
-        # Ensure the DataFrame being updated matches the one in st.data_editor
         selected_rows = edited_df[edited_df['Select']].index.tolist()
-    
         if not selected_rows:
             st.warning("No rows selected!")
         else:
             with st.spinner("Fetching communication info..."):
-                # Iterate through selected rows and fetch communication info
                 for idx in selected_rows:
-                    phone_number = edited_df.at[idx, "Phone Number"]
+                    phone_number = filtered_df.at[idx, "Phone Number"]
                     comm_data = get_communication_info(phone_number)
-    
-                    # Update the DataFrame with fetched communication data
-                    edited_df.at[idx, 'status'] = comm_data['status']
-                    edited_df.at[idx, 'last_date'] = comm_data['last_date']
-                    edited_df.at[idx, 'total_messages'] = comm_data['total_messages']
-                    edited_df.at[idx, 'total_calls'] = comm_data['total_calls']
-    
-            # Display a success message
+                    for key, value in comm_data.items():
+                        filtered_df.at[idx, key] = value
             st.success("Communication info updated!")
-    
-    # Update and display the same table in `st.data_editor`
-    edited_df = st.data_editor(
-        edited_df,
-        use_container_width=True,
-        column_config={
-            "Select": st.column_config.CheckboxColumn("Select")
-        }
-    )
-
-
+            st.dataframe(filtered_df)
 
 # Run Minimal App
 def run_minimal_app():
