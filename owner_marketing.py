@@ -183,6 +183,7 @@ def run_owner_marketing_tab(owner_df):
 
     # Communication Updates
     # Communication Updates
+    # Communication Updates
     if st.button("Update Communication Info"):
         selected_rows = edited_df[edited_df['Select']].index.tolist()
         if not selected_rows:
@@ -194,12 +195,16 @@ def run_owner_marketing_tab(owner_df):
                     comm_data = get_communication_info(phone_number)
                     for key, value in comm_data.items():
                         filtered_df.at[idx, key] = value
-                        
-                # Update the original data in edited_df instead of creating a new dataframe
-                st.session_state['updated_df'] = filtered_df
+                
+                # Update the display without creating a new table
+                edited_df = st.data_editor(
+                    filtered_df,
+                    use_container_width=True,
+                    column_config={"Select": st.column_config.CheckboxColumn("Select")},
+                    key="updated_table"  # Add a unique key to force refresh
+                )
                 st.success("Communication info updated!")
-                # Force a rerun to update the table
-            st.experimental_rerun()
+
 
 # Run Minimal App
 def run_minimal_app():
