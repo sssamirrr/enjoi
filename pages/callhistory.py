@@ -260,7 +260,6 @@ def display_history(phone_number):
                 direction = "Received" if message.get('direction') == 'inbound' else "Sent"
                 st.write(f"**{message_time}** - {direction}: {message.get('content', 'No content')}")
 
-        # New Section: Show all transcripts from all calls
         st.subheader("All Call Transcripts")
         if st.button("Show All Transcripts"):
             for call in calls:
@@ -281,13 +280,17 @@ def main():
         layout="wide"
     )
 
+    # Get phone number from query params or user input
     query_params = st.query_params
-    phone_number = query_params.get("phone", "")
-
+    default_phone = query_params.get("phone", "")
+    
+    # Add a box at the top where the user can type another phone number
+    phone_number = st.text_input("Enter another phone number:", value=default_phone)
+    
     if phone_number:
         display_history(phone_number)
     else:
-        st.error("Please provide a phone number in the URL using ?phone=PHONENUMBER")
-
+        st.error("Please provide a phone number.")
+        
 if __name__ == "__main__":
     main()
