@@ -29,7 +29,7 @@ def get_owner_sheet_data():
 
     # Open the Google Sheet by URL or by name
     # Replace 'YOUR_GOOGLE_SHEET_URL' with your actual sheet URL
-    sheet = client.open_by_url(st.secrets["private_gsheets_url"]).sheet1
+    st.secrets["owners_sheets"]["owners_sheet_key"]
 
     # Get all records from the sheet
     data = sheet.get_all_records()
