@@ -46,29 +46,58 @@ def rate_limited_request(url, headers, params, request_type='get'):
 # Fetch call history
 def fetch_call_history(phone_number):
     """
-    Fetch call history for a given external phone number using OpenPhone API.
+    Fetch call history for a given external phone number across all OpenPhone numbers.
     """
     formatted_phone = format_phone_number(phone_number)
     if not formatted_phone:
         return []
 
-    # Fetch calls with the external number as participant
-    calls_url = "https://api.openphone.com/v1/calls"
-    params = {
-        "participants": [formatted_phone],
-        "maxResults": 50
-    }
-    # Note: Removed phoneNumberId filter to search across all numbers
+    # Step 1: Get all OpenPhone numbers
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    phone_numbers_data = rate_limited_request(phone_numbers_url, HEADERS, {})
     
-    calls_data = rate_limited_request(calls_url, HEADERS, params)
-
-    if not calls_data or "data" not in calls_data:
-        st.error(f"Failed to fetch call history for {formatted_phone}.")
+    if not phone_numbers_data or "data" not in phone_numbers_data:
+        st.error("Failed to retrieve OpenPhone numbers.")
         return []
 
-    # Process call history data
-    call_history = calls_data["data"]
-    return call_history
+    # Step 2: Search for calls across all OpenPhone numbers
+    all_calls = []
+    for op_number in phone_numbers_data["data"]:
+        phone_number_id = op_number.get("id")
+        if not phone_number_id:
+            continue
+
+        calls_url = "https://api.openphone.com/v1/calls"
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [formatted_phone],
+            "maxResults": 50
+        }
+        
+        calls_data = rate_limited_request(calls_url, HEADERS, params)
+        if calls_data and "data" in calls_data:
+            all_calls.extend(calls_data["data"])
+
+    # Sort calls by creation date
+    all_calls.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+    
+    return all_calls
+
+# Add this info to the display function
+def display_call_history(phone_number):
+    # ... (previous code remains the same until the call details section)
+
+    # Display Call Details
+    st.subheader("Call Details")
+    for call in call_history:
+        with st.expander(f"Call on {datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')}"):
+            st.write(f"**Type**: {call['type']}")
+            st.write(f"**Duration**: {call['duration']} seconds")
+            st.write(f"**OpenPhone Number**: {call.get('phoneNumber', 'unknown')}")  # Added this line
+            st.write(f"**Participants**: {', '.join(call['participants'])}")
+            st.write(f"**Direction**: {call.get('direction', 'unknown')}")
+            st.write(f"**Status**: {call.get('status', 'unknown')}")
+            st.write("---")
 
 
 # Display call history
