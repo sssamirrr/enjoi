@@ -1,85 +1,94 @@
-import streamlit as st
-import requests
-from datetime import datetime
-import phonenumbers
-import pandas as pd
-from collections import Counter
+# Add these imports at the top
 import altair as alt
+from datetime import timedelta
+import numpy as np
 
-# OpenPhone API Credentials
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
-HEADERS = {
-    "Authorization": OPENPHONE_API_KEY,
-    "Content-Type": "application/json"
-}
+# Add these new visualization functions:
 
-def format_phone_number(phone_number):
-    try:
-        parsed = phonenumbers.parse(phone_number, "US")
-        if phonenumbers.is_valid_number(parsed):
-            return f"+{parsed.country_code}{parsed.national_number}"
-    except Exception as e:
-        st.error(f"Error parsing phone number: {e}")
-    return None
-
-def get_openphone_numbers():
-    url = "https://api.openphone.com/v1/phone-numbers"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code != 200:
-        st.error(f"Failed to fetch OpenPhone numbers: {response.text}")
-        return []
-    return response.json().get("data", [])
-
-def fetch_call_history(phone_number):
-    formatted_phone = format_phone_number(phone_number)
-    if not formatted_phone:
-        return []
+def create_communication_trend_chart(communications):
+    """Creates a trend chart showing communication patterns over time"""
+    df = pd.DataFrame(communications)
+    df['date'] = pd.to_datetime(df['time']).dt.date
     
-    all_calls = []
-    for op_number in get_openphone_numbers():
-        phone_number_id = op_number.get("id")
-        if phone_number_id:
-            url = "https://api.openphone.com/v1/calls"
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [formatted_phone],
-                "maxResults": 100
-            }
-            response = requests.get(url, headers=HEADERS, params=params)
-            if response.status_code == 200:
-                all_calls.extend(response.json().get("data", []))
-    return all_calls
+    # Count daily communications by type
+    daily_counts = df.groupby(['date', 'type']).size().reset_index(name='count')
+    
+    chart = alt.Chart(daily_counts).mark_line(point=True).encode(
+        x='date:T',
+        y='count:Q',
+        color='type:N',
+        tooltip=['date', 'type', 'count']
+    ).properties(
+        title='Daily Communication Trends',
+        width=700,
+        height=400
+    ).interactive()
+    
+    return chart
 
-def fetch_message_history(phone_number):
-    formatted_phone = format_phone_number(phone_number)
-    if not formatted_phone:
-        return []
+def create_hourly_distribution_chart(communications):
+    """Creates a heatmap showing communication patterns by hour and day of week"""
+    df = pd.DataFrame(communications)
+    df['hour'] = pd.to_datetime(df['time']).dt.hour
+    df['day_of_week'] = pd.to_datetime(df['time']).dt.day_name()
     
-    all_messages = []
-    for op_number in get_openphone_numbers():
-        phone_number_id = op_number.get("id")
-        if phone_number_id:
-            url = "https://api.openphone.com/v1/messages"
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [formatted_phone],
-                "maxResults": 100
-            }
-            response = requests.get(url, headers=HEADERS, params=params)
-            if response.status_code == 200:
-                all_messages.extend(response.json().get("data", []))
-    return all_messages
+    hourly_counts = df.groupby(['day_of_week', 'hour']).size().reset_index(name='count')
+    
+    # Order days of week correctly
+    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    hourly_counts['day_of_week'] = pd.Categorical(hourly_counts['day_of_week'], categories=days_order, ordered=True)
+    
+    heatmap = alt.Chart(hourly_counts).mark_rect().encode(
+        x=alt.X('hour:O', title='Hour of Day'),
+        y=alt.Y('day_of_week:O', title='Day of Week'),
+        color=alt.Color('count:Q', scale=alt.Scale(scheme='viridis')),
+        tooltip=['day_of_week', 'hour', 'count']
+    ).properties(
+        title='Communication Activity Heatmap',
+        width=700,
+        height=300
+    )
+    
+    return heatmap
 
-def calculate_response_times(communications):
-    response_times = []
-    sorted_comms = sorted(communications, key=lambda x: x['time'])
+def create_response_time_histogram(response_times):
+    """Creates a histogram of response times"""
+    if not response_times:
+        return None
+        
+    df = pd.DataFrame({'response_time': response_times})
     
-    for i in range(1, len(sorted_comms)):
-        if sorted_comms[i]['direction'] != sorted_comms[i-1]['direction']:
-            time_diff = (sorted_comms[i]['time'] - sorted_comms[i-1]['time']).total_seconds() / 60  # in minutes
-            response_times.append(time_diff)
+    histogram = alt.Chart(df).mark_bar().encode(
+        x=alt.X('response_time', bin=alt.Bin(maxbins=20), title='Response Time (minutes)'),
+        y=alt.Y('count()', title='Frequency'),
+        tooltip=['count()']
+    ).properties(
+        title='Response Time Distribution',
+        width=700,
+        height=300
+    )
     
-    return response_times
+    return histogram
+
+def create_direction_chart(communications):
+    """Creates a bar chart showing inbound vs outbound communications"""
+    df = pd.DataFrame(communications)
+    direction_counts = df.groupby(['type', 'direction']).size().reset_index(name='count')
+    
+    bars = alt.Chart(direction_counts).mark_bar().encode(
+        x='type:N',
+        y='count:Q',
+        color='direction:N',
+        tooltip=['type', 'direction', 'count']
+    ).properties(
+        title='Communication Direction Distribution',
+        width=700,
+        height=300
+    )
+    
+    return bars
+
+# Modify the display_metrics function to include these visualizations:
 
 def display_metrics(calls, messages):
     st.header("📊 Communication Metrics")
@@ -101,84 +110,82 @@ def display_metrics(calls, messages):
     with col4:
         st.metric("Outbound Calls", outbound_calls)
 
-    # Call Duration Metrics
-    st.subheader("📞 Call Analytics")
-    call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
-    if call_durations:
-        avg_duration = sum(call_durations) / len(call_durations)
-        max_duration = max(call_durations)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Average Call Duration (seconds)", f"{avg_duration:.1f}")
-        with col2:
-            st.metric("Longest Call (seconds)", max_duration)
+    # Prepare communications data
+    communications = []
+    for call in calls:
+        communications.append({
+            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
+            'type': 'Call',
+            'direction': call.get('direction'),
+            'duration': call.get('duration', 0)
+        })
+    
+    for message in messages:
+        communications.append({
+            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
+            'type': 'Message',
+            'direction': message.get('direction'),
+            'content': message.get('content', '')
+        })
 
-    # Message Analytics
-    st.subheader("💬 Message Analytics")
-    message_lengths = [len(m.get('content', '')) for m in messages if m.get('content')]
-    if message_lengths:
-        avg_length = sum(message_lengths) / len(message_lengths)
-        st.metric("Average Message Length (characters)", f"{avg_length:.1f}")
+    # Communication Trends
+    st.subheader("📈 Communication Trends")
+    trend_chart = create_communication_trend_chart(communications)
+    st.altair_chart(trend_chart, use_container_width=True)
+
+    # Activity Heatmap
+    st.subheader("🗓️ Activity Patterns")
+    heatmap = create_hourly_distribution_chart(communications)
+    st.altair_chart(heatmap, use_container_width=True)
+
+    # Direction Distribution
+    st.subheader("↔️ Communication Direction")
+    direction_chart = create_direction_chart(communications)
+    st.altair_chart(direction_chart, use_container_width=True)
+
+    # Call Duration Analysis
+    if calls:
+        st.subheader("⏱️ Call Duration Analysis")
+        call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
+        if call_durations:
+            df_durations = pd.DataFrame({'duration': call_durations})
+            duration_chart = alt.Chart(df_durations).mark_bar().encode(
+                x=alt.X('duration', bin=alt.Bin(maxbins=20), title='Duration (seconds)'),
+                y='count()',
+                tooltip=['count()']
+            ).properties(
+                title='Call Duration Distribution',
+                width=700,
+                height=300
+            )
+            st.altair_chart(duration_chart, use_container_width=True)
 
     # Response Time Analysis
-    communications = []
-    for call in calls:
-        communications.append({
-            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
-            'type': 'Call',
-            'direction': call.get('direction')
-        })
-    for message in messages:
-        communications.append({
-            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
-            'type': 'Message',
-            'direction': message.get('direction')
-        })
-    
+    st.subheader("⌛ Response Time Analysis")
     response_times = calculate_response_times(communications)
     if response_times:
-        avg_response_time = sum(response_times) / len(response_times)
-        st.metric("Average Response Time (minutes)", f"{avg_response_time:.1f}")
+        response_chart = create_response_time_histogram(response_times)
+        if response_chart:
+            st.altair_chart(response_chart, use_container_width=True)
 
-def display_timeline(calls, messages):
-    st.header("📅 Communication Timeline")
-    
-    # Combine and sort communications
-    communications = []
-    
-    for call in calls:
-        communications.append({
-            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
-            'type': 'Call',
-            'direction': call.get('direction', 'unknown'),
-            'duration': call.get('duration', 'N/A'),
-            'status': call.get('status', 'unknown')
-        })
-    
-    for message in messages:
-        communications.append({
-            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
-            'type': 'Message',
-            'direction': message.get('direction', 'unknown'),
-            'content': message.get('content', 'No content'),
-            'status': message.get('status', 'unknown')
-        })
-    
-    # Sort by time
-    communications.sort(key=lambda x: x['time'], reverse=True)
-    
-    for comm in communications:
-        time_str = comm['time'].strftime("%Y-%m-%d %H:%M")
-        icon = "📞" if comm['type'] == "Call" else "💬"
-        direction_icon = "⬅️" if comm['direction'] == "inbound" else "➡️"
-        
-        with st.expander(f"{icon} {direction_icon} {time_str}"):
-            if comm['type'] == "Call":
-                st.write(f"**Duration:** {comm['duration']} seconds")
-            else:
-                st.write(f"**Message:** {comm['content']}")
-            st.write(f"**Status:** {comm['status']}")
+    # Message Length Analysis
+    if messages:
+        st.subheader("📝 Message Length Analysis")
+        message_lengths = [len(m.get('content', '')) for m in messages if m.get('content')]
+        if message_lengths:
+            df_lengths = pd.DataFrame({'length': message_lengths})
+            length_chart = alt.Chart(df_lengths).mark_bar().encode(
+                x=alt.X('length', bin=alt.Bin(maxbins=20), title='Message Length (characters)'),
+                y='count()',
+                tooltip=['count()']
+            ).properties(
+                title='Message Length Distribution',
+                width=700,
+                height=300
+            )
+            st.altair_chart(length_chart, use_container_width=True)
+
+# Update the main display_history function to include a new tab for analytics:
 
 def display_history(phone_number):
     st.title(f"📱 Communication History for {phone_number}")
@@ -192,48 +199,61 @@ def display_history(phone_number):
         return
 
     # Display all sections in tabs
-    tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📅 Timeline", "📋 Details"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Analytics", "📅 Timeline", "📋 Details"])
     
     with tab1:
         display_metrics(calls, messages)
     
     with tab2:
-        display_timeline(calls, messages)
+        display_detailed_analytics(calls, messages)
     
     with tab3:
-        st.header("Detailed History")
-        show_calls = st.checkbox("Show Calls", True)
-        show_messages = st.checkbox("Show Messages", True)
-        
-        if show_calls:
-            st.subheader("📞 Calls")
-            for call in sorted(calls, key=lambda x: x['createdAt'], reverse=True):
-                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
-                direction = "Incoming" if call.get('direction') == 'inbound' else "Outgoing"
-                st.write(f"**{call_time}** - {direction} call ({call.get('duration', 'N/A')} seconds)")
-        
-        if show_messages:
-            st.subheader("💬 Messages")
-            for message in sorted(messages, key=lambda x: x['createdAt'], reverse=True):
-                message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
-                direction = "Received" if message.get('direction') == 'inbound' else "Sent"
-                st.write(f"**{message_time}** - {direction}: {message.get('content', 'No content')}")
+        display_timeline(calls, messages)
+    
+    with tab4:
+        display_detailed_history(calls, messages)
 
-def main():
-    st.set_page_config(
-        page_title="Communication History",
-        page_icon="📱",
-        layout="wide"
+def display_detailed_analytics(calls, messages):
+    st.header("📊 Detailed Analytics")
+    
+    # Add any additional detailed analytics you want to show here
+    # This could include more specific breakdowns, correlations, etc.
+    
+    # Example: Communication patterns by day of week
+    communications = prepare_communications_data(calls, messages)
+    df = pd.DataFrame(communications)
+    df['day_of_week'] = pd.to_datetime(df['time']).dt.day_name()
+    
+    daily_pattern = alt.Chart(df).mark_bar().encode(
+        x='day_of_week:N',
+        y='count()',
+        color='type:N',
+        tooltip=['day_of_week', 'type', 'count()']
+    ).properties(
+        title='Communication Patterns by Day of Week',
+        width=700,
+        height=300
     )
+    
+    st.altair_chart(daily_pattern, use_container_width=True)
 
-    # Get phone number from URL parameter
-    query_params = st.experimental_get_query_params()
-    phone_number = query_params.get("phone", [""])[0]
-
-    if phone_number:
-        display_history(phone_number)
-    else:
-        st.error("Please provide a phone number in the URL using ?phone=PHONENUMBER")
-
-if __name__ == "__main__":
-    main()
+def prepare_communications_data(calls, messages):
+    """Helper function to prepare communications data for analysis"""
+    communications = []
+    for call in calls:
+        communications.append({
+            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
+            'type': 'Call',
+            'direction': call.get('direction'),
+            'duration': call.get('duration', 0)
+        })
+    
+    for message in messages:
+        communications.append({
+            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
+            'type': 'Message',
+            'direction': message.get('direction'),
+            'content': message.get('content', '')
+        })
+    
+    return communications
