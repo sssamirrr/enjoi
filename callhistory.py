@@ -1,62 +1,84 @@
-# callhistory.py
 import streamlit as st
 import requests
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
+import phonenumbers
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import calendar
 
+# OpenPhone API Credentials
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
 
-def fetch_call_history(phone_number):
-    calls_url = "https://api.openphone.com/v1/calls"
-    params = {"participants": [phone_number], "maxResults": 50}
-    try:
-        response = requests.get(calls_url, headers=HEADERS, params=params)
-        if response.status_code == 200:
-            return response.json().get("data", [])
-        else:
-            st.error(f"Failed to fetch call history: {response.status_code}")
-            return []
-    except Exception as e:
-        st.error(f"Error fetching call history: {str(e)}")
-        return []
+# [Keep all your existing functions for API calls]
 
-def run_call_history_page():
-    st.title("Call History Viewer")
-
-    # Retrieve the phone number from query parameters
-    phone_number = st.experimental_get_query_params().get("phone", [None])[0]
-    if not phone_number:
-        st.error("No phone number provided!")
-        return
-
-    st.subheader(f"Call History for {phone_number}")
-    call_history = fetch_call_history(phone_number)
-
-    if not call_history:
-        st.warning("No call history found for this number.")
-        return
-
-    # Display Call Statistics
-    total_calls = len(call_history)
-    total_duration = sum(call.get("duration", 0) for call in call_history)
-    average_duration = total_duration / total_calls if total_calls > 0 else 0
-
-    st.metric("Total Calls", total_calls)
-    st.metric("Total Duration (seconds)", total_duration)
-    st.metric("Average Call Duration (seconds)", round(average_duration, 2))
-
-    # Display Call Details
-    st.subheader("Call Details")
+def create_communication_dataframe(call_history, message_history):
+    """Create a DataFrame from call and message history."""
+    calls_data = []
     for call in call_history:
-        with st.expander(f"Call on {datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')}"):
-            st.write(f"**Type**: {call['type']}")
-            st.write(f"**Duration**: {call['duration']} seconds")
-            st.write(f"**Participants**: {', '.join(call['participants'])}")
-            st.write("---")
+        calls_data.append({
+            'timestamp': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
+            'type': 'Call',
+            'direction': call.get('direction', 'unknown'),
+            'duration': call.get('duration', 0),
+            'status': call.get('status', 'unknown'),
+            'hour': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).hour,
+            'day': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%A')
+        })
+    
+    messages_data = []
+    for message in message_history:
+        messages_data.append({
+            'timestamp': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
+            'type': 'Message',
+            'direction': message.get('direction', 'unknown'),
+            'content': message.get('content', ''),
+            'status': message.get('status', 'unknown'),
+            'hour': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).hour,
+            'day': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%A')
+        })
+    
+    df = pd.DataFrame(calls_data + messages_data)
+    df = df.sort_values('timestamp', ascending=False)
+    return df
 
-if __name__ == "__main__":
-    st.set_page_config(page_title="Call History", layout="wide")
-    run_call_history_page()
+def display_analytics(df):
+    """Display analytics dashboard."""
+    st.header("Communication Analytics")
+    
+    # Create columns for key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_calls = len(df[df['type'] == 'Call'])
+        st.metric("Total Calls", total_calls)
+    
+    with col2:
+        total_messages = len(df[df['type'] == 'Message'])
+        st.metric("Total Messages", total_messages)
+    
+    with col3:
+        inbound = len(df[df['direction'] == 'inbound'])
+        st.metric("Inbound Communications", inbound)
+    
+    with col4:
+        outbound = len(df[df['direction'] == 'outbound'])
+        st.metric("Outbound Communications", outbound)
+
+    # Create heatmap using Plotly
+    st.subheader("Communication Heatmap")
+    pivot_table = pd.pivot_table(
+        df,
+        values='timestamp',
+        index='day',
+        columns='hour',
+        aggfunc='count',
+        fill_value=0
+    )
+    
+    #
