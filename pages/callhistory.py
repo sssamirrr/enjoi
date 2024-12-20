@@ -4,10 +4,11 @@ from datetime import datetime
 import phonenumbers
 
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
-HEADERS = {
-    "Authorization": OPENPHONE_API_KEY",
+HEADERS = { 
+    "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
+
 
 # Function to validate and format phone number to E.164
 def format_phone_number(phone):
