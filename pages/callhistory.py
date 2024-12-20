@@ -7,7 +7,7 @@ import altair as alt
 import numpy as np
 
 # API Configuration
-OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
@@ -66,7 +66,6 @@ def fetch_message_history(phone_number):
     return all_messages
 
 def fetch_call_transcript(call_id):
-    # Fetch transcript for a given call ID
     url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
     response = requests.get(url, headers=HEADERS)
     if response.status_code == 200:
@@ -76,7 +75,6 @@ def fetch_call_transcript(call_id):
     return None
 
 def create_communication_metrics(calls, messages):
-    # Basic metrics
     total_calls = len(calls)
     total_messages = len(messages)
     inbound_calls = [c for c in calls if c.get('direction') == 'inbound']
@@ -84,15 +82,13 @@ def create_communication_metrics(calls, messages):
     inbound_messages = [m for m in messages if m.get('direction') == 'inbound']
     outbound_messages = [m for m in messages if m.get('direction') == 'outbound']
 
-    # Count voicemail calls (assuming status = "voicemail" indicates a voicemail-ended call)
+    # Count voicemail calls
     voicemail_calls = [c for c in inbound_calls if c.get('status') == 'voicemail']
 
-    # Calculate call durations
     call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
     avg_duration = np.mean(call_durations) if call_durations else 0
     max_duration = max(call_durations) if call_durations else 0
 
-    # Message lengths
     message_lengths = [len(str(m.get('content', ''))) for m in messages if m.get('content')]
     avg_message_length = np.mean(message_lengths) if message_lengths else 0
 
@@ -174,7 +170,6 @@ def create_hourly_heatmap(communications):
     return heatmap
 
 def display_communications_analysis(calls, messages):
-    # Prepare combined communications data
     communications = []
     
     for call in calls:
@@ -192,17 +187,14 @@ def display_communications_analysis(calls, messages):
             'direction': message.get('direction')
         })
 
-    # Time series chart
     st.subheader("📈 Communication Trends")
     time_series = create_time_series_chart(communications)
     st.altair_chart(time_series, use_container_width=True)
 
-    # Activity heatmap
     st.subheader("🗓️ Activity Patterns")
     heatmap = create_hourly_heatmap(communications)
     st.altair_chart(heatmap, use_container_width=True)
 
-    # Call duration distribution
     if calls:
         st.subheader("⏱️ Call Duration Distribution")
         call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
@@ -221,9 +213,7 @@ def display_communications_analysis(calls, messages):
 def display_timeline(calls, messages):
     st.subheader("📅 Communication Timeline")
     
-    # Combine and sort all communications
     timeline = []
-    
     for call in calls:
         timeline.append({
             'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
@@ -246,7 +236,6 @@ def display_timeline(calls, messages):
             'participants': message.get('participants', [])
         })
     
-    # Sort by time
     timeline.sort(key=lambda x: x['time'], reverse=True)
     
     for item in timeline:
@@ -290,8 +279,7 @@ def main():
 
     st.title("📱 Communication Analytics Dashboard")
 
-    # Get phone number from URL parameter or input
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     phone_number = query_params.get("phone", [""])[0]
     
     if not phone_number:
@@ -306,7 +294,6 @@ def main():
                 st.warning("No communication history found for this number.")
                 return
 
-            # Create tabs
             tab1, tab2, tab3 = st.tabs(["📊 Overview", "📈 Analysis", "📅 Timeline"])
 
             with tab1:
