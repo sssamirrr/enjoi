@@ -127,7 +127,8 @@ def run_call_history_page():
     Run the Streamlit app for call history viewer.
     """
     st.set_page_config(page_title="Call History Viewer", layout="wide")
-    phone_number = st.experimental_get_query_params().get("phone", [None])[0]
+    phone_number = st.query_params.get("phone", [None])[0]
+
 
     if not phone_number:
         st.error("No phone number provided!")
