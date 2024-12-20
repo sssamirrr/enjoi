@@ -7,7 +7,6 @@ import altair as alt
 import numpy as np
 
 # API Configuration
-# OpenPhone API Credentials
 OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
@@ -80,10 +79,13 @@ def create_communication_metrics(calls, messages):
     # Basic metrics
     total_calls = len(calls)
     total_messages = len(messages)
-    inbound_calls = len([c for c in calls if c.get('direction') == 'inbound'])
-    outbound_calls = len([c for c in calls if c.get('direction') == 'outbound'])
-    inbound_messages = len([m for m in messages if m.get('direction') == 'inbound'])
-    outbound_messages = len([m for m in messages if m.get('direction') == 'outbound'])
+    inbound_calls = [c for c in calls if c.get('direction') == 'inbound']
+    outbound_calls = [c for c in calls if c.get('direction') == 'outbound']
+    inbound_messages = [m for m in messages if m.get('direction') == 'inbound']
+    outbound_messages = [m for m in messages if m.get('direction') == 'outbound']
+
+    # Count voicemail calls (assuming status = "voicemail" indicates a voicemail-ended call)
+    voicemail_calls = [c for c in inbound_calls if c.get('status') == 'voicemail']
 
     # Calculate call durations
     call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
@@ -97,17 +99,18 @@ def create_communication_metrics(calls, messages):
     return {
         'total_calls': total_calls,
         'total_messages': total_messages,
-        'inbound_calls': inbound_calls,
-        'outbound_calls': outbound_calls,
-        'inbound_messages': inbound_messages,
-        'outbound_messages': outbound_messages,
+        'inbound_calls': len(inbound_calls),
+        'outbound_calls': len(outbound_calls),
+        'inbound_messages': len(inbound_messages),
+        'outbound_messages': len(outbound_messages),
         'avg_call_duration': avg_duration,
         'max_call_duration': max_duration,
-        'avg_message_length': avg_message_length
+        'avg_message_length': avg_message_length,
+        'voicemail_calls': len(voicemail_calls)
     }
 
 def display_metrics_dashboard(metrics):
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("Total Calls", metrics['total_calls'])
@@ -123,6 +126,9 @@ def display_metrics_dashboard(metrics):
         st.metric("Avg Call Duration (sec)", f"{metrics['avg_call_duration']:.1f}")
         st.metric("Max Call Duration (sec)", f"{metrics['max_call_duration']:.1f}")
         st.metric("Avg Message Length", f"{metrics['avg_message_length']:.1f}")
+    
+    with col4:
+        st.metric("Voicemail Calls (Inbound)", metrics['voicemail_calls'])
 
 def create_time_series_chart(communications):
     df = pd.DataFrame(communications)
@@ -226,7 +232,6 @@ def display_timeline(calls, messages):
             'duration': call.get('duration', 'N/A'),
             'status': call.get('status', 'unknown'),
             'id': call.get('id'),
-            # Assuming 'from' and 'to' fields or 'participants' are available in the call object:
             'participants': call.get('participants', [])
         })
     
@@ -238,26 +243,22 @@ def display_timeline(calls, messages):
             'content': message.get('content', 'No content'),
             'status': message.get('status', 'unknown'),
             'id': message.get('id'),
-            # Participants for messages may differ, adapt as needed
             'participants': message.get('participants', [])
         })
     
     # Sort by time
     timeline.sort(key=lambda x: x['time'], reverse=True)
     
-    # Display timeline
     for item in timeline:
         time_str = item['time'].strftime("%Y-%m-%d %H:%M")
         icon = "📞" if item['type'] == "Call" else "💬"
         direction_icon = "⬅️" if item['direction'] == "inbound" else "➡️"
         
         with st.expander(f"{icon} {direction_icon} {time_str}"):
-            # Show participants information (phone numbers or names if available)
             participants = item.get('participants', [])
             if participants:
                 st.write("**Participants:**")
                 for p in participants:
-                    # Assuming participant object has 'phoneNumber' and possibly 'name'
                     p_number = p.get('phoneNumber', 'Unknown')
                     p_name = p.get('name', '')
                     display_str = p_name + f" ({p_number})" if p_name else p_number
@@ -266,7 +267,6 @@ def display_timeline(calls, messages):
             if item['type'] == "Call":
                 st.write(f"**Duration:** {item['duration']} seconds")
                 
-                # Attempt to fetch and display transcript link if available
                 transcript = fetch_call_transcript(item['id'])
                 if transcript and transcript.get('dialogue'):
                     with st.expander("View Transcript"):
@@ -277,11 +277,8 @@ def display_timeline(calls, messages):
                             end = seg.get('end', 0)
                             st.write(f"**{speaker}** [{start}s - {end}s]: {content}")
                 else:
-                    # If no transcript is available or in progress, show status
-                    # The transcript status could be in transcript['status'] if needed
                     st.write("Transcript not available or in progress.")
             else:
-                # It's a message
                 st.write(f"**Message:** {item['content']}")
             
             st.write(f"**Status:** {item['status']}")
@@ -309,7 +306,7 @@ def main():
                 st.warning("No communication history found for this number.")
                 return
 
-            # Create tabs for different views
+            # Create tabs
             tab1, tab2, tab3 = st.tabs(["📊 Overview", "📈 Analysis", "📅 Timeline"])
 
             with tab1:
