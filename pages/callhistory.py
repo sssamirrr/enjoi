@@ -31,7 +31,6 @@ def get_openphone_numbers():
     return response.json().get("data", [])
 
 def create_phone_name_map():
-    """Create a dictionary mapping from phoneNumber to name (if available) for your OpenPhone numbers."""
     numbers = get_openphone_numbers()
     phone_name_map = {}
     for num in numbers:
@@ -87,7 +86,7 @@ def calculate_response_times(communications):
     
     for i in range(1, len(sorted_comms)):
         if sorted_comms[i]['direction'] != sorted_comms[i-1]['direction']:
-            time_diff = (sorted_comms[i]['time'] - sorted_comms[i-1]['time']).total_seconds() / 60  # in minutes
+            time_diff = (sorted_comms[i]['time'] - sorted_comms[i-1]['time']).total_seconds() / 60
             response_times.append(time_diff)
     
     return response_times
@@ -95,7 +94,6 @@ def calculate_response_times(communications):
 def display_metrics(calls, messages):
     st.header("📊 Communication Metrics")
     
-    # Basic Metrics
     col1, col2, col3, col4, col5 = st.columns(5)
     
     total_calls = len(calls)
@@ -115,7 +113,6 @@ def display_metrics(calls, messages):
     with col5:
         st.metric("Inbound Voicemails", len(inbound_voicemails))
 
-    # Call Duration Metrics
     st.subheader("📞 Call Analytics")
     call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
     if call_durations:
@@ -128,14 +125,12 @@ def display_metrics(calls, messages):
         with col2:
             st.metric("Longest Call (seconds)", max_duration)
 
-    # Message Analytics
     st.subheader("💬 Message Analytics")
     message_lengths = [len(m.get('content', '')) for m in messages if m.get('content')]
     if message_lengths:
         avg_length = sum(message_lengths) / len(message_lengths)
         st.metric("Average Message Length (characters)", f"{avg_length:.1f}")
 
-    # Response Time Analysis
     communications = []
     for call in calls:
         communications.append({
@@ -165,13 +160,11 @@ def fetch_call_transcript(call_id):
 def display_timeline(calls, messages):
     st.header("📅 Communication Timeline")
 
-    # Create a map from phoneNumber -> name for your known OpenPhone numbers
     phone_name_map = create_phone_name_map()
 
     def get_display_name(phone_num):
         return phone_name_map.get(phone_num, phone_num)
 
-    # Combine and sort communications
     communications = []
     
     for call in calls:
@@ -196,12 +189,8 @@ def display_timeline(calls, messages):
             'direction': message.get('direction', 'unknown'),
             'content': message.get('content', 'No content'),
             'status': message.get('status', 'unknown'),
-            # For messages, we can try to identify who is agent and who is guest:
-            # If direction = inbound => guest texted
-            # If direction = outbound => we (agent) texted
         })
     
-    # Sort by time
     communications.sort(key=lambda x: x['time'], reverse=True)
     
     for comm in communications:
@@ -211,13 +200,11 @@ def display_timeline(calls, messages):
         
         with st.expander(f"{icon} {direction_icon} {time_str}"):
             if comm['type'] == "Call":
-                # Display agent/guest names
                 from_name = get_display_name(comm['from'])
                 to_name = get_display_name(comm['to'])
                 st.write(f"**Who Called:** {from_name} to {to_name}")
                 st.write(f"**Duration:** {comm['duration']} seconds")
                 
-                # Fetch transcript and show summary
                 transcript_data = fetch_call_transcript(comm['id'])
                 if transcript_data and transcript_data.get('dialogue'):
                     all_contents = " ".join([seg.get('content', '') for seg in transcript_data['dialogue']])
@@ -225,8 +212,8 @@ def display_timeline(calls, messages):
                     st.write("**Transcript Summary:**")
                     st.write(summary)
                     
-                    # Add a checkbox to show full transcript
-                    show_full = st.checkbox("Show Full Transcript")
+                    # Add a unique key for each checkbox to avoid duplicate element ID
+                    show_full = st.checkbox("Show Full Transcript", key=f"full_transcript_{comm['id']}")
                     if show_full:
                         for seg in transcript_data['dialogue']:
                             speaker = seg.get('identifier', 'Unknown')
@@ -234,15 +221,9 @@ def display_timeline(calls, messages):
                 else:
                     st.write("Transcript not available or in progress.")
             else:
-                # If message, show who texted with agent or guest name if available
                 if comm['direction'] == 'inbound':
-                    # Guest texted
                     st.write("**Who Texted:** Guest texted")
                 else:
-                    # We (Agent) texted - display the agent name if we have a known number
-                    # We don't have direct from/to on messages. If needed, adapt if message includes participants.
-                    # Here we assume outbound means from the agent:
-                    # If you have participants field in messages, you can identify agent number similarly.
                     st.write("**Who Texted:** We (Agent) texted")
                 st.write(f"**Message:** {comm.get('content', 'No content')}")
             st.write(f"**Status:** {comm['status']}")
@@ -258,7 +239,6 @@ def display_history(phone_number):
         st.warning("No communication history found for this number.")
         return
 
-    # Display all sections in tabs
     tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📅 Timeline", "📋 Details"])
     
     with tab1:
