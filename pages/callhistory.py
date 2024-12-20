@@ -22,7 +22,6 @@ def format_phone_number(phone):
 
 # Fetch Call History from OpenPhone API
 def fetch_call_history(phone_number):
-    # Format the phone number to E.164 format
     formatted_phone = format_phone_number(phone_number)
     if not formatted_phone:
         st.error(f"Invalid phone number: {phone_number}. Please provide a valid E.164 format number.")
@@ -39,7 +38,7 @@ def fetch_call_history(phone_number):
             return response.json().get("data", [])
         else:
             st.error(f"Failed to fetch call history: {response.status_code}")
-            st.write(f"API Response: {response.text}")  # Debugging
+            st.write(f"API Response: {response.text}")
             return []
     except Exception as e:
         st.error(f"Error fetching call history: {str(e)}")
@@ -50,7 +49,11 @@ def run_call_history_page():
     st.title("Call History Viewer")
 
     # Retrieve the phone number from query parameters
-    phone_number = st.query_params.get("phone", [None])[0]
+    query_params = st.query_params
+    phone_number = query_params.get("phone", None)
+    if phone_number:
+        phone_number = phone_number[0] if isinstance(phone_number, list) else phone_number
+
     st.write(f"Retrieved Phone Number: {phone_number}")  # Debugging
 
     if not phone_number:
