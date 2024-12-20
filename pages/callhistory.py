@@ -5,7 +5,7 @@ import phonenumbers
 
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
-    "Authorization": f"Bearer {OPENPHONE_API_KEY}",
+    "Authorization": OPENPHONE_API_KEY",
     "Content-Type": "application/json"
 }
 
