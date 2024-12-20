@@ -6,12 +6,12 @@ from datetime import datetime
 import gspread
 from google.oauth2 import service_account
 import time
-from urllib.parse import urlparse, parse_qs  # For query parameters
+from urllib.parse import quote  # For URL encoding
 
 # Import the callhistory module
 import callhistory
 
-# Securely load your OpenPhone API Key from Streamlit secrets
+# Securely load your OpenPhone API Key and other secrets
 OPENPHONE_API_KEY = st.secrets["openphone_api"]["api_key"]
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
@@ -50,7 +50,7 @@ def get_owner_sheet_data():
         df['last_date'] = None
         df['total_messages'] = 0
         df['total_calls'] = 0
-        df['Call History'] = None  # New column for call history link
+        df['Call History'] = ""  # Initialize with empty strings
 
         df['Select'] = False  # Selection column
         df = df[['Select'] + [col for col in df.columns if col != 'Select']]  # Move Select to first column
@@ -101,24 +101,26 @@ def run_owner_marketing_tab(owner_df):
     # Display Table
     st.subheader("Owner Data")
 
-    # Ensure 'Call History' is up-to-date
-    def format_call_history_link(row):
-        if pd.notnull(row['Call History']):
-            return f"[View Call History]({row['Call History']})"
-        else:
-            return "N/A"
-
-    if 'Call History' in filtered_df.columns:
-        filtered_df['Call History'] = filtered_df.apply(format_call_history_link, axis=1)
-
     # Configure columns for st.data_editor
     column_config = {
         "Select": st.column_config.CheckboxColumn("Select"),
-        "Call History": st.column_config.LinkColumn("Call History")
+        "Call History": st.column_config.LinkColumn(
+            label="Call History",
+            display_text="View Call History",
+            help="Click to view call history for this number"
+        )
     }
 
+    # Ensure that 'Call History' column contains URLs (or empty strings)
+    filtered_df['Call History'] = filtered_df['Call History'].fillna('')
+
     # Display the data editor
-    edited_df = st.data_editor(filtered_df, use_container_width=True, column_config=column_config, key='data_editor')
+    edited_df = st.data_editor(
+        filtered_df,
+        column_config=column_config,
+        use_container_width=True,
+        key='data_editor'
+    )
 
     # Communication Updates
     if st.button("Update Communication Info", key="update_button"):
@@ -132,7 +134,7 @@ def run_owner_marketing_tab(owner_df):
                     comm_data = callhistory.get_communication_info(phone_number, HEADERS)
                     for key, value in comm_data.items():
                         # Update both DataFrames
-                        filtered_df.at[idx, key] = value
+                        edited_df.at[idx, key] = value
                         st.session_state.working_df.at[idx, key] = value
 
             st.success("Communication info updated!")
