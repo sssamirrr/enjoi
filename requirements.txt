@@ -11,3 +11,4 @@ pgeocode
 requests
 altair
 numpy
+python-dateutil
