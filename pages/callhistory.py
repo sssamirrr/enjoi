@@ -21,17 +21,17 @@ def format_phone_number(phone_number):
         st.error(f"Error parsing phone number: {e}")
     return None
 
-def rate_limited_request(url, headers, params):
-    """Make API request with rate limiting."""
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code == 429:  # Rate limited
-            time.sleep(1)  # Wait and retry
-            return rate_limited_request(url, headers, params)
-        return response.json()
-    except Exception as e:
-        st.error(f"Request failed: {e}")
-        return None
+def get_openphone_numbers():
+    """Get all OpenPhone numbers associated with the account."""
+    url = "https://api.openphone.com/v1/phone-numbers"
+    response = requests.get(url, headers=HEADERS)
+    
+    if response.status_code != 200:
+        st.error(f"Failed to fetch OpenPhone numbers: {response.text}")
+        return []
+    
+    data = response.json()
+    return data.get("data", [])
 
 def fetch_call_history(phone_number):
     """Fetch call history for a given external phone number."""
@@ -39,23 +39,30 @@ def fetch_call_history(phone_number):
     if not formatted_phone:
         return []
 
-    url = "https://api.openphone.com/v1/calls"
-    params = {
-        "participants": [formatted_phone],
-        "maxResults": 50
-    }
+    all_calls = []
+    openphone_numbers = get_openphone_numbers()
     
-    st.write(f"Making API call to {url} with params: {params}")
-    response = requests.get(url, headers=HEADERS, params=params)
-    
-    if response.status_code != 200:
-        st.write(f"API Error: {response.status_code}")
-        st.write(f"Response: {response.text}")
-        st.write(f"\nFailed to fetch call history for {formatted_phone}.")
-        return []
+    for op_number in openphone_numbers:
+        phone_number_id = op_number.get("id")
+        if not phone_number_id:
+            continue
 
-    data = response.json()
-    return data.get("data", [])
+        url = "https://api.openphone.com/v1/calls"
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [formatted_phone],
+            "maxResults": 50
+        }
+        
+        response = requests.get(url, headers=HEADERS, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            all_calls.extend(data.get("data", []))
+        else:
+            st.write(f"Error fetching calls for {phone_number_id}: {response.text}")
+
+    return all_calls
 
 def fetch_message_history(phone_number):
     """Fetch message history for a given external phone number."""
@@ -63,23 +70,30 @@ def fetch_message_history(phone_number):
     if not formatted_phone:
         return []
 
-    url = "https://api.openphone.com/v1/messages"
-    params = {
-        "participants": [formatted_phone],
-        "maxResults": 50
-    }
+    all_messages = []
+    openphone_numbers = get_openphone_numbers()
     
-    st.write(f"Making API call to {url} with params: {params}")
-    response = requests.get(url, headers=HEADERS, params=params)
-    
-    if response.status_code != 200:
-        st.write(f"API Error: {response.status_code}")
-        st.write(f"Response: {response.text}")
-        st.write(f"\nFailed to fetch message history for {formatted_phone}.")
-        return []
+    for op_number in openphone_numbers:
+        phone_number_id = op_number.get("id")
+        if not phone_number_id:
+            continue
 
-    data = response.json()
-    return data.get("data", [])
+        url = "https://api.openphone.com/v1/messages"
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [formatted_phone],
+            "maxResults": 50
+        }
+        
+        response = requests.get(url, headers=HEADERS, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            all_messages.extend(data.get("data", []))
+        else:
+            st.write(f"Error fetching messages for {phone_number_id}: {response.text}")
+
+    return all_messages
 
 def display_history(phone_number):
     """Display call and message history."""
@@ -94,10 +108,7 @@ def display_history(phone_number):
     # Display Calls
     st.header("Call History")
     if call_history:
-        for call in call_history:
-            # Debug the call data structure
-            st.write("Call Data:", call)  # This will help us see the actual structure
-            
+        for call in sorted(call_history, key=lambda x: x['createdAt'], reverse=True):
             try:
                 call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
                 with st.expander(f"Call on {call_time}"):
@@ -115,7 +126,7 @@ def display_history(phone_number):
     # Display Messages
     st.header("Message History")
     if message_history:
-        for message in message_history:
+        for message in sorted(message_history, key=lambda x: x['createdAt'], reverse=True):
             try:
                 message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
                 with st.expander(f"Message on {message_time}"):
