@@ -63,7 +63,7 @@ def run_owner_marketing_tab(owner_df):
 
     # Filters
     st.subheader("Filters")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         selected_states = st.multiselect("Select States", owner_df['State'].dropna().unique())
     with col2:
@@ -92,6 +92,12 @@ def run_owner_marketing_tab(owner_df):
             st.error(f"An error occurred while initializing the date input: {e}")
             date_range = [date.today(), date.today()]
 
+    with col3:
+        if 'FICO Score' in owner_df.columns:
+            fico_min = int(owner_df['FICO Score'].min())
+            fico_max = int(owner_df['FICO Score'].max())
+            fico_range = st.slider("Filter by FICO Score", fico_min, fico_max, (fico_min, fico_max))
+
     # Apply Filters
     filtered_df = owner_df.copy()
     if selected_states:
@@ -99,9 +105,16 @@ def run_owner_marketing_tab(owner_df):
     if date_range:
         filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) &
                                   (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
+    if 'FICO Score' in owner_df.columns and 'fico_range' in locals():
+        filtered_df = filtered_df[(filtered_df['FICO Score'] >= fico_range[0]) &
+                                  (filtered_df['FICO Score'] <= fico_range[1])]
 
     # Display Table
     st.subheader("Owner Data")
+    if 'Select' in filtered_df.columns:
+        cols = ['Select'] + [col for col in filtered_df.columns if col != 'Select']
+        filtered_df = filtered_df[cols]
+
     st.data_editor(
         filtered_df,
         use_container_width=True,
@@ -132,7 +145,6 @@ def run_text_marketing_tab(owner_df):
                     st.write(f"Message sent to {formatted_phone}: {message}")
                 else:
                     st.error(f"Invalid phone number: {phone_number}")
-
 
 def run_minimal_app():
     owner_df = get_owner_sheet_data()
