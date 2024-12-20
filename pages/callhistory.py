@@ -12,7 +12,7 @@ HEADERS = {
 # Function to validate and format phone number to E.164
 def format_phone_number(phone):
     try:
-        parsed_phone = phonenumbers.parse(phone, "US")  # Assuming US as default region
+        parsed_phone = phonenumbers.parse(phone, "US")  # Assuming "US" as default region
         if phonenumbers.is_valid_number(parsed_phone):
             return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
         else:
@@ -50,7 +50,9 @@ def run_call_history_page():
     st.title("Call History Viewer")
 
     # Retrieve the phone number from query parameters
-    phone_number = st.query_params.get("phone", [None])[0]  # Updated for st.query_params
+    phone_number = st.query_params.get("phone", [None])[0]
+    st.write(f"Retrieved Phone Number: {phone_number}")  # Debugging
+
     if not phone_number:
         st.error("No phone number provided!")
         return
