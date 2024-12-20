@@ -1,7 +1,7 @@
 # main_app.py
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 import phonenumbers
 from google.oauth2 import service_account
 import gspread
@@ -67,9 +67,17 @@ def run_owner_marketing_tab(owner_df):
     with col1:
         selected_states = st.multiselect("Select States", owner_df['State'].dropna().unique())
     with col2:
+        # Ensure `Sale Date` column has valid datetime values and handle missing or invalid data
+        if not owner_df['Sale Date'].isnull().all():
+            min_date = owner_df['Sale Date'].min().date() if not pd.isnull(owner_df['Sale Date'].min()) else date.today()
+            max_date = owner_df['Sale Date'].max().date() if not pd.isnull(owner_df['Sale Date'].max()) else date.today()
+        else:
+            min_date = date.today()
+            max_date = date.today()
+
         date_range = st.date_input(
             "Sale Date Range",
-            [owner_df['Sale Date'].min(), owner_df['Sale Date'].max()]
+            [min_date, max_date]
         )
 
     # Apply Filters
