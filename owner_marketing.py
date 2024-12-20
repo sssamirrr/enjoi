@@ -194,6 +194,23 @@ def run_owner_marketing_tab(owner_df):
                 
                 st.success("Communication info updated!")
                 st.rerun()
+# Map Visualization
+if st.button("Show Owners on Map", key="map_button"):
+    try:
+        # Ensure the dataframe has Zip Codes for plotting
+        if 'Zip Code' not in filtered_df.columns or filtered_df['Zip Code'].isnull().all():
+            st.warning("No Zip Code data available for plotting!")
+        else:
+            # Prepare data for map
+            geocoded_data = filtered_df.dropna(subset=["Zip Code"]).copy()
+
+            # Optionally, you can add geocoding logic here if Latitude/Longitude is unavailable
+            # Example: Call an API like Nominatim to fetch lat/lon for each zip code
+
+            # Plot map using latitude/longitude (if available) or center by Zip Code
+            st.map(geocoded_data[["latitude", "longitude"]], zoom=5)  # Replace with appropriate columns
+    except Exception as e:
+        st.error(f"Error displaying the map: {e}")
 
 
 
