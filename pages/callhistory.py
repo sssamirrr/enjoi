@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from datetime import datetime
+import phonenumbers  # Use the `phonenumbers` library for validation and formatting
 
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
@@ -8,9 +9,27 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
+# Function to validate and format phone number to E.164
+def format_phone_number(phone):
+    try:
+        parsed_phone = phonenumbers.parse(phone, "US")  # Assuming US as the default region
+        if phonenumbers.is_valid_number(parsed_phone):
+            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
+        else:
+            return None
+    except phonenumbers.NumberParseException:
+        return None
+
+# Fetch Call History from OpenPhone API
 def fetch_call_history(phone_number):
+    # Format the phone number to E.164 format
+    formatted_phone = format_phone_number(phone_number)
+    if not formatted_phone:
+        st.error(f"Invalid phone number: {phone_number}. Please provide a valid E.164 format number.")
+        return []
+
     calls_url = "https://api.openphone.com/v1/calls"
-    params = {"participants": [phone_number], "maxResults": 50}
+    params = {"participants": [formatted_phone], "maxResults": 50}
     try:
         response = requests.get(calls_url, headers=HEADERS, params=params)
         if response.status_code == 200:
@@ -22,6 +41,7 @@ def fetch_call_history(phone_number):
         st.error(f"Error fetching call history: {str(e)}")
         return []
 
+# Main function to display call history page
 def run_call_history_page():
     st.title("Call History Viewer")
 
@@ -56,5 +76,6 @@ def run_call_history_page():
             st.write(f"**Participants**: {', '.join(call['participants'])}")
             st.write("---")
 
+# Entry point for the script
 if __name__ == "__main__":
     run_call_history_page()
