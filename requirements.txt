@@ -10,3 +10,4 @@ twilio
 pgeocode
 requests
 altair
+numpy
