@@ -46,30 +46,20 @@ def rate_limited_request(url, headers, params, request_type='get'):
 # Fetch call history
 def fetch_call_history(phone_number):
     """
-    Fetch call history for a given phone number using OpenPhone API.
+    Fetch call history for a given external phone number using OpenPhone API.
     """
-    # Step 1: Retrieve all phone numbers and match the phoneNumberId
-    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    phone_numbers_data = rate_limited_request(phone_numbers_url, HEADERS, {})
-    if not phone_numbers_data or "data" not in phone_numbers_data:
-        st.error("Failed to retrieve phone numbers.")
-        return []
-
-    # Match phone number with phoneNumberId
     formatted_phone = format_phone_number(phone_number)
-    phone_number_id = None
-    for pn in phone_numbers_data["data"]:
-        if pn.get("e164") == formatted_phone:
-            phone_number_id = pn.get("id")
-            break
-
-    if not phone_number_id:
-        st.error(f"No matching phoneNumberId found for {formatted_phone}.")
+    if not formatted_phone:
         return []
 
-    # Step 2: Fetch calls for the matched phoneNumberId
+    # Fetch calls with the external number as participant
     calls_url = "https://api.openphone.com/v1/calls"
-    params = {"phoneNumberId": phone_number_id, "participants": [formatted_phone], "maxResults": 50}
+    params = {
+        "participants": [formatted_phone],
+        "maxResults": 50
+    }
+    # Note: Removed phoneNumberId filter to search across all numbers
+    
     calls_data = rate_limited_request(calls_url, HEADERS, params)
 
     if not calls_data or "data" not in calls_data:
@@ -79,6 +69,7 @@ def fetch_call_history(phone_number):
     # Process call history data
     call_history = calls_data["data"]
     return call_history
+
 
 # Display call history
 def display_call_history(phone_number):
