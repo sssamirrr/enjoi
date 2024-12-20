@@ -274,4 +274,87 @@ def display_history(phone_number):
     
     with tab3:
         st.header("Detailed History")
-        show_calls = st.checkbox("Show Calls", True
+        show_calls = st.checkbox("Show Calls", True)
+        show_messages = st.checkbox("Show Messages", True)
+        
+        if show_calls:
+            st.subheader("📞 Calls")
+            for call in sorted(calls, key=lambda x: x['createdAt'], reverse=True):
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
+                direction = "Incoming" if call.get('direction') == 'inbound' else "Outgoing"
+                st.write(f"**{call_time}** - {direction} call ({call.get('duration', 'N/A')} seconds)")
+        
+        if show_messages:
+            st.subheader("💬 Messages")
+            for message in sorted(messages, key=lambda x: x['createdAt'], reverse=True):
+                message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
+                direction = "Received" if message.get('direction') == 'inbound' else "Sent"
+                content = message.get('content', 'No content')
+                st.write(f"**{message_time}** - {direction}: {content}")
+
+        # Show/Copy Buttons for Messages, Call Transcripts, Both
+        st.subheader("Show and Copy Full Content")
+
+        # Buttons for showing content
+        show_all_messages = st.button("Show All Messages")
+        show_all_calls = st.button("Show All Call Transcripts")
+        show_both = st.button("Show Both (Messages + Call Transcripts)")
+
+        # Buttons for copying content
+        copy_all_messages = st.button("Copy All Messages Text")
+        copy_all_calls = st.button("Copy All Call Transcripts Text")
+        copy_both = st.button("Copy Both")
+
+        # Build texts
+        messages_text = build_messages_text(messages) if (show_all_messages or copy_all_messages or show_both or copy_both) else ""
+        calls_text = build_calls_text(calls) if (show_all_calls or copy_all_calls or show_both or copy_both) else ""
+        both_text = ""
+        if (show_both or copy_both):
+            both_text = "Messages:\n" + messages_text + "\nCall Transcripts:\n" + calls_text
+
+        # Display them inline if show buttons clicked
+        if show_all_messages and messages_text:
+            st.write("**All Messages:**")
+            for line in messages_text.split("\n"):
+                st.write(line)
+        
+        if show_all_calls and calls_text:
+            st.write("**All Call Transcripts:**")
+            for line in calls_text.split("\n"):
+                st.write(line)
+
+        if show_both and both_text:
+            st.write("**All Messages + Call Transcripts:**")
+            for line in both_text.split("\n"):
+                st.write(line)
+
+        # Display text areas for copying if copy buttons clicked
+        if copy_all_messages and messages_text:
+            st.text_area("All Messages", messages_text, height=300)
+
+        if copy_all_calls and calls_text:
+            st.text_area("All Call Transcripts", calls_text, height=300)
+
+        if copy_both and both_text:
+            st.text_area("Messages + Call Transcripts", both_text, height=300)
+
+def main():
+    st.set_page_config(
+        page_title="Communication History",
+        page_icon="📱",
+        layout="wide"
+    )
+
+    query_params = st.query_params
+    default_phone = query_params.get("phone", "")
+
+    # Restore the box at the top to search another phone number
+    phone_number = st.text_input("Enter another phone number:", value=default_phone)
+
+    if phone_number:
+        display_history(phone_number)
+    else:
+        st.error("Please provide a phone number.")
+        
+if __name__ == "__main__":
+    main()
