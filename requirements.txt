@@ -8,5 +8,4 @@ phonenumbers
 sendgrid
 twilio
 pgeocode
-seaborn
-matplotlib
+
