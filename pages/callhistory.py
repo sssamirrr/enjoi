@@ -34,15 +34,21 @@ def fetch_call_history(phone_number):
         response = requests.get(phone_numbers_url, headers=HEADERS)
         if response.status_code != 200:
             st.error(f"Failed to fetch phone numbers: {response.status_code}")
-            st.write(f"API Response: {response.text}")  # Debugging output
+            st.write(f"API Response: {response.text}")  # Debugging
             return []
 
         phone_numbers = response.json().get("data", [])
+        st.write("Retrieved Phone Numbers:", phone_numbers)  # Debugging
+
         phone_number_id = None
 
-        # Match the formatted phone number with the list of phone numbers
+        # Match the formatted phone number or last 10 digits
         for pn in phone_numbers:
-            if pn.get("e164", "") == formatted_phone:
+            st.write(f"Checking Phone Number: {pn.get('e164')}")  # Debugging
+            if pn.get("e164", "") == formatted_phone:  # Exact match
+                phone_number_id = pn.get("id")
+                break
+            elif pn.get("e164", "").endswith(formatted_phone[-10:]):  # Fallback match
                 phone_number_id = pn.get("id")
                 break
 
@@ -53,6 +59,22 @@ def fetch_call_history(phone_number):
     except Exception as e:
         st.error(f"Error fetching phone numbers: {str(e)}")
         return []
+
+    # Step 2: Fetch call history using phoneNumberId
+    calls_url = "https://api.openphone.com/v1/calls"
+    params = {"phoneNumberId": phone_number_id, "maxResults": 50}
+    try:
+        response = requests.get(calls_url, headers=HEADERS, params=params)
+        if response.status_code == 200:
+            return response.json().get("data", [])
+        else:
+            st.error(f"Failed to fetch call history: {response.status_code}")
+            st.write(f"API Response: {response.text}")  # Debugging
+            return []
+    except Exception as e:
+        st.error(f"Error fetching call history: {str(e)}")
+        return []
+
 
     # Step 2: Fetch call history using phoneNumberId
     calls_url = "https://api.openphone.com/v1/calls"
