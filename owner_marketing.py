@@ -40,30 +40,93 @@ def run_owner_marketing_tab(owner_df):
     # Add a select column if it doesn't exist
     if 'Select' not in edited_df.columns:
         edited_df['Select'] = False
-    
-    # Display the DataFrame with selection checkboxes
-    st.dataframe(edited_df)
-    
-    # Communication Updates
-    if st.button("Update Communication Info", key="update_button"):
-        selected_rows = edited_df[edited_df['Select']].index.tolist()
-        if not selected_rows:
-            st.warning("No rows selected!")
-        else:
-            with st.spinner("Fetching communication info..."):
+
+    # Create columns for the layout
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+
+    # Buttons in the first row
+    with col1:
+        if st.button("Update Communication Info"):
+            selected_rows = edited_df[edited_df['Select']].index.tolist()
+            if not selected_rows:
+                st.warning("No rows selected!")
+            else:
+                with st.spinner("Fetching communication info..."):
+                    for idx in selected_rows:
+                        phone_number = edited_df.at[idx, "Phone Number"]
+                        try:
+                            comm_data = callhistory.get_communication_info(phone_number)
+                            for key, value in comm_data.items():
+                                edited_df.at[idx, key] = value
+                                st.session_state.working_df.at[idx, key] = value
+                        except Exception as e:
+                            st.warning(f"Error fetching communication info for {phone_number}: {e}")
+                            continue
+                st.success("Communication info updated!")
+                st.experimental_rerun()
+
+    with col2:
+        if st.button("Send Text Message"):
+            selected_rows = edited_df[edited_df['Select']].index.tolist()
+            if not selected_rows:
+                st.warning("No rows selected!")
+            else:
+                phone_numbers = edited_df.loc[selected_rows, "Phone Number"].tolist()
+                message = st.text_area("Enter your message:")
+                if st.button("Send"):
+                    for phone in phone_numbers:
+                        # Add your text message sending logic here
+                        pass
+                    st.success("Messages sent!")
+
+    with col3:
+        if st.button("Make Call"):
+            selected_rows = edited_df[edited_df['Select']].index.tolist()
+            if not selected_rows:
+                st.warning("No rows selected!")
+            else:
                 for idx in selected_rows:
                     phone_number = edited_df.at[idx, "Phone Number"]
-                    try:
-                        comm_data = callhistory.get_communication_info(phone_number)
-                        for key, value in comm_data.items():
-                            edited_df.at[idx, key] = value
-                            st.session_state.working_df.at[idx, key] = value
-                    except Exception as e:
-                        st.warning(f"Error fetching communication info for {phone_number}: {e}")
-                        continue
+                    # Add your call making logic here
+                    pass
 
-            st.success("Communication info updated!")
-            st.experimental_rerun()
+    with col4:
+        if st.button("View Call History"):
+            selected_rows = edited_df[edited_df['Select']].index.tolist()
+            if not selected_rows:
+                st.warning("No rows selected!")
+            else:
+                for idx in selected_rows:
+                    phone_number = edited_df.at[idx, "Phone Number"]
+                    display_call_history(phone_number)
+
+    # Display the DataFrame with editable cells
+    st.dataframe(
+        edited_df,
+        column_config={
+            "Select": st.column_config.CheckboxColumn(
+                "Select",
+                help="Select rows for bulk actions",
+                default=False,
+            ),
+            "Phone Number": st.column_config.TextColumn(
+                "Phone Number",
+                help="Contact phone number",
+            ),
+            "Last Contact": st.column_config.DateColumn(
+                "Last Contact",
+                help="Date of last contact",
+            ),
+            "Notes": st.column_config.TextColumn(
+                "Notes",
+                help="Additional notes",
+                width="large",
+            ),
+        },
+        hide_index=True,
+        use_container_width=True,
+        editable=True,
+    )
 
 def display_call_history(phone_number):
     st.title(f"Call History for {phone_number}")
