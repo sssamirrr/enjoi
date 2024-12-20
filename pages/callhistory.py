@@ -16,7 +16,7 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# Set page configuration
+# Page Configuration
 st.set_page_config(
     page_title="Communication Analytics",
     page_icon="📊",
@@ -24,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Apply custom CSS
+# Custom CSS
 st.markdown("""
     <style>
     .stMetric .metric-label { font-size: 14px !important; }
@@ -32,6 +32,7 @@ st.markdown("""
     .stAlert { padding: 10px !important; }
     </style>
     """, unsafe_allow_html=True)
+
 def format_phone_number(phone_number):
     """Format phone number to E.164 format"""
     try:
@@ -50,18 +51,6 @@ def get_openphone_numbers():
         return response.json().get("data", [])
     return []
 
-def format_duration(seconds):
-    """Format duration in seconds to readable time"""
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes = seconds // 60
-    remaining_seconds = seconds % 60
-    return f"{minutes}m {remaining_seconds}s"
-
-def format_datetime(dt_str):
-    """Format datetime string to readable format"""
-    dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
 def fetch_call_history(phone_number):
     """Fetch call history for a specific phone number"""
     formatted_phone = format_phone_number(phone_number)
@@ -107,8 +96,36 @@ def fetch_transcript(call_id):
     if response.status_code == 200:
         return response.json().get("data", {})
     return None
+
+def format_duration(seconds):
+    """Format duration in seconds to readable time"""
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    remaining_seconds = seconds % 60
+    return f"{minutes}m {remaining_seconds}s"
+
+def create_communication_metrics(calls, messages):
+    """Calculate communication metrics"""
+    metrics = {
+        'total_calls': len(calls),
+        'total_messages': len(messages),
+        'inbound_calls': len([c for c in calls if c.get('direction') == 'inbound']),
+        'outbound_calls': len([c for c in calls if c.get('direction') == 'outbound']),
+        'inbound_messages': len([m for m in messages if m.get('direction') == 'inbound']),
+        'outbound_messages': len([m for m in messages if m.get('direction') == 'outbound']),
+        'avg_call_duration': np.mean([c.get('duration', 0) for c in calls]) if calls else 0,
+        'max_call_duration': max([c.get('duration', 0) for c in calls]) if calls else 0,
+        'avg_message_length': np.mean([len(str(m.get('content', ''))) for m in messages]) if messages else 0,
+        'recorded_calls': len([c for c in calls if c.get('recordingUrl')]),
+        'transcribable_calls': len([c for c in calls if c.get('id')])
+    }
+    return metrics
+
 def display_metrics_dashboard(metrics):
     """Display main metrics dashboard"""
+    st.subheader("📊 Overview Metrics")
+    
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -123,41 +140,27 @@ def display_metrics_dashboard(metrics):
     
     with col3:
         st.metric("Avg Call Duration", format_duration(int(metrics['avg_call_duration'])))
-        st.metric("Max Call Duration", format_duration(int(metrics['max_call_duration'])))
-        st.metric("Avg Message Length", f"{int(metrics['avg_message_length'])} chars")
+        st.metric("Recorded Calls", metrics['recorded_calls'])
+        st.metric("Transcribable Calls", metrics['transcribable_calls'])
 
-def display_communication_trends(calls, messages):
-    """Display communication trends visualization"""
-    st.subheader("📈 Communication Trends")
-    
-    # Prepare data
-    communications = []
-    for call in calls:
-        communications.append({
-            'date': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).date(),
-            'type': 'Call'
-        })
-    for message in messages:
-        communications.append({
-            'date': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).date(),
-            'type': 'Message'
-        })
-    
+def create_time_series_chart(communications):
+    """Create time series chart for communications"""
     df = pd.DataFrame(communications)
-    if not df.empty:
-        daily_counts = df.groupby(['date', 'type']).size().reset_index(name='count')
-        
-        chart = alt.Chart(daily_counts).mark_line(point=True).encode(
-            x=alt.X('date:T', title='Date'),
-            y=alt.Y('count:Q', title='Count'),
-            color='type:N',
-            tooltip=['date', 'type', 'count']
-        ).properties(
-            width=700,
-            height=400
-        ).interactive()
-        
-        st.altair_chart(chart, use_container_width=True)
+    df['date'] = pd.to_datetime(df['time']).dt.date
+    daily_counts = df.groupby(['date', 'type']).size().reset_index(name='count')
+    
+    chart = alt.Chart(daily_counts).mark_line(point=True).encode(
+        x=alt.X('date:T', title='Date'),
+        y=alt.Y('count:Q', title='Count'),
+        color='type:N',
+        tooltip=['date', 'type', 'count']
+    ).properties(
+        title='Communication Activity Over Time',
+        width=700,
+        height=400
+    ).interactive()
+    
+    return chart
 
 def display_timeline(calls, messages):
     """Display communication timeline"""
@@ -165,7 +168,6 @@ def display_timeline(calls, messages):
     
     timeline = []
     
-    # Process calls
     for call in calls:
         timeline.append({
             'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
@@ -177,7 +179,6 @@ def display_timeline(calls, messages):
             'recording_url': call.get('recordingUrl')
         })
     
-    # Process messages
     for message in messages:
         timeline.append({
             'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
@@ -188,78 +189,84 @@ def display_timeline(calls, messages):
             'attachments': message.get('attachments', [])
         })
     
-    # Sort timeline
     timeline.sort(key=lambda x: x['time'], reverse=True)
     
-    # Display timeline items
     for item in timeline:
-        display_timeline_item(item)
-
-def display_timeline_item(item):
-    """Display individual timeline item"""
-    time_str = item['time'].strftime("%Y-%m-%d %H:%M")
-    icon = "📞" if item['type'] == "Call" else "💬"
-    direction_icon = "⬅️" if item['direction'] == "inbound" else "➡️"
-    
-    with st.expander(f"{icon} {direction_icon} {time_str}"):
-        if item['type'] == "Call":
-            display_call_details(item)
-        else:
-            display_message_details(item)
-
-def display_call_details(call):
-    """Display call details"""
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.write(f"**Duration:** {format_duration(call['duration'])}")
-        st.write(f"**Status:** {call['status'].title()}")
+        time_str = item['time'].strftime("%Y-%m-%d %H:%M")
+        icon = "📞" if item['type'] == "Call" else "💬"
+        direction_icon = "⬅️" if item['direction'] == "inbound" else "➡️"
         
-        if call.get('recording_url'):
-            st.audio(call['recording_url'], format='audio/mp3')
-        
-        if call.get('id'):
-            if st.button(f"View Transcript", key=f"transcript_{call['id']}"):
-                with st.spinner('Loading transcript...'):
-                    transcript = fetch_transcript(call['id'])
-                    if transcript:
-                        display_transcript(transcript)
-                    else:
-                        st.warning("No transcript available")
-    
-    with col2:
-        if call.get('recording_url'):
-            st.write("📀 Recording available")
+        with st.expander(f"{icon} {direction_icon} {time_str}"):
+            if item['type'] == "Call":
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.write(f"**Duration:** {format_duration(item['duration'])}")
+                    st.write(f"**Status:** {item['status'].title()}")
+                    
+                    if item.get('recording_url'):
+                        st.audio(item['recording_url'], format='audio/mp3')
+                    
+                    if item.get('id'):
+                        if st.button(f"View Transcript", key=f"transcript_{item['id']}"):
+                            with st.spinner('Loading transcript...'):
+                                transcript = fetch_transcript(item['id'])
+                                if transcript:
+                                    st.markdown("### 📝 Transcript")
+                                    for segment in transcript.get('segments', []):
+                                        speaker = "Agent" if segment.get('speakerId') == 0 else "Customer"
+                                        text = segment.get('text', '')
+                                        timestamp = segment.get('startTime', 0)
+                                        minutes = int(timestamp // 60)
+                                        seconds = int(timestamp % 60)
+                                        st.markdown(f"**[{minutes:02d}:{seconds:02d}] {speaker}:** {text}")
+                                else:
+                                    st.warning("No transcript available")
+                
+                with col2:
+                    if item.get('recording_url'):
+                        st.write("📀 Recording available")
+            else:
+                st.write(f"**Message:** {item['content']}")
+                st.write(f"**Status:** {item['status'].title()}")
+                
+                if item.get('attachments'):
+                    st.write("**Attachments:**")
+                    for attachment in item['attachments']:
+                        if attachment.get('url'):
+                            if attachment.get('type', '').startswith('image/'):
+                                st.image(attachment['url'])
+                            else:
+                                st.markdown(f"[📎 Download Attachment]({attachment['url']})")
 
-def display_message_details(message):
-    """Display message details"""
-    st.write(f"**Message:** {message['content']}")
-    st.write(f"**Status:** {message['status'].title()}")
+def create_hourly_heatmap(communications):
+    """Create hourly activity heatmap"""
+    df = pd.DataFrame(communications)
+    df['hour'] = pd.to_datetime(df['time']).dt.hour
+    df['day_of_week'] = pd.to_datetime(df['time']).dt.day_name()
     
-    if message.get('attachments'):
-        st.write("**Attachments:**")
-        for attachment in message['attachments']:
-            if attachment.get('url'):
-                if attachment.get('type', '').startswith('image/'):
-                    st.image(attachment['url'])
-                else:
-                    st.markdown(f"[📎 Download Attachment]({attachment['url']})")
-
-def display_transcript(transcript):
-    """Display call transcript"""
-    st.markdown("### 📝 Transcript")
-    for segment in transcript.get('segments', []):
-        speaker = "Agent" if segment.get('speakerId') == 0 else "Customer"
-        text = segment.get('text', '')
-        timestamp = segment.get('startTime', 0)
-        minutes = int(timestamp // 60)
-        seconds = int(timestamp % 60)
-        st.markdown(f"**[{minutes:02d}:{seconds:02d}] {speaker}:** {text}")
+    hourly_counts = df.groupby(['day_of_week', 'hour']).size().reset_index(name='count')
+    
+    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    hourly_counts['day_of_week'] = pd.Categorical(hourly_counts['day_of_week'], 
+                                                categories=days_order, 
+                                                ordered=True)
+    
+    heatmap = alt.Chart(hourly_counts).mark_rect().encode(
+        x=alt.X('hour:O', title='Hour of Day'),
+        y=alt.Y('day_of_week:O', title='Day of Week'),
+        color=alt.Color('count:Q', scale=alt.Scale(scheme='viridis')),
+        tooltip=['day_of_week', 'hour', 'count']
+    ).properties(
+        title='Activity Heatmap',
+        width=700,
+        height=300
+    )
+    
+    return heatmap
 
 def main():
     st.title("📱 Communication Analytics Dashboard")
 
-    # Get phone number input
     query_params = st.experimental_get_query_params()
     phone_number = query_params.get("phone", [""])[0]
     
@@ -276,32 +283,39 @@ def main():
                 return
 
             # Create tabs
-            tab1, tab2, tab3 = st.tabs(["📊 Overview", "📈 Trends", "📅 Timeline"])
+            tab1, tab2, tab3 = st.tabs(["📊 Overview", "📈 Analysis", "📅 Timeline"])
 
             with tab1:
                 metrics = create_communication_metrics(calls, messages)
                 display_metrics_dashboard(metrics)
 
             with tab2:
-                display_communication_trends(calls, messages)
+                st.subheader("📈 Communication Patterns")
+                
+                # Prepare data for visualizations
+                communications = []
+                for call in calls:
+                    communications.append({
+                        'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
+                        'type': 'Call'
+                    })
+                for message in messages:
+                    communications.append({
+                        'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
+                        'type': 'Message'
+                    })
+                
+                # Display time series chart
+                time_series = create_time_series_chart(communications)
+                st.altair_chart(time_series, use_container_width=True)
+                
+                # Display heatmap
+                st.subheader("🗓️ Activity Patterns")
+                heatmap = create_hourly_heatmap(communications)
+                st.altair_chart(heatmap, use_container_width=True)
 
             with tab3:
                 display_timeline(calls, messages)
 
-def create_communication_metrics(calls, messages):
-    """Calculate communication metrics"""
-    return {
-        'total_calls': len(calls),
-        'total_messages': len(messages),
-        'inbound_calls': len([c for c in calls if c.get('direction') == 'inbound']),
-        'outbound_calls': len([c for c in calls if c.get('direction') == 'outbound']),
-        'inbound_messages': len([m for m in messages if m.get('direction') == 'inbound']),
-        'outbound_messages': len([m for m in messages if m.get('direction') == 'outbound']),
-        'avg_call_duration': np.mean([c.get('duration', 0) for c in calls]) if calls else 0,
-        'max_call_duration': max([c.get('duration', 0) for c in calls]) if calls else 0,
-        'avg_message_length': np.mean([len(str(m.get('content', ''))) for m in messages]) if messages else 0
-    }
-
 if __name__ == "__main__":
     main()
-
