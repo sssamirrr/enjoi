@@ -207,17 +207,11 @@ def display_timeline(calls, messages):
                 
                 transcript_data = fetch_call_transcript(comm['id'])
                 if transcript_data and transcript_data.get('dialogue'):
-                    all_contents = " ".join([seg.get('content', '') for seg in transcript_data['dialogue']])
-                    summary = all_contents[:200] + ("..." if len(all_contents) > 200 else "")
-                    st.write("**Transcript Summary:**")
-                    st.write(summary)
-                    
-                    # Add a unique key for each checkbox to avoid duplicate element ID
-                    show_full = st.checkbox("Show Full Transcript", key=f"full_transcript_{comm['id']}")
-                    if show_full:
-                        for seg in transcript_data['dialogue']:
-                            speaker = seg.get('identifier', 'Unknown')
-                            st.write(f"**{speaker}**: {seg.get('content', '')}")
+                    st.write("**Full Transcript:**")
+                    for seg in transcript_data['dialogue']:
+                        speaker = seg.get('identifier', 'Unknown')
+                        content = seg.get('content', '')
+                        st.write(f"**{speaker}**: {content}")
                 else:
                     st.write("Transcript not available or in progress.")
             else:
@@ -265,6 +259,20 @@ def display_history(phone_number):
                 message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
                 direction = "Received" if message.get('direction') == 'inbound' else "Sent"
                 st.write(f"**{message_time}** - {direction}: {message.get('content', 'No content')}")
+
+        # New Section: Show all transcripts from all calls
+        st.subheader("All Call Transcripts")
+        if st.button("Show All Transcripts"):
+            for call in calls:
+                st.write(f"**Call {call['id']} Transcript:**")
+                transcript_data = fetch_call_transcript(call['id'])
+                if transcript_data and transcript_data.get('dialogue'):
+                    for seg in transcript_data['dialogue']:
+                        speaker = seg.get('identifier', 'Unknown')
+                        content = seg.get('content', '')
+                        st.write(f"**{speaker}**: {content}")
+                else:
+                    st.write("No transcript available for this call.")
 
 def main():
     st.set_page_config(
