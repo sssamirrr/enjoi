@@ -5,7 +5,7 @@ import time
 import pandas as pd
 from datetime import datetime
 import phonenumbers
-import streamlit as st
+from urllib.parse import quote  # For URL encoding
 
 # Function to format phone number to E.164
 def format_phone_number(phone):
@@ -26,11 +26,12 @@ def rate_limited_request(url, headers, params):
         if response.status_code == 200:
             return response.json()
         else:
-            st.warning(f"API Error: {response.status_code}")
-            st.warning(f"Response: {response.text}")
+            error_message = f"API Error: {response.status_code}, Response: {response.text}"
+            # Raise an exception to be handled by the caller
+            raise Exception(error_message)
     except Exception as e:
-        st.warning(f"Exception during request: {str(e)}")
-    return None
+        # Re-raise the exception to be handled by the caller
+        raise e
 
 # Function to generate call history link
 def generate_call_history_link(phone_number):
@@ -39,7 +40,8 @@ def generate_call_history_link(phone_number):
     formatted_number = format_phone_number(phone_number)
 
     if formatted_number:
-        return f"{base_url}/?view=call-history&number={formatted_number}"
+        encoded_number = quote(formatted_number)  # URL encode the phone number
+        return f"{base_url}/?view=call-history&number={encoded_number}"
     return None
 
 # Fetch OpenPhone Communication Data
@@ -58,8 +60,12 @@ def get_communication_info(phone_number, headers):
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
 
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
-    phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+    try:
+        response_data = rate_limited_request(phone_numbers_url, headers, {})
+        phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+    except Exception as e:
+        # Handle or log the error as needed
+        raise Exception(f"Failed to fetch phone number IDs: {e}")
 
     if not phone_number_ids:
         return {
@@ -82,19 +88,27 @@ def get_communication_info(phone_number, headers):
         }
 
         # Fetch Messages
-        messages_response = rate_limited_request(messages_url, headers, params)
-        if messages_response:
-            total_messages += len(messages_response.get('data', []))
+        try:
+            messages_response = rate_limited_request(messages_url, headers, params)
+            if messages_response:
+                total_messages += len(messages_response.get('data', []))
+        except Exception as e:
+            # Handle or log the error as needed
+            pass  # Continue processing even if there's an error
 
         # Fetch Calls
-        calls_response = rate_limited_request(calls_url, headers, params)
-        if calls_response:
-            calls = calls_response.get('data', [])
-            total_calls += len(calls)
-            for call in calls:
-                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
-                if not latest_datetime or call_time > latest_datetime:
-                    latest_datetime = call_time
+        try:
+            calls_response = rate_limited_request(calls_url, headers, params)
+            if calls_response:
+                calls = calls_response.get('data', [])
+                total_calls += len(calls)
+                for call in calls:
+                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                    if not latest_datetime or call_time > latest_datetime:
+                        latest_datetime = call_time
+        except Exception as e:
+            # Handle or log the error as needed
+            pass  # Continue processing even if there's an error
 
     status = "No Communications" if not latest_datetime else "Active"
     call_history_link = generate_call_history_link(phone_number)
@@ -116,8 +130,12 @@ def get_call_history_data(phone_number, headers):
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     calls_url = "https://api.openphone.com/v1/calls"
 
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
-    phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+    try:
+        response_data = rate_limited_request(phone_numbers_url, headers, {})
+        phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+    except Exception as e:
+        # Handle or log the error as needed
+        raise Exception(f"Failed to fetch phone number IDs: {e}")
 
     if not phone_number_ids:
         return pd.DataFrame()
@@ -131,20 +149,24 @@ def get_call_history_data(phone_number, headers):
             "maxResults": 50  # Adjust as needed
         }
 
-        calls_response = rate_limited_request(calls_url, headers, params)
-        if calls_response:
-            calls = calls_response.get('data', [])
-            for call in calls:
-                call_info = {
-                    'Date': call['createdAt'],
-                    'From': call['from']['phone'] if 'from' in call and 'phone' in call['from'] else None,
-                    'To': call['to']['phone'] if 'to' in call and 'phone' in call['to'] else None,
-                    'Direction': call['direction'],
-                    'Duration (s)': call.get('duration', 0),
-                    'Status': call['status'],
-                    # Add other call details as needed
-                }
-                all_calls.append(call_info)
+        try:
+            calls_response = rate_limited_request(calls_url, headers, params)
+            if calls_response:
+                calls = calls_response.get('data', [])
+                for call in calls:
+                    call_info = {
+                        'Date': call['createdAt'],
+                        'From': call['from']['phone'] if 'from' in call and 'phone' in call['from'] else None,
+                        'To': call['to']['phone'] if 'to' in call and 'phone' in call['to'] else None,
+                        'Direction': call['direction'],
+                        'Duration (s)': call.get('duration', 0),
+                        'Status': call['status'],
+                        # Add other call details as needed
+                    }
+                    all_calls.append(call_info)
+        except Exception as e:
+            # Handle or log the error as needed
+            pass  # Continue processing even if there's an error
 
     if all_calls:
         df_calls = pd.DataFrame(all_calls)
