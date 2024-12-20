@@ -8,7 +8,7 @@ import numpy as np
 
 # API Configuration
 # OpenPhone API Credentials
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
@@ -65,6 +65,16 @@ def fetch_message_history(phone_number):
                 if response.status_code == 200:
                     all_messages.extend(response.json().get("data", []))
     return all_messages
+
+def fetch_call_transcript(call_id):
+    # Fetch transcript for a given call ID
+    url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        data = response.json().get("data", {})
+        if data and data.get("dialogue"):
+            return data
+    return None
 
 def create_communication_metrics(calls, messages):
     # Basic metrics
@@ -214,7 +224,10 @@ def display_timeline(calls, messages):
             'type': 'Call',
             'direction': call.get('direction', 'unknown'),
             'duration': call.get('duration', 'N/A'),
-            'status': call.get('status', 'unknown')
+            'status': call.get('status', 'unknown'),
+            'id': call.get('id'),
+            # Assuming 'from' and 'to' fields or 'participants' are available in the call object:
+            'participants': call.get('participants', [])
         })
     
     for message in messages:
@@ -223,7 +236,10 @@ def display_timeline(calls, messages):
             'type': 'Message',
             'direction': message.get('direction', 'unknown'),
             'content': message.get('content', 'No content'),
-            'status': message.get('status', 'unknown')
+            'status': message.get('status', 'unknown'),
+            'id': message.get('id'),
+            # Participants for messages may differ, adapt as needed
+            'participants': message.get('participants', [])
         })
     
     # Sort by time
@@ -236,10 +252,38 @@ def display_timeline(calls, messages):
         direction_icon = "⬅️" if item['direction'] == "inbound" else "➡️"
         
         with st.expander(f"{icon} {direction_icon} {time_str}"):
+            # Show participants information (phone numbers or names if available)
+            participants = item.get('participants', [])
+            if participants:
+                st.write("**Participants:**")
+                for p in participants:
+                    # Assuming participant object has 'phoneNumber' and possibly 'name'
+                    p_number = p.get('phoneNumber', 'Unknown')
+                    p_name = p.get('name', '')
+                    display_str = p_name + f" ({p_number})" if p_name else p_number
+                    st.write("- " + display_str)
+
             if item['type'] == "Call":
                 st.write(f"**Duration:** {item['duration']} seconds")
+                
+                # Attempt to fetch and display transcript link if available
+                transcript = fetch_call_transcript(item['id'])
+                if transcript and transcript.get('dialogue'):
+                    with st.expander("View Transcript"):
+                        for seg in transcript['dialogue']:
+                            speaker = seg.get('identifier', 'Unknown')
+                            content = seg.get('content', '')
+                            start = seg.get('start', 0)
+                            end = seg.get('end', 0)
+                            st.write(f"**{speaker}** [{start}s - {end}s]: {content}")
+                else:
+                    # If no transcript is available or in progress, show status
+                    # The transcript status could be in transcript['status'] if needed
+                    st.write("Transcript not available or in progress.")
             else:
+                # It's a message
                 st.write(f"**Message:** {item['content']}")
+            
             st.write(f"**Status:** {item['status']}")
 
 def main():
