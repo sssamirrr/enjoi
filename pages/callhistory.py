@@ -85,21 +85,24 @@ def display_metrics(calls, messages):
     st.header("📊 Communication Metrics")
     
     # Basic Metrics
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     total_calls = len(calls)
     total_messages = len(messages)
-    inbound_calls = len([c for c in calls if c.get('direction') == 'inbound'])
-    outbound_calls = len([c for c in calls if c.get('direction') == 'outbound'])
+    inbound_calls = [c for c in calls if c.get('direction') == 'inbound']
+    outbound_calls = [c for c in calls if c.get('direction') == 'outbound']
+    inbound_voicemails = [c for c in inbound_calls if c.get('status') == 'voicemail']
     
     with col1:
         st.metric("Total Calls", total_calls)
     with col2:
         st.metric("Total Messages", total_messages)
     with col3:
-        st.metric("Inbound Calls", inbound_calls)
+        st.metric("Inbound Calls", len(inbound_calls))
     with col4:
-        st.metric("Outbound Calls", outbound_calls)
+        st.metric("Outbound Calls", len(outbound_calls))
+    with col5:
+        st.metric("Inbound Voicemails", len(inbound_voicemails))
 
     # Call Duration Metrics
     st.subheader("📞 Call Analytics")
@@ -191,17 +194,22 @@ def display_timeline(calls, messages):
                 st.write(f"**Who Called:** {comm['from']} to {comm['to']}")
                 st.write(f"**Duration:** {comm['duration']} seconds")
                 
-                # Display transcript content directly (no nested expander)
+                # Fetch transcript and show summary
                 transcript_data = fetch_call_transcript(comm['id'])
                 if transcript_data and transcript_data.get('dialogue'):
-                    st.write("**Transcript:**")
-                    for seg in transcript_data['dialogue']:
-                        speaker = seg.get('identifier', 'Unknown')
-                        content = seg.get('content', '')
-                        st.write(f"**{speaker}**: {content}")
+                    # Create a summary by joining all segments
+                    all_contents = " ".join([seg.get('content', '') for seg in transcript_data['dialogue']])
+                    summary = all_contents[:200] + ("..." if len(all_contents) > 200 else "")
+                    st.write("**Transcript Summary:**")
+                    st.write(summary)
                 else:
                     st.write("Transcript not available or in progress.")
             else:
+                # Show who texted based on direction
+                if comm['direction'] == 'inbound':
+                    st.write("**Who Texted:** Guest texted")
+                else:
+                    st.write("**Who Texted:** We texted")
                 st.write(f"**Message:** {comm['content']}")
             st.write(f"**Status:** {comm['status']}")
 
