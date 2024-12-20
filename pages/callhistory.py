@@ -5,7 +5,7 @@ from datetime import datetime
 import phonenumbers
 
 # OpenPhone API Credentials
-OPENPHONE_API_KEY = "your_api_key_here"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
