@@ -1,137 +1,210 @@
+import phonenumbers
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 import gspread
 from google.oauth2 import service_account
+import requests
 import time
-from urllib.parse import quote
-import callhistory
 
-def get_owner_sheet_data():
-    """
-    Retrieves the data from the Google Sheet and returns it as a Pandas DataFrame.
-    """
-    credentials = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-        ],
-    )
-    client = gspread.authorize(credentials)
-    sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
-    sheet = client.open_by_key(sheet_key)
-    worksheet = sheet.sheet1
-    data = worksheet.get_all_records()
-    df = pd.DataFrame(data)
-    return df
+# Hardcoded OpenPhone API Key and Headers
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+HEADERS = {
+    "Authorization": OPENPHONE_API_KEY,
+    "Content-Type": "application/json"
+}
 
-def display_call_history(phone_number):
-    st.title(f"Call History for {phone_number}")
+# Format phone number to E.164
+def format_phone_number(phone):
     try:
-        call_history_data = callhistory.get_call_history_data(phone_number)
-        if not call_history_data.empty:
-            st.dataframe(call_history_data, use_container_width=True)
+        parsed_phone = phonenumbers.parse(phone, "US")
+        if phonenumbers.is_valid_number(parsed_phone):
+            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
         else:
-            st.warning("No call history available for this number.")
-    except Exception as e:
-        st.warning(f"Error fetching call history for {phone_number}: {e}")
+            return None
+    except phonenumbers.NumberParseException:
+        return None
 
+# Fetch Google Sheets Data
+def get_owner_sheet_data():
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly"
+            ],
+        )
+        client = gspread.authorize(credentials)
+        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
+        sheet = client.open_by_key(sheet_key)
+        worksheet = sheet.get_worksheet(0)
+        data = worksheet.get_all_records()
+
+        if not data:
+            st.warning("The Google Sheet is empty.")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+
+        # Clean Data
+        for col in ['Sale Date', 'Maturity Date']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        # Add communication columns
+        df['status'] = "Not Updated"
+        df['last_date'] = None
+        df['total_messages'] = 0
+        df['total_calls'] = 0
+
+        df['Select'] = False  # Selection column
+        df = df[['Select'] + [col for col in df.columns if col != 'Select']]  # Move Select to first column
+        return df
+
+    except Exception as e:
+        st.error(f"Error accessing Google Sheet: {e}")
+        return pd.DataFrame()
+
+# Rate-Limited API Request
+def rate_limited_request(url, params):
+    time.sleep(1 / 5)
+    try:
+        response = requests.get(url, headers=HEADERS, params=params)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.warning(f"API Error: {response.status_code}")
+            st.warning(f"Response: {response.text}")
+    except Exception as e:
+        st.warning(f"Exception during request: {str(e)}")
+    return None
+
+# Fetch OpenPhone Communication Data
+def get_communication_info(phone_number):
+    formatted_phone = format_phone_number(phone_number)
+    if not formatted_phone:
+        return {
+            'status': "Invalid Number",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0
+        }
+
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    response_data = rate_limited_request(phone_numbers_url, {})
+    phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+
+    if not phone_number_ids:
+        return {
+            'status': "No Communications",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0
+        }
+
+    latest_datetime = None
+    total_messages = 0
+    total_calls = 0
+
+    for phone_number_id in phone_number_ids:
+        params = {"phoneNumberId": phone_number_id, "participants": [formatted_phone], "maxResults": 50}
+
+        # Fetch Messages
+        messages_response = rate_limited_request(messages_url, params)
+        if messages_response:
+            total_messages += len(messages_response.get('data', []))
+
+        # Fetch Calls
+        calls_response = rate_limited_request(calls_url, params)
+        if calls_response:
+            calls = calls_response.get('data', [])
+            total_calls += len(calls)
+            for call in calls:
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
+
+    status = "No Communications" if not latest_datetime else "Active"
+    return {
+        'status': status,
+        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
+        'total_messages': total_messages,
+        'total_calls': total_calls
+    }
+
+# Main App Function
+# Main App Function
 def run_owner_marketing_tab(owner_df):
-    st.title("Owner Marketing")
-    
-    # Initialize session state if not exists
+    st.title("Owner Marketing Dashboard")
+
+    # Initialize session state
     if 'working_df' not in st.session_state:
         st.session_state.working_df = owner_df.copy()
-    
-    # Create edited_df from working_df
-    edited_df = st.session_state.working_df.copy()
-    
-    # Add a select column if it doesn't exist
-    if 'Select' not in edited_df.columns:
-        edited_df['Select'] = False
 
-    # Create columns for the layout
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-
-    # Buttons in the first row
+    # Filters
+    st.subheader("Filters")
+    col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("Update Communication Info"):
-            selected_rows = edited_df[edited_df['Select']].index.tolist()
-            if not selected_rows:
-                st.warning("No rows selected!")
-            else:
-                with st.spinner("Fetching communication info..."):
-                    for idx in selected_rows:
-                        phone_number = edited_df.at[idx, "Phone Number"]
-                        try:
-                            comm_data = callhistory.get_communication_info(phone_number)
-                            for key, value in comm_data.items():
-                                edited_df.at[idx, key] = value
-                                st.session_state.working_df.at[idx, key] = value
-                        except Exception as e:
-                            st.warning(f"Error fetching communication info for {phone_number}: {e}")
-                            continue
-                st.success("Communication info updated!")
-                st.experimental_rerun()
-
+        selected_states = st.multiselect("Select States", st.session_state.working_df['State'].dropna().unique())
     with col2:
-        if st.button("Send Text Message"):
-            selected_rows = edited_df[edited_df['Select']].index.tolist()
-            if not selected_rows:
-                st.warning("No rows selected!")
-            else:
-                phone_numbers = edited_df.loc[selected_rows, "Phone Number"].tolist()
-                message = st.text_area("Enter your message:")
-                if st.button("Send", key="send_text"):
-                    st.success("Messages sent!")
-
+        date_range = st.date_input("Sale Date Range", 
+                                  [st.session_state.working_df['Sale Date'].min(), 
+                                   st.session_state.working_df['Sale Date'].max()])
     with col3:
-        if st.button("Make Call"):
-            selected_rows = edited_df[edited_df['Select']].index.tolist()
-            if not selected_rows:
-                st.warning("No rows selected!")
-            else:
+        fico_range = st.slider("FICO Score", 
+                             int(st.session_state.working_df['Primary FICO'].min()), 
+                             int(st.session_state.working_df['Primary FICO'].max()), 
+                             (int(st.session_state.working_df['Primary FICO'].min()), 
+                              int(st.session_state.working_df['Primary FICO'].max())))
+
+    # Apply Filters
+    filtered_df = st.session_state.working_df.copy()
+    if selected_states:
+        filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
+    if date_range:
+        filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) & 
+                                (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
+    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & 
+                            (filtered_df['Primary FICO'] <= fico_range[1])]
+
+    # Display Table
+    st.subheader("Owner Data")
+    edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
+        "Select": st.column_config.CheckboxColumn("Select")
+    }, key='data_editor')
+
+    # Communication Updates
+    if st.button("Update Communication Info", key="update_button"):
+        selected_rows = edited_df[edited_df['Select']].index.tolist()
+        if not selected_rows:
+            st.warning("No rows selected!")
+        else:
+            with st.spinner("Fetching communication info..."):
                 for idx in selected_rows:
                     phone_number = edited_df.at[idx, "Phone Number"]
-                    link = f"tel:{phone_number}"
-                    st.markdown(f'<a href="{link}" target="_blank">Call {phone_number}</a>', unsafe_allow_html=True)
+                    comm_data = get_communication_info(phone_number)
+                    for key, value in comm_data.items():
+                        # Update both DataFrames
+                        filtered_df.at[idx, key] = value
+                        st.session_state.working_df.at[idx, key] = value
+                
+                st.success("Communication info updated!")
+                st.rerun()
 
-    with col4:
-        if st.button("View Call History"):
-            selected_rows = edited_df[edited_df['Select']].index.tolist()
-            if not selected_rows:
-                st.warning("No rows selected!")
-            else:
-                for idx in selected_rows:
-                    phone_number = edited_df.at[idx, "Phone Number"]
-                    display_call_history(phone_number)
 
-    # Modified DataFrame display
-    edited_df = st.data_editor(
-        edited_df,
-        column_config={
-            "Select": "checkbox",
-            "Phone Number": "text",
-            "Last Contact": "date",
-            "Notes": st.column_config.TextColumn(
-                "Notes",
-                width="large",
-            ),
-        },
-        disabled=["Phone Number", "Last Contact"],  # Make certain columns read-only
-        hide_index=True,
-        use_container_width=True,
-    )
 
-    # Update the session state with any edits
-    st.session_state.working_df = edited_df.copy()
 
-    return edited_df
-
-def initialize():
-    st.set_page_config(page_title="Owner Marketing", layout="wide")
-    
-if __name__ == "__main__":
-    initialize()
+def run_minimal_app():
     owner_df = get_owner_sheet_data()
-    run_owner_marketing_tab(owner_df)
+    if not owner_df.empty:
+        run_owner_marketing_tab(owner_df)
+    else:
+        st.error("No owner data available.")
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    run_minimal_app()
