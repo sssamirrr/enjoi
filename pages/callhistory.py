@@ -5,7 +5,6 @@ import phonenumbers
 import pandas as pd
 from collections import Counter
 import altair as alt
-import urllib.parse
 
 # OpenPhone API Credentials
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
@@ -14,56 +13,14 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-def get_phone_from_url():
-    """Extract phone number from URL parameters in different formats"""
-    # Get the full URL path
-    full_path = st.experimental_get_query_params()
-    
-    # Check for phone number in query parameters
-    phone_param = full_path.get("phone", [""])[0]
-    
-    # If no phone found in query params, check the path
-    if not phone_param and "callhistory" in str(full_path):
-        try:
-            path_parts = str(full_path).split("callhistory?phone=")
-            if len(path_parts) > 1:
-                phone_param = path_parts[1].split("&")[0]
-        except:
-            pass
-    
-    return phone_param
-
 def format_phone_number(phone_number):
-    """
-    Format and validate phone numbers with better error handling and user feedback.
-    Returns tuple of (formatted_number, error_message)
-    """
-    if not phone_number:
-        return None, "Please enter a phone number"
-    
-    # Remove any non-numeric characters except + sign
-    cleaned_number = ''.join(c for c in str(phone_number) if c.isdigit() or c == '+')
-    
-    # Add US country code if not present
-    if not cleaned_number.startswith('+'):
-        if cleaned_number.startswith('1'):
-            cleaned_number = '+' + cleaned_number
-        else:
-            cleaned_number = '+1' + cleaned_number
-
     try:
-        parsed = phonenumbers.parse(cleaned_number)
+        parsed = phonenumbers.parse(phone_number, "US")
         if phonenumbers.is_valid_number(parsed):
-            return f"+{parsed.country_code}{parsed.national_number}", None
-        else:
-            return None, "Invalid phone number format. Please enter a valid US phone number."
-    except phonenumbers.NumberParseException as e:
-        if len(cleaned_number) < 10:
-            return None, "Phone number is too short. Please enter a complete phone number."
-        elif len(cleaned_number) > 15:
-            return None, "Phone number is too long. Please enter a valid phone number."
-        else:
-            return None, f"Invalid phone number format: {str(e)}"
+            return f"+{parsed.country_code}{parsed.national_number}"
+    except Exception as e:
+        st.error(f"Error parsing phone number: {e}")
+    return None
 
 def get_openphone_numbers():
     url = "https://api.openphone.com/v1/phone-numbers"
@@ -74,9 +31,8 @@ def get_openphone_numbers():
     return response.json().get("data", [])
 
 def fetch_call_history(phone_number):
-    formatted_phone, error = format_phone_number(phone_number)
-    if error:
-        st.error(error)
+    formatted_phone = format_phone_number(phone_number)
+    if not formatted_phone:
         return []
     
     all_calls = []
@@ -95,9 +51,8 @@ def fetch_call_history(phone_number):
     return all_calls
 
 def fetch_message_history(phone_number):
-    formatted_phone, error = format_phone_number(phone_number)
-    if error:
-        st.error(error)
+    formatted_phone = format_phone_number(phone_number)
+    if not formatted_phone:
         return []
     
     all_messages = []
@@ -121,76 +76,10 @@ def calculate_response_times(communications):
     
     for i in range(1, len(sorted_comms)):
         if sorted_comms[i]['direction'] != sorted_comms[i-1]['direction']:
-            time_diff = (sorted_comms[i]['time'] - sorted_comms[i-1]['time']).total_seconds() / 60
+            time_diff = (sorted_comms[i]['time'] - sorted_comms[i-1]['time']).total_seconds() / 60  # in minutes
             response_times.append(time_diff)
     
     return response_times
-
-def get_transcript_url(call_id):
-    """Generate the correct transcript URL based on the current domain"""
-    base_url = st.experimental_get_query_params()
-    if "ldmcbiowzbdeqvmabvudyy.streamlit.app" in str(base_url):
-        return f"https://ldmcbiowzbdeqvmabvudyy.streamlit.app/transcripts/{call_id}"
-    return f"https://app.openphone.com/transcripts/{call_id}"
-
-def get_agent_stats(calls, messages):
-    """Calculate statistics for each agent's interactions"""
-    agent_stats = {}
-    
-    # Process calls
-    for call in calls:
-        agent_number = call.get('to', {}).get('phoneNumber') if call.get('direction') == 'inbound' else call.get('from', {}).get('phoneNumber')
-        if agent_number:
-            if agent_number not in agent_stats:
-                agent_stats[agent_number] = {
-                    'calls_made': 0,
-                    'calls_received': 0,
-                    'messages_sent': 0,
-                    'messages_received': 0,
-                    'voicemail_endings': 0,
-                    'total_call_duration': 0,
-                    'transcripts': []
-                }
-            
-            if call.get('direction') == 'outbound':
-                agent_stats[agent_number]['calls_made'] += 1
-            else:
-                agent_stats[agent_number]['calls_received'] += 1
-            
-            if call.get('endReason') == 'voicemail':
-                agent_stats[agent_number]['voicemail_endings'] += 1
-            
-            if call.get('duration'):
-                agent_stats[agent_number]['total_call_duration'] += call.get('duration')
-            
-            if call.get('id'):
-                agent_stats[agent_number]['transcripts'].append({
-                    'id': call.get('id'),
-                    'time': call.get('createdAt'),
-                    'type': 'call'
-                })
-    
-    # Process messages
-    for message in messages:
-        agent_number = message.get('to', {}).get('phoneNumber') if message.get('direction') == 'inbound' else message.get('from', {}).get('phoneNumber')
-        if agent_number:
-            if agent_number not in agent_stats:
-                agent_stats[agent_number] = {
-                    'calls_made': 0,
-                    'calls_received': 0,
-                    'messages_sent': 0,
-                    'messages_received': 0,
-                    'voicemail_endings': 0,
-                    'total_call_duration': 0,
-                    'transcripts': []
-                }
-            
-            if message.get('direction') == 'outbound':
-                agent_stats[agent_number]['messages_sent'] += 1
-            else:
-                agent_stats[agent_number]['messages_received'] += 1
-    
-    return agent_stats
 
 def display_metrics(calls, messages):
     st.header("📊 Communication Metrics")
@@ -202,7 +91,6 @@ def display_metrics(calls, messages):
     total_messages = len(messages)
     inbound_calls = len([c for c in calls if c.get('direction') == 'inbound'])
     outbound_calls = len([c for c in calls if c.get('direction') == 'outbound'])
-    voicemail_endings = len([c for c in calls if c.get('endReason') == 'voicemail'])
     
     with col1:
         st.metric("Total Calls", total_calls)
@@ -211,36 +99,52 @@ def display_metrics(calls, messages):
     with col3:
         st.metric("Inbound Calls", inbound_calls)
     with col4:
-        st.metric("Voicemail Endings", voicemail_endings)
+        st.metric("Outbound Calls", outbound_calls)
 
-    # Agent Statistics
-    st.subheader("👤 Agent Activity")
-    agent_stats = get_agent_stats(calls, messages)
+    # Call Duration Metrics
+    st.subheader("📞 Call Analytics")
+    call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
+    if call_durations:
+        avg_duration = sum(call_durations) / len(call_durations)
+        max_duration = max(call_durations)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Average Call Duration (seconds)", f"{avg_duration:.1f}")
+        with col2:
+            st.metric("Longest Call (seconds)", max_duration)
+
+    # Message Analytics
+    st.subheader("💬 Message Analytics")
+    message_lengths = [len(m.get('content', '')) for m in messages if m.get('content')]
+    if message_lengths:
+        avg_length = sum(message_lengths) / len(message_lengths)
+        st.metric("Average Message Length (characters)", f"{avg_length:.1f}")
+
+    # Response Time Analysis
+    communications = []
+    for call in calls:
+        communications.append({
+            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
+            'type': 'Call',
+            'direction': call.get('direction')
+        })
+    for message in messages:
+        communications.append({
+            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
+            'type': 'Message',
+            'direction': message.get('direction')
+        })
     
-    for agent_number, stats in agent_stats.items():
-        with st.expander(f"Agent: {agent_number}"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Calls Made", stats['calls_made'])
-                st.metric("Messages Sent", stats['messages_sent'])
-            with col2:
-                st.metric("Calls Received", stats['calls_received'])
-                st.metric("Messages Received", stats['messages_received'])
-            with col3:
-                st.metric("Voicemail Endings", stats['voicemail_endings'])
-                avg_duration = stats['total_call_duration'] / (stats['calls_made'] + stats['calls_received']) if (stats['calls_made'] + stats['calls_received']) > 0 else 0
-                st.metric("Avg Call Duration (s)", f"{avg_duration:.1f}")
-            
-            if stats['transcripts']:
-                st.subheader("📝 Call Transcripts")
-                for transcript in sorted(stats['transcripts'], key=lambda x: x['time'], reverse=True):
-                    time_str = datetime.fromisoformat(transcript['time'].replace('Z', '+00:00')).strftime("%Y-%m-%d %H:%M")
-                    transcript_url = get_transcript_url(transcript['id'])
-                    st.write(f"[{time_str} - Call Transcript]({transcript_url})")
+    response_times = calculate_response_times(communications)
+    if response_times:
+        avg_response_time = sum(response_times) / len(response_times)
+        st.metric("Average Response Time (minutes)", f"{avg_response_time:.1f}")
 
 def display_timeline(calls, messages):
     st.header("📅 Communication Timeline")
     
+    # Combine and sort communications
     communications = []
     
     for call in calls:
@@ -255,8 +159,7 @@ def display_timeline(calls, messages):
             'status': call.get('status', 'unknown'),
             'id': call.get('id'),
             'from': from_number,
-            'to': to_number,
-            'end_reason': call.get('endReason', 'unknown')
+            'to': to_number
         })
     
     for message in messages:
@@ -265,11 +168,10 @@ def display_timeline(calls, messages):
             'type': 'Message',
             'direction': message.get('direction', 'unknown'),
             'content': message.get('content', 'No content'),
-            'status': message.get('status', 'unknown'),
-            'from': message.get('from', {}).get('phoneNumber', 'Unknown'),
-            'to': message.get('to', {}).get('phoneNumber', 'Unknown')
+            'status': message.get('status', 'unknown')
         })
     
+    # Sort by time
     communications.sort(key=lambda x: x['time'], reverse=True)
     
     for comm in communications:
@@ -279,33 +181,25 @@ def display_timeline(calls, messages):
         
         with st.expander(f"{icon} {direction_icon} {time_str}"):
             if comm['type'] == "Call":
-                st.write(f"**Agent:** {comm['from'] if comm['direction'] == 'outbound' else comm['to']}")
+                st.write(f"**Who Called:** {comm['from']} to {comm['to']}")
                 st.write(f"**Duration:** {comm['duration']} seconds")
-                if comm.get('end_reason') == 'voicemail':
-                    st.write("⚠️ **Call ended in voicemail**")
-                transcript_url = get_transcript_url(comm['id'])
-                st.write(f"[View Transcript]({transcript_url})")
+                st.write(f"[Transcript Link](https://api.openphone.com/v1/call-transcripts/{comm['id']})")
             else:
-                st.write(f"**Agent:** {comm['from'] if comm['direction'] == 'outbound' else comm['to']}")
                 st.write(f"**Message:** {comm['content']}")
             st.write(f"**Status:** {comm['status']}")
 
 def display_history(phone_number):
-    formatted_phone, error = format_phone_number(phone_number)
-    if error:
-        st.error(error)
-        return
-
-    st.title(f"📱 Communication History for {formatted_phone}")
+    st.title(f"📱 Communication History for {phone_number}")
     
     with st.spinner('Fetching communication history...'):
-        calls = fetch_call_history(formatted_phone)
-        messages = fetch_message_history(formatted_phone)
+        calls = fetch_call_history(phone_number)
+        messages = fetch_message_history(phone_number)
 
     if not calls and not messages:
         st.warning("No communication history found for this number.")
         return
 
+    # Display all sections in tabs
     tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📅 Timeline", "📋 Details"])
     
     with tab1:
@@ -324,8 +218,7 @@ def display_history(phone_number):
             for call in sorted(calls, key=lambda x: x['createdAt'], reverse=True):
                 call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
                 direction = "Incoming" if call.get('direction') == 'inbound' else "Outgoing"
-                end_reason = f" (Ended in voicemail)" if call.get('endReason') == 'voicemail' else ""
-                st.write(f"**{call_time}** - {direction} call ({call.get('duration', 'N/A')} seconds){end_reason}")
+                st.write(f"**{call_time}** - {direction} call ({call.get('duration', 'N/A')} seconds)")
         
         if show_messages:
             st.subheader("💬 Messages")
@@ -336,3 +229,19 @@ def display_history(phone_number):
 
 def main():
     st.set_page_config(
+        page_title="Communication History",
+        page_icon="📱",
+        layout="wide"
+    )
+
+    query_params = st.query_params
+    # Extract phone_number directly as a string, no indexing needed.
+    phone_number = query_params.get("phone", "")
+
+    if phone_number:
+        display_history(phone_number)
+    else:
+        st.error("Please provide a phone number in the URL using ?phone=PHONENUMBER")
+
+if __name__ == "__main__":
+    main()
