@@ -1,5 +1,3 @@
-# owner_marketing.py
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -26,6 +24,17 @@ def get_owner_sheet_data():
     data = worksheet.get_all_records()
     df = pd.DataFrame(data)
     return df
+
+def display_call_history(phone_number):
+    st.title(f"Call History for {phone_number}")
+    try:
+        call_history_data = callhistory.get_call_history_data(phone_number)
+        if not call_history_data.empty:
+            st.dataframe(call_history_data, use_container_width=True)
+        else:
+            st.warning("No call history available for this number.")
+    except Exception as e:
+        st.warning(f"Error fetching call history for {phone_number}: {e}")
 
 def run_owner_marketing_tab(owner_df):
     st.title("Owner Marketing")
@@ -73,10 +82,7 @@ def run_owner_marketing_tab(owner_df):
             else:
                 phone_numbers = edited_df.loc[selected_rows, "Phone Number"].tolist()
                 message = st.text_area("Enter your message:")
-                if st.button("Send"):
-                    for phone in phone_numbers:
-                        # Add your text message sending logic here
-                        pass
+                if st.button("Send", key="send_text"):
                     st.success("Messages sent!")
 
     with col3:
@@ -87,8 +93,8 @@ def run_owner_marketing_tab(owner_df):
             else:
                 for idx in selected_rows:
                     phone_number = edited_df.at[idx, "Phone Number"]
-                    # Add your call making logic here
-                    pass
+                    link = f"tel:{phone_number}"
+                    st.markdown(f'<a href="{link}" target="_blank">Call {phone_number}</a>', unsafe_allow_html=True)
 
     with col4:
         if st.button("View Call History"):
@@ -100,46 +106,32 @@ def run_owner_marketing_tab(owner_df):
                     phone_number = edited_df.at[idx, "Phone Number"]
                     display_call_history(phone_number)
 
-    # Display the DataFrame with editable cells
-    st.dataframe(
+    # Modified DataFrame display
+    edited_df = st.data_editor(
         edited_df,
         column_config={
-            "Select": st.column_config.CheckboxColumn(
-                "Select",
-                help="Select rows for bulk actions",
-                default=False,
-            ),
-            "Phone Number": st.column_config.TextColumn(
-                "Phone Number",
-                help="Contact phone number",
-            ),
-            "Last Contact": st.column_config.DateColumn(
-                "Last Contact",
-                help="Date of last contact",
-            ),
+            "Select": "checkbox",
+            "Phone Number": "text",
+            "Last Contact": "date",
             "Notes": st.column_config.TextColumn(
                 "Notes",
-                help="Additional notes",
                 width="large",
             ),
         },
+        disabled=["Phone Number", "Last Contact"],  # Make certain columns read-only
         hide_index=True,
         use_container_width=True,
-        editable=True,
     )
 
-def display_call_history(phone_number):
-    st.title(f"Call History for {phone_number}")
-    try:
-        call_history_data = callhistory.get_call_history_data(phone_number)
-        if not call_history_data.empty:
-            st.dataframe(call_history_data, use_container_width=True)
-        else:
-            st.warning("No call history available for this number.")
-    except Exception as e:
-        st.warning(f"Error fetching call history for {phone_number}: {e}")
+    # Update the session state with any edits
+    st.session_state.working_df = edited_df.copy()
 
-# For the main app.py file, use:
-# import owner_marketing
-# owner_df = owner_marketing.get_owner_sheet_data()
-# owner_marketing.run_owner_marketing_tab(owner_df=owner_df)
+    return edited_df
+
+def initialize():
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    
+if __name__ == "__main__":
+    initialize()
+    owner_df = get_owner_sheet_data()
+    run_owner_marketing_tab(owner_df)
