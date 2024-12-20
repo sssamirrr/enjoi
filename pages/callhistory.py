@@ -141,14 +141,6 @@ def display_metrics(calls, messages):
         avg_response_time = sum(response_times) / len(response_times)
         st.metric("Average Response Time (minutes)", f"{avg_response_time:.1f}")
 
-# NEW FUNCTION TO FETCH TRANSCRIPT
-def fetch_call_transcript(call_id):
-    url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        return response.json().get("data", {})
-    return None
-
 def display_timeline(calls, messages):
     st.header("📅 Communication Timeline")
     
@@ -191,17 +183,7 @@ def display_timeline(calls, messages):
             if comm['type'] == "Call":
                 st.write(f"**Who Called:** {comm['from']} to {comm['to']}")
                 st.write(f"**Duration:** {comm['duration']} seconds")
-                
-                # Fetch and display transcript directly
-                transcript_data = fetch_call_transcript(comm['id'])
-                if transcript_data and transcript_data.get('dialogue'):
-                    with st.expander("View Transcript"):
-                        for seg in transcript_data['dialogue']:
-                            speaker = seg.get('identifier', 'Unknown')
-                            content = seg.get('content', '')
-                            st.write(f"**{speaker}**: {content}")
-                else:
-                    st.write("Transcript not available or in progress.")
+                st.write(f"[Transcript Link](https://api.openphone.com/v1/call-transcripts/{comm['id']})")
             else:
                 st.write(f"**Message:** {comm['content']}")
             st.write(f"**Status:** {comm['status']}")
@@ -253,6 +235,7 @@ def main():
     )
 
     query_params = st.query_params
+    # Extract phone_number directly as a string, no indexing needed.
     phone_number = query_params.get("phone", "")
 
     if phone_number:
