@@ -59,5 +59,3 @@ def run_call_history_page():
             st.write("---")
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="Call History", layout="wide")
-    run_call_history_page()
