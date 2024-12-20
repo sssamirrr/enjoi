@@ -16,23 +16,33 @@ def get_owner_sheet_data():
     """
     Retrieves the data from the Google Sheet and returns it as a Pandas DataFrame.
     """
-    # Create a connection to Google Sheets
-    # Note: Replace 'your_service_account_info' with your actual service account credentials
+    import streamlit as st
+    import pandas as pd
+    import gspread
+    from google.oauth2 import service_account
+
+    # Set up credentials
     credentials = service_account.Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
         ],
     )
+
     # Authorize the gspread client
     client = gspread.authorize(credentials)
 
-    # Open the Google Sheet by URL or by name
-    # Replace 'YOUR_GOOGLE_SHEET_URL' with your actual sheet URL
-    st.secrets["owners_sheets"]["owners_sheet_key"]
+    # Get the owners sheet key from secrets
+    sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
 
-    # Get all records from the sheet
-    data = sheet.get_all_records()
+    # Open the Google Sheet by key
+    sheet = client.open_by_key(sheet_key)
+
+    # Get the first worksheet
+    worksheet = sheet.sheet1  # or you can use worksheet = sheet.get_worksheet(0)
+
+    # Get all records from the worksheet
+    data = worksheet.get_all_records()
 
     # Convert the data to a Pandas DataFrame
     df = pd.DataFrame(data)
