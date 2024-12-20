@@ -197,15 +197,21 @@ def display_timeline(calls, messages):
                 # Fetch transcript and show summary
                 transcript_data = fetch_call_transcript(comm['id'])
                 if transcript_data and transcript_data.get('dialogue'):
-                    # Create a summary by joining all segments
                     all_contents = " ".join([seg.get('content', '') for seg in transcript_data['dialogue']])
                     summary = all_contents[:200] + ("..." if len(all_contents) > 200 else "")
                     st.write("**Transcript Summary:**")
                     st.write(summary)
+                    
+                    # Add a checkbox to show full transcript
+                    show_full = st.checkbox("Show Full Transcript")
+                    if show_full:
+                        for seg in transcript_data['dialogue']:
+                            speaker = seg.get('identifier', 'Unknown')
+                            content = seg.get('content', '')
+                            st.write(f"**{speaker}**: {content}")
                 else:
                     st.write("Transcript not available or in progress.")
             else:
-                # Show who texted based on direction
                 if comm['direction'] == 'inbound':
                     st.write("**Who Texted:** Guest texted")
                 else:
