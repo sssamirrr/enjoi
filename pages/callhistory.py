@@ -30,6 +30,17 @@ def get_openphone_numbers():
         return []
     return response.json().get("data", [])
 
+def create_phone_name_map():
+    """Create a dictionary mapping from phoneNumber to name (if available) for your OpenPhone numbers."""
+    numbers = get_openphone_numbers()
+    phone_name_map = {}
+    for num in numbers:
+        phone_num = num.get('phoneNumber', '')
+        name = num.get('name', '')
+        if phone_num:
+            phone_name_map[phone_num] = name if name else phone_num
+    return phone_name_map
+
 def fetch_call_history(phone_number):
     formatted_phone = format_phone_number(phone_number)
     if not formatted_phone:
@@ -153,7 +164,13 @@ def fetch_call_transcript(call_id):
 
 def display_timeline(calls, messages):
     st.header("📅 Communication Timeline")
-    
+
+    # Create a map from phoneNumber -> name for your known OpenPhone numbers
+    phone_name_map = create_phone_name_map()
+
+    def get_display_name(phone_num):
+        return phone_name_map.get(phone_num, phone_num)
+
     # Combine and sort communications
     communications = []
     
@@ -178,7 +195,10 @@ def display_timeline(calls, messages):
             'type': 'Message',
             'direction': message.get('direction', 'unknown'),
             'content': message.get('content', 'No content'),
-            'status': message.get('status', 'unknown')
+            'status': message.get('status', 'unknown'),
+            # For messages, we can try to identify who is agent and who is guest:
+            # If direction = inbound => guest texted
+            # If direction = outbound => we (agent) texted
         })
     
     # Sort by time
@@ -191,7 +211,10 @@ def display_timeline(calls, messages):
         
         with st.expander(f"{icon} {direction_icon} {time_str}"):
             if comm['type'] == "Call":
-                st.write(f"**Who Called:** {comm['from']} to {comm['to']}")
+                # Display agent/guest names
+                from_name = get_display_name(comm['from'])
+                to_name = get_display_name(comm['to'])
+                st.write(f"**Who Called:** {from_name} to {to_name}")
                 st.write(f"**Duration:** {comm['duration']} seconds")
                 
                 # Fetch transcript and show summary
@@ -207,16 +230,21 @@ def display_timeline(calls, messages):
                     if show_full:
                         for seg in transcript_data['dialogue']:
                             speaker = seg.get('identifier', 'Unknown')
-                            content = seg.get('content', '')
-                            st.write(f"**{speaker}**: {content}")
+                            st.write(f"**{speaker}**: {seg.get('content', '')}")
                 else:
                     st.write("Transcript not available or in progress.")
             else:
+                # If message, show who texted with agent or guest name if available
                 if comm['direction'] == 'inbound':
+                    # Guest texted
                     st.write("**Who Texted:** Guest texted")
                 else:
-                    st.write("**Who Texted:** We texted")
-                st.write(f"**Message:** {comm['content']}")
+                    # We (Agent) texted - display the agent name if we have a known number
+                    # We don't have direct from/to on messages. If needed, adapt if message includes participants.
+                    # Here we assume outbound means from the agent:
+                    # If you have participants field in messages, you can identify agent number similarly.
+                    st.write("**Who Texted:** We (Agent) texted")
+                st.write(f"**Message:** {comm.get('content', 'No content')}")
             st.write(f"**Status:** {comm['status']}")
 
 def display_history(phone_number):
