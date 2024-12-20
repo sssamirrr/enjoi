@@ -5,9 +5,11 @@ from datetime import datetime
 import phonenumbers
 
 # OpenPhone API Configuration
-OPENPHONE_API_TOKEN = st.secrets["OPENPHONE_API_TOKEN"]
+
+# OpenPhone API Credentials
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
-    "Authorization": f"Bearer {OPENPHONE_API_TOKEN}",
+    "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
 
