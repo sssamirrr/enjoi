@@ -21,25 +21,49 @@ def format_phone_number(phone):
     except phonenumbers.NumberParseException:
         return None
 
-# Fetch Call History from OpenPhone API
 def fetch_call_history(phone_number):
+    # Format the phone number to E.164 format
     formatted_phone = format_phone_number(phone_number)
     if not formatted_phone:
         st.error(f"Invalid phone number: {phone_number}. Please provide a valid E.164 format number.")
         return []
 
-    calls_url = "https://api.openphone.com/v1/calls"
-    params = {"participants": [formatted_phone], "maxResults": 50}
-    st.write(f"Formatted Phone: {formatted_phone}")  # Debugging
-    st.write(f"API Request Params: {params}")       # Debugging
+    # Step 1: Get phoneNumberId
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    try:
+        response = requests.get(phone_numbers_url, headers=HEADERS)
+        if response.status_code != 200:
+            st.error(f"Failed to fetch phone numbers: {response.status_code}")
+            st.write(f"API Response: {response.text}")  # Debugging output
+            return []
 
+        phone_numbers = response.json().get("data", [])
+        phone_number_id = None
+
+        # Match the formatted phone number with the list of phone numbers
+        for pn in phone_numbers:
+            if pn.get("e164", "") == formatted_phone:
+                phone_number_id = pn.get("id")
+                break
+
+        if not phone_number_id:
+            st.error(f"No matching phoneNumberId found for {formatted_phone}")
+            return []
+
+    except Exception as e:
+        st.error(f"Error fetching phone numbers: {str(e)}")
+        return []
+
+    # Step 2: Fetch call history using phoneNumberId
+    calls_url = "https://api.openphone.com/v1/calls"
+    params = {"phoneNumberId": phone_number_id, "maxResults": 50}
     try:
         response = requests.get(calls_url, headers=HEADERS, params=params)
         if response.status_code == 200:
             return response.json().get("data", [])
         else:
             st.error(f"Failed to fetch call history: {response.status_code}")
-            st.write(f"API Response: {response.text}")
+            st.write(f"API Response: {response.text}")  # Debugging output
             return []
     except Exception as e:
         st.error(f"Error fetching call history: {str(e)}")
