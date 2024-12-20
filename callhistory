@@ -35,11 +35,11 @@ def rate_limited_request(url, headers, params):
 # Function to generate call history link
 def generate_call_history_link(phone_number):
     # Use your app's URL here
-    base_url = "http://localhost:8501"  # Replace with your deployed app URL if applicable
+    base_url = "https://ldmcbiowzbdeqvmabvudyy.streamlit.app"
     formatted_number = format_phone_number(phone_number)
 
     if formatted_number:
-        return f"{base_url}?view=call-history&number={formatted_number}"
+        return f"{base_url}/?view=call-history&number={formatted_number}"
     return None
 
 # Fetch OpenPhone Communication Data
@@ -137,8 +137,8 @@ def get_call_history_data(phone_number, headers):
             for call in calls:
                 call_info = {
                     'Date': call['createdAt'],
-                    'From': call['from']['phone'],
-                    'To': call['to']['phone'],
+                    'From': call['from']['phone'] if 'from' in call and 'phone' in call['from'] else None,
+                    'To': call['to']['phone'] if 'to' in call and 'phone' in call['to'] else None,
                     'Direction': call['direction'],
                     'Duration (s)': call.get('duration', 0),
                     'Status': call['status'],
