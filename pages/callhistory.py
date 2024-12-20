@@ -197,8 +197,14 @@ def display_timeline(calls, messages):
         time_str = comm['time'].strftime("%Y-%m-%d %H:%M")
         icon = "📞" if comm['type'] == "Call" else "💬"
         direction_icon = "⬅️" if comm['direction'] == "inbound" else "➡️"
+
+        # Add call duration if it's a call
+        if comm['type'] == "Call":
+            label = f"{icon} {direction_icon} {time_str} ({comm['duration']}s)"
+        else:
+            label = f"{icon} {direction_icon} {time_str}"
         
-        with st.expander(f"{icon} {direction_icon} {time_str}"):
+        with st.expander(label):
             if comm['type'] == "Call":
                 from_name = get_display_name(comm['from'])
                 to_name = get_display_name(comm['to'])
@@ -207,31 +213,11 @@ def display_timeline(calls, messages):
                 
                 transcript_data = fetch_call_transcript(comm['id'])
                 if transcript_data and transcript_data.get('dialogue'):
-                    # Show summary by default
-                    all_contents = " ".join([seg.get('content', '') for seg in transcript_data['dialogue']])
-                    summary = all_contents[:200] + ("..." if len(all_contents) > 200 else "")
-                    st.write("**Transcript Summary:**")
-                    st.write(summary)
-
-                    # Create a row of buttons
-                    col_show, col_copy = st.columns(2)
-                    show_full = col_show.button("Show Full Transcript", key=f"full_transcript_{comm['id']}")
-                    copy_button = col_copy.button("Copy Transcript", key=f"copy_transcript_{comm['id']}")
-
-                    full_transcript_text = "\n".join([f"{seg.get('identifier', 'Unknown')}: {seg.get('content', '')}" for seg in transcript_data['dialogue']])
-                    
-                    # If user clicks Show Full Transcript
-                    if show_full:
-                        st.write("**Full Transcript:**")
-                        for seg in transcript_data['dialogue']:
-                            speaker = seg.get('identifier', 'Unknown')
-                            content = seg.get('content', '')
-                            st.write(f"**{speaker}**: {content}")
-
-                    # If user clicks Copy Transcript, display in a text area
-                    if copy_button:
-                        st.write("**Copy the transcript from below:**")
-                        st.text_area("Transcript", full_transcript_text, height=300)
+                    st.write("**Full Transcript:**")
+                    for seg in transcript_data['dialogue']:
+                        speaker = seg.get('identifier', 'Unknown')
+                        content = seg.get('content', '')
+                        st.write(f"**{speaker}**: {content}")
                 else:
                     st.write("Transcript not available or in progress.")
             else:
@@ -281,17 +267,33 @@ def display_history(phone_number):
                 st.write(f"**{message_time}** - {direction}: {message.get('content', 'No content')}")
 
         st.subheader("All Call Transcripts")
-        if st.button("Show All Transcripts"):
+        col_show_all, col_copy_all = st.columns(2)
+        show_all_button = col_show_all.button("Show All Transcripts")
+        copy_all_button = col_copy_all.button("Copy All Transcripts")
+
+        # We'll build all transcripts text after fetching them
+        all_transcripts_text = ""
+        if show_all_button or copy_all_button:
             for call in calls:
-                st.write(f"**Call {call['id']} Transcript:**")
+                all_transcripts_text += f"Call {call['id']} Transcript:\n"
                 transcript_data = fetch_call_transcript(call['id'])
                 if transcript_data and transcript_data.get('dialogue'):
                     for seg in transcript_data['dialogue']:
                         speaker = seg.get('identifier', 'Unknown')
                         content = seg.get('content', '')
-                        st.write(f"**{speaker}**: {content}")
+                        all_transcripts_text += f"{speaker}: {content}\n"
                 else:
-                    st.write("No transcript available for this call.")
+                    all_transcripts_text += "No transcript available for this call.\n"
+                all_transcripts_text += "\n"
+
+        if show_all_button:
+            # Display all transcripts inline
+            for line in all_transcripts_text.split("\n"):
+                st.write(line)
+
+        if copy_all_button:
+            # Display a text area to copy all transcripts
+            st.text_area("All Transcripts", all_transcripts_text, height=300)
 
 def main():
     st.set_page_config(
@@ -300,17 +302,13 @@ def main():
         layout="wide"
     )
 
-    # Get phone number from query params or user input
     query_params = st.query_params
-    default_phone = query_params.get("phone", "")
-    
-    # Add a box at the top where the user can type another phone number
-    phone_number = st.text_input("Enter another phone number:", value=default_phone)
-    
+    phone_number = query_params.get("phone", "")
+
     if phone_number:
         display_history(phone_number)
     else:
-        st.error("Please provide a phone number.")
-        
+        st.error("Please provide a phone number in the URL using ?phone=PHONENUMBER")
+
 if __name__ == "__main__":
     main()
