@@ -14,13 +14,36 @@ HEADERS = {
 }
 
 def format_phone_number(phone_number):
+    """
+    Format and validate phone numbers with better error handling and user feedback.
+    Returns tuple of (formatted_number, error_message)
+    """
+    if not phone_number:
+        return None, "Please enter a phone number"
+    
+    # Remove any non-numeric characters except + sign
+    cleaned_number = ''.join(c for c in phone_number if c.isdigit() or c == '+')
+    
+    # Add US country code if not present
+    if not cleaned_number.startswith('+'):
+        if cleaned_number.startswith('1'):
+            cleaned_number = '+' + cleaned_number
+        else:
+            cleaned_number = '+1' + cleaned_number
+
     try:
-        parsed = phonenumbers.parse(phone_number, "US")
+        parsed = phonenumbers.parse(cleaned_number)
         if phonenumbers.is_valid_number(parsed):
-            return f"+{parsed.country_code}{parsed.national_number}"
-    except Exception as e:
-        st.error(f"Error parsing phone number: {e}")
-    return None
+            return f"+{parsed.country_code}{parsed.national_number}", None
+        else:
+            return None, "Invalid phone number format. Please enter a valid US phone number."
+    except phonenumbers.NumberParseException as e:
+        if len(cleaned_number) < 10:
+            return None, "Phone number is too short. Please enter a complete phone number."
+        elif len(cleaned_number) > 15:
+            return None, "Phone number is too long. Please enter a valid phone number."
+        else:
+            return None, f"Invalid phone number format: {str(e)}"
 
 def get_openphone_numbers():
     url = "https://api.openphone.com/v1/phone-numbers"
@@ -31,8 +54,9 @@ def get_openphone_numbers():
     return response.json().get("data", [])
 
 def fetch_call_history(phone_number):
-    formatted_phone = format_phone_number(phone_number)
-    if not formatted_phone:
+    formatted_phone, error = format_phone_number(phone_number)
+    if error:
+        st.error(error)
         return []
     
     all_calls = []
@@ -51,8 +75,9 @@ def fetch_call_history(phone_number):
     return all_calls
 
 def fetch_message_history(phone_number):
-    formatted_phone = format_phone_number(phone_number)
-    if not formatted_phone:
+    formatted_phone, error = format_phone_number(phone_number)
+    if error:
+        st.error(error)
         return []
     
     all_messages = []
@@ -148,7 +173,6 @@ def display_timeline(calls, messages):
     communications = []
     
     for call in calls:
-        # ADDING who called information
         from_number = call.get('from', {}).get('phoneNumber', 'Unknown')
         to_number = call.get('to', {}).get('phoneNumber', 'Unknown')
         
@@ -159,8 +183,8 @@ def display_timeline(calls, messages):
             'duration': call.get('duration', 'N/A'),
             'status': call.get('status', 'unknown'),
             'id': call.get('id'),
-            'from': from_number,   # Store who called
-            'to': to_number        # Store who was called
+            'from': from_number,
+            'to': to_number
         })
     
     for message in messages:
@@ -182,21 +206,24 @@ def display_timeline(calls, messages):
         
         with st.expander(f"{icon} {direction_icon} {time_str}"):
             if comm['type'] == "Call":
-                # SHOW who called and transcript link
                 st.write(f"**Who Called:** {comm['from']} to {comm['to']}")
                 st.write(f"**Duration:** {comm['duration']} seconds")
-                # Add a link to the transcript
                 st.write(f"[Transcript Link](https://api.openphone.com/v1/call-transcripts/{comm['id']})")
             else:
                 st.write(f"**Message:** {comm['content']}")
             st.write(f"**Status:** {comm['status']}")
 
 def display_history(phone_number):
-    st.title(f"📱 Communication History for {phone_number}")
+    formatted_phone, error = format_phone_number(phone_number)
+    if error:
+        st.error(error)
+        return
+
+    st.title(f"📱 Communication History for {formatted_phone}")
     
     with st.spinner('Fetching communication history...'):
-        calls = fetch_call_history(phone_number)
-        messages = fetch_message_history(phone_number)
+        calls = fetch_call_history(formatted_phone)
+        messages = fetch_message_history(formatted_phone)
 
     if not calls and not messages:
         st.warning("No communication history found for this number.")
@@ -237,15 +264,37 @@ def main():
         layout="wide"
     )
 
-    # Using st.experimental_get_query_params was replaced previously.
-    # Do not change anything else.
+    # Get phone number from URL parameters
     query_params = st.query_params
-    phone_number = query_params.get("phone", [""])[0]
+    phone_param = query_params.get("phone", [""])[0]
 
-    if phone_number:
-        display_history(phone_number)
+    # Add a text input field for phone number
+    phone_input = st.text_input(
+        "Enter Phone Number",
+        value=phone_param,
+        help="Enter a US phone number (e.g., +1234567890 or 1234567890)"
+    )
+
+    if phone_input:
+        formatted_phone, error_message = format_phone_number(phone_input)
+        
+        if error_message:
+            st.error(error_message)
+            st.info("""
+            Please enter a valid US phone number in one of these formats:
+            - +1XXXXXXXXXX
+            - 1XXXXXXXXXX
+            - XXXXXXXXXX (10 digits)
+            """)
+        else:
+            # Update URL with formatted phone number
+            if formatted_phone != phone_param:
+                st.query_params["phone"] = formatted_phone
+            
+            # Display communication history
+            display_history(formatted_phone)
     else:
-        st.error("Please provide a phone number in the URL using ?phone=PHONENUMBER")
+        st.info("Please enter a phone number to view communication history")
 
 if __name__ == "__main__":
     main()
