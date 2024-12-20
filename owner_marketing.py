@@ -111,10 +111,38 @@ def run_owner_marketing_tab(owner_df):
         key='data_editor'
     )
 
+def run_text_marketing_tab(owner_df):
+    st.title("Text Marketing Dashboard")
+
+    st.subheader("Send Bulk Texts")
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_rows = st.multiselect("Select Owners to Message", owner_df.index.tolist())
+    with col2:
+        message = st.text_area("Message Content")
+
+    if st.button("Send Messages"):
+        if not selected_rows or not message:
+            st.warning("Please select owners and enter a message.")
+        else:
+            for idx in selected_rows:
+                phone_number = owner_df.loc[idx, "Phone Number"]
+                formatted_phone = format_phone_number(phone_number)
+                if formatted_phone:
+                    st.write(f"Message sent to {formatted_phone}: {message}")
+                else:
+                    st.error(f"Invalid phone number: {phone_number}")
+
+
 def run_minimal_app():
     owner_df = get_owner_sheet_data()
     if not owner_df.empty:
-        run_owner_marketing_tab(owner_df)
+        tab1, tab2 = st.tabs(["Owner Marketing", "Text Marketing"])
+
+        with tab1:
+            run_owner_marketing_tab(owner_df)
+        with tab2:
+            run_text_marketing_tab(owner_df)
     else:
         st.error("No owner data available.")
 
