@@ -95,6 +95,16 @@ def fetch_message_history(phone_number):
 
     return all_messages
 
+def fetch_call_transcript(call_id):
+    """Fetch transcript for a specific call."""
+    url = f"https://api.openphone.com/v1/calls/{call_id}/transcript"
+    response = requests.get(url, headers=HEADERS)
+    
+    if response.status_code == 200:
+        return response.json().get('data', {}).get('transcript', 'No transcript available')
+    else:
+        return "Transcript not available"
+
 def display_history(phone_number):
     """Display call and message history."""
     st.title("Communication History Viewer")
@@ -111,7 +121,7 @@ def display_history(phone_number):
         for call in sorted(call_history, key=lambda x: x['createdAt'], reverse=True):
             try:
                 call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
-                with st.expander(f"Call on {call_time}"):
+                with st.expander(f"Call on {call_time}", expanded=False):
                     st.write(f"**Direction**: {call.get('direction', 'unknown')}")
                     st.write(f"**Duration**: {call.get('duration', 'unknown')} seconds")
                     st.write(f"**Status**: {call.get('status', 'unknown')}")
