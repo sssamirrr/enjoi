@@ -1,18 +1,18 @@
 import streamlit as st
 import requests
 from datetime import datetime
-import phonenumbers  # Use the `phonenumbers` library for validation and formatting
+import phonenumbers
 
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
-    "Authorization": OPENPHONE_API_KEY,
+    "Authorization": f"Bearer {OPENPHONE_API_KEY}",
     "Content-Type": "application/json"
 }
 
 # Function to validate and format phone number to E.164
 def format_phone_number(phone):
     try:
-        parsed_phone = phonenumbers.parse(phone, "US")  # Assuming US as the default region
+        parsed_phone = phonenumbers.parse(phone, "US")  # Assuming US as default region
         if phonenumbers.is_valid_number(parsed_phone):
             return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
         else:
@@ -30,12 +30,16 @@ def fetch_call_history(phone_number):
 
     calls_url = "https://api.openphone.com/v1/calls"
     params = {"participants": [formatted_phone], "maxResults": 50}
+    st.write(f"Formatted Phone: {formatted_phone}")  # Debugging
+    st.write(f"API Request Params: {params}")       # Debugging
+
     try:
         response = requests.get(calls_url, headers=HEADERS, params=params)
         if response.status_code == 200:
             return response.json().get("data", [])
         else:
             st.error(f"Failed to fetch call history: {response.status_code}")
+            st.write(f"API Response: {response.text}")  # Debugging
             return []
     except Exception as e:
         st.error(f"Error fetching call history: {str(e)}")
@@ -46,7 +50,7 @@ def run_call_history_page():
     st.title("Call History Viewer")
 
     # Retrieve the phone number from query parameters
-    phone_number = st.experimental_get_query_params().get("phone", [None])[0]
+    phone_number = st.query_params.get("phone", [None])[0]  # Updated for st.query_params
     if not phone_number:
         st.error("No phone number provided!")
         return
@@ -78,4 +82,5 @@ def run_call_history_page():
 
 # Entry point for the script
 if __name__ == "__main__":
+    st.set_page_config(page_title="Call History Viewer", layout="wide")
     run_call_history_page()
