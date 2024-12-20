@@ -207,11 +207,31 @@ def display_timeline(calls, messages):
                 
                 transcript_data = fetch_call_transcript(comm['id'])
                 if transcript_data and transcript_data.get('dialogue'):
-                    st.write("**Full Transcript:**")
-                    for seg in transcript_data['dialogue']:
-                        speaker = seg.get('identifier', 'Unknown')
-                        content = seg.get('content', '')
-                        st.write(f"**{speaker}**: {content}")
+                    # Show summary by default
+                    all_contents = " ".join([seg.get('content', '') for seg in transcript_data['dialogue']])
+                    summary = all_contents[:200] + ("..." if len(all_contents) > 200 else "")
+                    st.write("**Transcript Summary:**")
+                    st.write(summary)
+
+                    # Create a row of buttons
+                    col_show, col_copy = st.columns(2)
+                    show_full = col_show.button("Show Full Transcript", key=f"full_transcript_{comm['id']}")
+                    copy_button = col_copy.button("Copy Transcript", key=f"copy_transcript_{comm['id']}")
+
+                    full_transcript_text = "\n".join([f"{seg.get('identifier', 'Unknown')}: {seg.get('content', '')}" for seg in transcript_data['dialogue']])
+                    
+                    # If user clicks Show Full Transcript
+                    if show_full:
+                        st.write("**Full Transcript:**")
+                        for seg in transcript_data['dialogue']:
+                            speaker = seg.get('identifier', 'Unknown')
+                            content = seg.get('content', '')
+                            st.write(f"**{speaker}**: {content}")
+
+                    # If user clicks Copy Transcript, display in a text area
+                    if copy_button:
+                        st.write("**Copy the transcript from below:**")
+                        st.text_area("Transcript", full_transcript_text, height=300)
                 else:
                     st.write("Transcript not available or in progress.")
             else:
