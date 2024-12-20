@@ -67,18 +67,30 @@ def run_owner_marketing_tab(owner_df):
     with col1:
         selected_states = st.multiselect("Select States", owner_df['State'].dropna().unique())
     with col2:
-        # Ensure `Sale Date` column has valid datetime values and handle missing or invalid data
-        if not owner_df['Sale Date'].isnull().all():
-            min_date = owner_df['Sale Date'].min().date() if not pd.isnull(owner_df['Sale Date'].min()) else date.today()
-            max_date = owner_df['Sale Date'].max().date() if not pd.isnull(owner_df['Sale Date'].max()) else date.today()
+        # Ensure `Sale Date` is properly converted to datetime and handle missing values
+        if 'Sale Date' in owner_df.columns:
+            owner_df['Sale Date'] = pd.to_datetime(owner_df['Sale Date'], errors='coerce')
+
+            # Determine minimum and maximum valid dates
+            if not owner_df['Sale Date'].dropna().empty:
+                min_date = owner_df['Sale Date'].min().date()
+                max_date = owner_df['Sale Date'].max().date()
+            else:
+                min_date = date.today()
+                max_date = date.today()
         else:
             min_date = date.today()
             max_date = date.today()
 
-        date_range = st.date_input(
-            "Sale Date Range",
-            [min_date, max_date]
-        )
+        # Use the determined range in the date input
+        try:
+            date_range = st.date_input(
+                "Sale Date Range",
+                [min_date, max_date]
+            )
+        except Exception as e:
+            st.error(f"An error occurred while initializing the date input: {e}")
+            date_range = [date.today(), date.today()]
 
     # Apply Filters
     filtered_df = owner_df.copy()
