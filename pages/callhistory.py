@@ -1,8 +1,21 @@
 import streamlit as st
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import phonenumbers
+import pandas as pd
+import altair as alt
+import numpy as np
+import plotly.express as px
+from datetime import datetime, timezone
+import json
 
+# First Streamlit command must be st.set_page_config()
+st.set_page_config(
+    page_title="Call History Analytics",
+    page_icon="📞",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 # OpenPhone API Credentials
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
