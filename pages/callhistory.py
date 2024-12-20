@@ -12,17 +12,20 @@ HEADERS = {
 }
 
 # Helper: Format phone number to E.164
-def format_phone_number(phone):
+def run_call_history_page():
     """
-    Format a phone number to E.164 format.
+    Run the Streamlit app for call history viewer.
     """
-    try:
-        parsed_phone = phonenumbers.parse(phone, "US")  # Default to US region
-        if phonenumbers.is_valid_number(parsed_phone):
-            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
-        else:
-            return None
-    except phonenumbers.NumberParseException:
+    st.set_page_config(page_title="Call History Viewer", layout="wide")
+    # Access the phone parameter directly from query_params
+    phone_number = st.query_params["phone"] if "phone" in st.query_params else None
+
+    if not phone_number:
+        st.error("No phone number provided!")
+        return
+
+    display_call_history(phone_number)
+
         return None
 
 # Helper: Make API requests with rate limiting
