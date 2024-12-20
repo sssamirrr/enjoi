@@ -111,47 +111,59 @@ def display_history(phone_number):
     st.write(f"Retrieved Phone Number: {phone_number}")
     st.write(f"\nCommunication History for {format_phone_number(phone_number)}")
 
+    # Create tabs for Calls and Messages
+    tab1, tab2 = st.tabs(["📞 Calls", "💬 Messages"])
+
     # Fetch both call and message history
     call_history = fetch_call_history(phone_number)
     message_history = fetch_message_history(phone_number)
 
-    # Display Calls
-    st.header("Call History")
-    if call_history:
-        for call in sorted(call_history, key=lambda x: x['createdAt'], reverse=True):
-            try:
-                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
-                with st.expander(f"Call on {call_time}", expanded=False):
-                    st.write(f"**Direction**: {call.get('direction', 'unknown')}")
-                    st.write(f"**Duration**: {call.get('duration', 'unknown')} seconds")
-                    st.write(f"**Status**: {call.get('status', 'unknown')}")
-                    if 'participants' in call:
-                        st.write(f"**Participants**: {', '.join(call['participants'])}")
-                    st.write("---")
-            except Exception as e:
-                st.error(f"Error displaying call: {e}")
-    else:
-        st.write("No call history found for this number.")
+    # Display Calls in Tab 1
+    with tab1:
+        if call_history:
+            for call in sorted(call_history, key=lambda x: x['createdAt'], reverse=True):
+                try:
+                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
+                    with st.expander(f"Call on {call_time}", expanded=False):
+                        st.write(f"**Direction**: {call.get('direction', 'unknown')}")
+                        st.write(f"**Duration**: {call.get('duration', 'unknown')} seconds")
+                        st.write(f"**Status**: {call.get('status', 'unknown')}")
+                        if 'participants' in call:
+                            st.write(f"**Participants**: {', '.join(call['participants'])}")
+                        
+                        # Add button for transcript
+                        if call.get('id'):
+                            if st.button(f"View Transcript", key=f"transcript_{call['id']}"):
+                                with st.spinner('Loading transcript...'):
+                                    transcript = fetch_call_transcript(call['id'])
+                                    st.write("**Call Transcript:**")
+                                    st.write(transcript)
+                        
+                        st.write("---")
+                except Exception as e:
+                    st.error(f"Error displaying call: {e}")
+        else:
+            st.write("No call history found for this number.")
 
-    # Display Messages
-    st.header("Message History")
-    if message_history:
-        for message in sorted(message_history, key=lambda x: x['createdAt'], reverse=True):
-            try:
-                message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
-                with st.expander(f"Message on {message_time}"):
-                    st.write(f"**Content**: {message.get('content', 'No content')}")
-                    st.write(f"**Direction**: {message.get('direction', 'unknown')}")
-                    st.write(f"**Status**: {message.get('status', 'unknown')}")
-                    if 'attachments' in message and message['attachments']:
-                        st.write("**Attachments**: Yes")
-                        for attachment in message['attachments']:
-                            st.write(f"- {attachment.get('url', 'No URL')}")
-                    st.write("---")
-            except Exception as e:
-                st.error(f"Error displaying message: {e}")
-    else:
-        st.write("No message history found for this number.")
+    # Display Messages in Tab 2
+    with tab2:
+        if message_history:
+            for message in sorted(message_history, key=lambda x: x['createdAt'], reverse=True):
+                try:
+                    message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
+                    with st.expander(f"Message on {message_time}", expanded=False):
+                        st.write(f"**Content**: {message.get('content', 'No content')}")
+                        st.write(f"**Direction**: {message.get('direction', 'unknown')}")
+                        st.write(f"**Status**: {message.get('status', 'unknown')}")
+                        if 'attachments' in message and message['attachments']:
+                            st.write("**Attachments**: Yes")
+                            for attachment in message['attachments']:
+                                st.write(f"- {attachment.get('url', 'No URL')}")
+                        st.write("---")
+                except Exception as e:
+                    st.error(f"Error displaying message: {e}")
+        else:
+            st.write("No message history found for this number.")
 
 def main():
     """Main function to run the Streamlit app."""
