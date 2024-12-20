@@ -3,14 +3,12 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-# Hardcoded OpenPhone API Key and Headers (replace with secure storage in production)
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
 
-# Fetch Call History
 def fetch_call_history(phone_number):
     calls_url = "https://api.openphone.com/v1/calls"
     params = {"participants": [phone_number], "maxResults": 50}
@@ -25,9 +23,10 @@ def fetch_call_history(phone_number):
         st.error(f"Error fetching call history: {str(e)}")
         return []
 
-# Main Page
 def run_call_history_page():
     st.title("Call History Viewer")
+
+    # Retrieve the phone number from query parameters
     phone_number = st.experimental_get_query_params().get("phone", [None])[0]
     if not phone_number:
         st.error("No phone number provided!")
@@ -59,3 +58,5 @@ def run_call_history_page():
             st.write("---")
 
 if __name__ == "__main__":
+    st.set_page_config(page_title="Call History", layout="wide")
+    run_call_history_page()
