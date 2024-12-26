@@ -1,7 +1,7 @@
 import streamlit as st  # Import Streamlit first
 
 # Set the page configuration as the first command
-st.set_page_config(page_title="Hotel Reservations Dashboard", layout="wide")
+st.set_page_config(page_title="Enjoi Insights AI", layout="wide")
 
 # Now import other modules
 import openphone 
