@@ -1,4 +1,5 @@
 # reservations.py
+
 import streamlit as st
 import pandas as pd
 import math
@@ -33,9 +34,7 @@ def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min,
     Reset filter-related session state variables based on the provided resort and date range.
     """
     try:
-        # Set the reset trigger to True
         st.session_state['reset_trigger'] = True
-        # Store new defaults in session state
         st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
         st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
         st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
@@ -65,7 +64,7 @@ def run_reservations_tab(
     OPENPHONE_API_KEY : str
         Your OpenPhone API key.
     OPENPHONE_NUMBER : str
-        Your OpenPhone number (e.g. '+1843xxxxxxx').
+        Your OpenPhone number (e.g. '+1XXXXXXXXXX').
     fetch_communication_info_func : Callable
         A function that fetches communication info given a DataFrame and HTTP headers.
     owner_marketing_module : module or None
@@ -389,14 +388,12 @@ def run_reservations_tab(
             ############################
             # Fetch Communication Info
             ############################
-           # ... your existing code above ...
-
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
-            
+
                 # Only fetch for the selected rows:
                 selected_data = selected_guests.copy().reset_index(drop=True)
                 if not selected_data.empty:
@@ -410,17 +407,13 @@ def run_reservations_tab(
                             post_arrival_calls_list, post_arrival_texts_list,
                             calls_under_40sec_list
                         ) = fetch_communication_info_func(selected_data, headers)
-            
+
                         # Update the main DataFrame & session state only for selected rows
                         for i in range(len(selected_data)):
                             phone = selected_data.at[i, 'Phone Number']
-            
-                            # Find the matching row in edited_df
                             matching_idx = edited_df.index[edited_df['Phone Number'] == phone]
                             if not matching_idx.empty:
                                 row_idx = matching_idx[0]
-            
-                                # Update `edited_df` so it's in sync
                                 edited_df.at[row_idx, 'Communication Status'] = statuses[i]
                                 edited_df.at[row_idx, 'Last Communication Date'] = dates[i]
                                 edited_df.at[row_idx, 'Call Duration (seconds)'] = durations[i]
@@ -435,8 +428,8 @@ def run_reservations_tab(
                                 edited_df.at[row_idx, 'Post-Arrival Calls'] = post_arrival_calls_list[i]
                                 edited_df.at[row_idx, 'Post-Arrival Texts'] = post_arrival_texts_list[i]
                                 edited_df.at[row_idx, 'Calls Under 40 sec'] = calls_under_40sec_list[i]
-            
-                                # Update session state
+
+                                # Also update session state
                                 st.session_state['communication_data'][selected_resort][phone] = {
                                     'status': statuses[i],
                                     'date': dates[i],
@@ -453,15 +446,12 @@ def run_reservations_tab(
                                     'post_arrival_texts': post_arrival_texts_list[i],
                                     'calls_under_40sec': calls_under_40sec_list[i]
                                 }
-            
+
                         st.success("Communication information updated for selected guests!")
-                        # <-- Force immediate re-run to show updated statuses
-                        st.experimental_rerun()
-            
+                        # Force immediate re-run so the UI refreshes instantly:
+                        st.rerun()
                 else:
                     st.info("No guests selected to fetch communication info for.")
-
-# ... the rest of your code ...
 
             ############################
             # Message Templates
@@ -481,7 +471,7 @@ def run_reservations_tab(
             ############################
             # Send SMS to Selected Guests
             ############################
-            selected_guests_updated = edited_df[edited_df['Select']]  # guests with updated info
+            selected_guests_updated = edited_df[edited_df['Select']]
             if not selected_guests_updated.empty:
                 num_selected = len(selected_guests_updated)
                 button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
