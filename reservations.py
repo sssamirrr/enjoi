@@ -389,12 +389,14 @@ def run_reservations_tab(
             ############################
             # Fetch Communication Info
             ############################
+           # ... your existing code above ...
+
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
-
+            
                 # Only fetch for the selected rows:
                 selected_data = selected_guests.copy().reset_index(drop=True)
                 if not selected_data.empty:
@@ -408,18 +410,17 @@ def run_reservations_tab(
                             post_arrival_calls_list, post_arrival_texts_list,
                             calls_under_40sec_list
                         ) = fetch_communication_info_func(selected_data, headers)
-
-                        # Update the main DataFrame & session state only for these selected rows
+            
+                        # Update the main DataFrame & session state only for selected rows
                         for i in range(len(selected_data)):
                             phone = selected_data.at[i, 'Phone Number']
-
-                            # Find the matching row in edited_df (and display_df) by phone number
-                            # This is safe because we deduplicated by phone number
+            
+                            # Find the matching row in edited_df
                             matching_idx = edited_df.index[edited_df['Phone Number'] == phone]
                             if not matching_idx.empty:
-                                row_idx = matching_idx[0]  # the actual row in edited_df
-                                
-                                # Write to the edited_df
+                                row_idx = matching_idx[0]
+            
+                                # Update `edited_df` so it's in sync
                                 edited_df.at[row_idx, 'Communication Status'] = statuses[i]
                                 edited_df.at[row_idx, 'Last Communication Date'] = dates[i]
                                 edited_df.at[row_idx, 'Call Duration (seconds)'] = durations[i]
@@ -434,8 +435,8 @@ def run_reservations_tab(
                                 edited_df.at[row_idx, 'Post-Arrival Calls'] = post_arrival_calls_list[i]
                                 edited_df.at[row_idx, 'Post-Arrival Texts'] = post_arrival_texts_list[i]
                                 edited_df.at[row_idx, 'Calls Under 40 sec'] = calls_under_40sec_list[i]
-
-                                # Also update session state
+            
+                                # Update session state
                                 st.session_state['communication_data'][selected_resort][phone] = {
                                     'status': statuses[i],
                                     'date': dates[i],
@@ -452,10 +453,15 @@ def run_reservations_tab(
                                     'post_arrival_texts': post_arrival_texts_list[i],
                                     'calls_under_40sec': calls_under_40sec_list[i]
                                 }
-
+            
                         st.success("Communication information updated for selected guests!")
+                        # <-- Force immediate re-run to show updated statuses
+                        st.experimental_rerun()
+            
                 else:
                     st.info("No guests selected to fetch communication info for.")
+
+# ... the rest of your code ...
 
             ############################
             # Message Templates
