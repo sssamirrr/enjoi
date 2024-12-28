@@ -1,15 +1,15 @@
+# reservations.py
 import streamlit as st
 import pandas as pd
 import math
 import time
 import requests
 from datetime import datetime
-from google.oauth2 import service_account
+import owner_marketing
 
-############################################
+##############################
 # Helper Functions
-############################################
-
+##############################
 def cleanup_phone_number(phone):
     """Clean up phone number format"""
     if pd.isna(phone):
@@ -33,300 +33,44 @@ def reset_filters(selected_resort, min_check_in, max_check_out, total_price_min,
     Reset filter-related session state variables based on the provided resort and date range.
     """
     try:
+        # Set the reset trigger to True
         st.session_state['reset_trigger'] = True
+
+        # Store the new defaults in session state
         st.session_state[f'default_check_in_start_{selected_resort}'] = min_check_in
         st.session_state[f'default_check_in_end_{selected_resort}'] = max_check_out
         st.session_state[f'default_check_out_start_{selected_resort}'] = min_check_in
         st.session_state[f'default_check_out_end_{selected_resort}'] = max_check_out
-        st.session_state[f'default_total_price_{selected_resort}'] = (
-            float(total_price_min), 
-            float(total_price_max)
-        )
+        st.session_state[f'default_total_price_{selected_resort}'] = (float(total_price_min), float(total_price_max))
         st.session_state[f'default_rate_code_{selected_resort}'] = "All"
     except Exception as e:
         st.error(f"Error resetting filters: {e}")
 
-def rate_limited_request(url, headers, params, request_type='get'):
+def run_reservations_tab(
+    df,
+    OPENPHONE_API_KEY,
+    OPENPHONE_NUMBER,
+    fetch_communication_info_func,
+    owner_marketing_module=None
+):
     """
-    Make an API request while respecting rate limits.
+    Displays the Marketing (Reservations) tab content.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The main DataFrame containing all reservation data.
+    OPENPHONE_API_KEY : str
+        Your OpenPhone API key.
+    OPENPHONE_NUMBER : str
+        Your OpenPhone number (e.g. '+1843xxxxxxx').
+    fetch_communication_info_func : Callable
+        A function that fetches communication info given a DataFrame and HTTP headers (e.g., from your main script).
+    owner_marketing_module : module or None
+        Optional reference to your `owner_marketing` module if needed.
     """
-    time.sleep(1 / 5)  # 5 requests per second max
-    try:
-        response = (
-            requests.get(url, headers=headers, params=params)
-            if request_type == 'get'
-            else None
-        )
-        if response and response.status_code == 200:
-            return response.json()
-        else:
-            st.warning(f"API Error: {response.status_code}")
-            st.warning(f"Response: {response.text}")
-    except Exception as e:
-        st.warning(f"Exception during request: {str(e)}")
-    return None
 
-def get_all_phone_number_ids(headers):
-    """
-    Retrieve all phoneNumberIds associated with your OpenPhone account.
-    """
-    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
-    return [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
-
-def get_communication_info(phone_number, headers, arrival_date):
-    """
-    Fetch messages/calls data for a given phone number and categorize them as 
-    pre-arrival or post-arrival based on arrival_date.
-    """
-    phone_number_ids = get_all_phone_number_ids(headers)
-    if not phone_number_ids:
-        return {
-            'status': "No Communications",
-            'last_date': None,
-            'call_duration': None,
-            'agent_name': None,
-            'total_messages': 0,
-            'total_calls': 0,
-            'answered_calls': 0,
-            'missed_calls': 0,
-            'call_attempts': 0,
-            'pre_arrival_calls': 0,
-            'pre_arrival_texts': 0,
-            'post_arrival_calls': 0,
-            'post_arrival_texts': 0,
-            'calls_under_40sec': 0
-        }
-
-    messages_url = "https://api.openphone.com/v1/messages"
-    calls_url = "https://api.openphone.com/v1/calls"
-
-    latest_datetime = None
-    latest_type = None
-    latest_direction = None
-    call_duration = None
-    agent_name = None
-
-    total_messages = 0
-    total_calls = 0
-    answered_calls = 0
-    missed_calls = 0
-    call_attempts = 0
-
-    pre_arrival_calls = 0
-    pre_arrival_texts = 0
-    post_arrival_calls = 0
-    post_arrival_texts = 0
-    calls_under_40sec = 0
-
-    # Ensure arrival_date is a datetime object
-    if isinstance(arrival_date, str):
-        arrival_date = datetime.fromisoformat(arrival_date)
-    elif isinstance(arrival_date, pd.Timestamp):
-        arrival_date = arrival_date.to_pydatetime()
-    arrival_date_only = arrival_date.date()
-
-    for phone_number_id in phone_number_ids:
-        # Messages pagination
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
-
-            # Fetch messages
-            messages_response = rate_limited_request(messages_url, headers, params)
-            if messages_response and 'data' in messages_response:
-                messages = messages_response['data']
-                total_messages += len(messages)
-                for message in messages:
-                    msg_time = datetime.fromisoformat(
-                        message['createdAt'].replace('Z', '+00:00')
-                    )
-                    msg_date = msg_time.date()
-                    if msg_date <= arrival_date_only:
-                        pre_arrival_texts += 1
-                    else:
-                        post_arrival_texts += 1
-
-                    if not latest_datetime or msg_time > latest_datetime:
-                        latest_datetime = msg_time
-                        latest_type = "Message"
-                        latest_direction = message.get("direction", "unknown")
-                        agent_name = message.get("user", {}).get("name", "Unknown Agent")
-
-                next_page = messages_response.get('nextPageToken')
-                if not next_page:
-                    break
-            else:
-                break
-
-        # Calls pagination
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
-
-            # Fetch calls
-            calls_response = rate_limited_request(calls_url, headers, params)
-            if calls_response and 'data' in calls_response:
-                calls = calls_response['data']
-                total_calls += len(calls)
-                for call in calls:
-                    call_time = datetime.fromisoformat(
-                        call['createdAt'].replace('Z', '+00:00')
-                    )
-                    call_date = call_time.date()
-                    duration = call.get("duration", 0)
-
-                    if call_date <= arrival_date_only:
-                        pre_arrival_calls += 1
-                    else:
-                        post_arrival_calls += 1
-
-                    if duration < 40:
-                        calls_under_40sec += 1
-
-                    if not latest_datetime or call_time > latest_datetime:
-                        latest_datetime = call_time
-                        latest_type = "Call"
-                        latest_direction = call.get("direction", "unknown")
-                        call_duration = duration
-                        agent_name = call.get("user", {}).get("name", "Unknown Agent")
-
-                    call_attempts += 1
-
-                    call_status = call.get('status', 'unknown')
-                    if call_status == 'completed':
-                        answered_calls += 1
-                    elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
-                        missed_calls += 1
-
-                next_page = calls_response.get('nextPageToken')
-                if not next_page:
-                    break
-            else:
-                break
-
-    if not latest_datetime:
-        status = "No Communications"
-    else:
-        status = f"{latest_type} - {latest_direction}"
-
-    return {
-        'status': status,
-        'last_date': (
-            latest_datetime.strftime("%Y-%m-%d %H:%M:%S")
-            if latest_datetime else None
-        ),
-        'call_duration': call_duration,
-        'agent_name': agent_name,
-        'total_messages': total_messages,
-        'total_calls': total_calls,
-        'answered_calls': answered_calls,
-        'missed_calls': missed_calls,
-        'call_attempts': call_attempts,
-        'pre_arrival_calls': pre_arrival_calls,
-        'pre_arrival_texts': pre_arrival_texts,
-        'post_arrival_calls': post_arrival_calls,
-        'post_arrival_texts': post_arrival_texts,
-        'calls_under_40sec': calls_under_40sec
-    }
-
-def fetch_communication_info(guest_df, headers):
-    """
-    Loops over the guest DataFrame (with columns 'Phone Number' and 'Check In') 
-    and fetches communication info for each guest.
-    """
-    statuses, dates, durations, agent_names = [], [], [], []
-    total_messages_list, total_calls_list = [], []
-    answered_calls_list, missed_calls_list, call_attempts_list = [], [], []
-    pre_arrival_calls_list, pre_arrival_texts_list = [], []
-    post_arrival_calls_list, post_arrival_texts_list = [], []
-    calls_under_40sec_list = []
-
-    for _, row in guest_df.iterrows():
-        phone = row['Phone Number']
-        arrival_date = row['Check In']  # Use 'Check In'
-        if phone and phone != 'No Data':
-            try:
-                comm_info = get_communication_info(phone, headers, arrival_date)
-                statuses.append(comm_info['status'])
-                dates.append(comm_info['last_date'])
-                durations.append(comm_info['call_duration'])
-                agent_names.append(comm_info['agent_name'])
-                total_messages_list.append(comm_info['total_messages'])
-                total_calls_list.append(comm_info['total_calls'])
-                answered_calls_list.append(comm_info['answered_calls'])
-                missed_calls_list.append(comm_info['missed_calls'])
-                call_attempts_list.append(comm_info['call_attempts'])
-                pre_arrival_calls_list.append(comm_info['pre_arrival_calls'])
-                pre_arrival_texts_list.append(comm_info['pre_arrival_texts'])
-                post_arrival_calls_list.append(comm_info['post_arrival_calls'])
-                post_arrival_texts_list.append(comm_info['post_arrival_texts'])
-                calls_under_40sec_list.append(comm_info['calls_under_40sec'])
-            except Exception:
-                # In case of an unexpected error
-                statuses.append("Error")
-                dates.append(None)
-                durations.append(None)
-                agent_names.append("Unknown")
-                total_messages_list.append(0)
-                total_calls_list.append(0)
-                answered_calls_list.append(0)
-                missed_calls_list.append(0)
-                call_attempts_list.append(0)
-                pre_arrival_calls_list.append(0)
-                pre_arrival_texts_list.append(0)
-                post_arrival_calls_list.append(0)
-                post_arrival_texts_list.append(0)
-                calls_under_40sec_list.append(0)
-        else:
-            # Invalid or missing phone
-            statuses.append("Invalid Number")
-            dates.append(None)
-            durations.append(None)
-            agent_names.append("Unknown")
-            total_messages_list.append(0)
-            total_calls_list.append(0)
-            answered_calls_list.append(0)
-            missed_calls_list.append(0)
-            call_attempts_list.append(0)
-            pre_arrival_calls_list.append(0)
-            pre_arrival_texts_list.append(0)
-            post_arrival_calls_list.append(0)
-            post_arrival_texts_list.append(0)
-            calls_under_40sec_list.append(0)
-
-    return (
-        statuses, dates, durations, agent_names,
-        total_messages_list, total_calls_list, answered_calls_list,
-        missed_calls_list, call_attempts_list,
-        pre_arrival_calls_list, pre_arrival_texts_list,
-        post_arrival_calls_list, post_arrival_texts_list,
-        calls_under_40sec_list
-    )
-
-############################################
-# MARKETING TAB Main Function
-############################################
-
-def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
-    """
-    Displays the Marketing tab for a Streamlit application.
-    Expects a DataFrame 'df' containing reservation data with columns like:
-      'Market', 'Arrival Date Short', 'Departure Date Short', 'Rate Code Name', 'Total Price'
-    """
-    st.title("💼 Marketing Information by Resort")
+    st.title("📊 Marketing Information by Resort")
 
     # Resort selection
     selected_resort = st.selectbox(
@@ -338,7 +82,7 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
     resort_df = df[df['Market'] == selected_resort].copy()
     st.subheader(f"Guest Information for {selected_resort}")
 
-    # Determine default date range
+    # Set default dates based on the selected resort
     if not resort_df.empty:
         arrival_dates = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         departure_dates = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
@@ -353,7 +97,7 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
         min_check_in = today
         max_check_out = today
 
-    # Date filters
+    # Date filters with unique keys to reset when a new resort is selected
     col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
     with col1:
         check_in_start = st.date_input(
@@ -387,7 +131,7 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
 
             # Handle single-value range by adding a buffer
             if total_price_min == total_price_max:
-                total_price_min = total_price_min - 1
+                total_price_min = total_price_min - 1  # Add a buffer of 1 unit
                 total_price_max = total_price_max + 1
 
             total_price_range = st.slider(
@@ -399,25 +143,22 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
             )
         else:
             st.warning("No valid Total Price data available for filtering.")
-            total_price_range = (0, 0)
+            total_price_range = (0, 0)  # Default range if no valid data
 
         # Dropdown for Rate Code
-        rate_code_options = (
-            sorted(resort_df['Rate Code Name'].dropna().unique())
-            if 'Rate Code Name' in resort_df.columns
-            else []
-        )
+        rate_code_options = sorted(resort_df['Rate Code Name'].dropna().unique()) if 'Rate Code Name' in resort_df.columns else []
         selected_rate_code = st.selectbox(
             "Select Rate Code",
             options=["All"] + rate_code_options,
             key=f'rate_code_filter_{selected_resort}'
         )
 
-    # Reset Filters Button
-    if st.button("Reset Filters"):
-        reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
+    with st.container():
+        # Reset Filters Button
+        if st.button("Reset Filters"):
+            reset_filters(selected_resort, min_check_in, max_check_out, total_price_min, total_price_max)
 
-    # Apply filters
+    # Process and display data
     if not resort_df.empty:
         resort_df['Arrival Date Short'] = pd.to_datetime(resort_df['Arrival Date Short'], errors='coerce')
         resort_df['Departure Date Short'] = pd.to_datetime(resort_df['Departure Date Short'], errors='coerce')
@@ -437,14 +178,19 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
             ]
 
         # Apply Rate Code filter
-        if (selected_rate_code != "All") and ('Rate Code Name' in filtered_df.columns):
+        if selected_rate_code != "All" and 'Rate Code Name' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Rate Code Name'] == selected_rate_code]
 
-        # Remove duplicate rows based on 'Phone Number'
+        # Remove duplicate rows based on 'Phone Number' and reset index
         display_df = filtered_df.drop_duplicates(subset=['Phone Number']).reset_index(drop=True)
 
+        # Optional: Verify that 'Phone Number' is unique
+        if display_df['Phone Number'].duplicated().any():
+            st.error("Duplicate Phone Numbers found in the data. Please ensure each guest has a unique phone number.")
+            return
+
         if not display_df.empty:
-            # Rename columns for readability
+            # Prepare display DataFrame
             display_df = display_df.rename(columns={
                 'Name': 'Guest Name',
                 'Arrival Date Short': 'Check In',
@@ -453,40 +199,35 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
                 'Total Price': 'Price'
             })
 
-            # Ensure required columns
-            for col in [
-                'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code',
-                'Price', 'Communication Status', 'Last Communication Date',
-                'Call Duration (seconds)', 'Agent Name', 'Total Messages', 
-                'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
-                'Pre-Arrival Calls', 'Pre-Arrival Texts', 'Post-Arrival Calls',
-                'Post-Arrival Texts', 'Calls Under 40 sec'
-            ]:
+            # Ensure required columns are present
+            required_columns = [
+                'Guest Name', 'Check In', 'Check Out', 'Phone Number', 'Rate Code', 'Price',
+                'Communication Status', 'Last Communication Date', 'Call Duration (seconds)', 'Agent Name',
+                'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+                'Pre-Arrival Calls', 'Pre-Arrival Texts', 'Post-Arrival Calls', 'Post-Arrival Texts', 'Calls Under 40 sec'
+            ]
+            for col in required_columns:
                 if col not in display_df.columns:
-                    display_df[col] = None
+                    display_df[col] = None  # Add missing column with default value
 
             # Format phone numbers
             display_df['Phone Number'] = display_df['Phone Number'].apply(cleanup_phone_number)
 
-            # Truncate long text fields
-            display_df['Guest Name'] = display_df['Guest Name'].apply(
-                lambda x: truncate_text(x, max_length=30)
-            )
-            display_df['Agent Name'] = display_df['Agent Name'].apply(
-                lambda x: truncate_text(x, max_length=30)
-            )
+            # Truncate long text fields to prevent overflow
+            display_df['Guest Name'] = display_df['Guest Name'].apply(lambda x: truncate_text(x, max_length=30))
+            display_df['Agent Name'] = display_df['Agent Name'].apply(lambda x: truncate_text(x, max_length=30))
 
-            # Select All checkbox
+            # Add Select All checkbox
             select_all = st.checkbox("Select All Guests", key=f'select_all_{selected_resort}')
             display_df['Select'] = select_all
 
-            # Initialize session state for communication data
+            # Initialize session state for communication data, scoped by resort
             if 'communication_data' not in st.session_state:
                 st.session_state['communication_data'] = {}
             if selected_resort not in st.session_state['communication_data']:
                 st.session_state['communication_data'][selected_resort] = {}
 
-            # Retrieve existing Communication Data from session state
+            # **Retrieve and Apply Existing Communication Data**
             for idx, row in display_df.iterrows():
                 phone = row['Phone Number']
                 if phone in st.session_state['communication_data'][selected_resort]:
@@ -506,12 +247,13 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
                     display_df.at[idx, 'Post-Arrival Texts'] = comm_data.get('post_arrival_texts', 0)
                     display_df.at[idx, 'Calls Under 40 sec'] = comm_data.get('calls_under_40sec', 0)
 
-            # Fetch Communication Info Button
+            # **Fetch Communication Info Button**
             if st.button("Fetch Communication Info", key=f'fetch_info_{selected_resort}'):
                 headers = {
                     "Authorization": OPENPHONE_API_KEY,
                     "Content-Type": "application/json"
                 }
+
                 with st.spinner('Fetching communication information...'):
                     (
                         statuses, dates, durations, agent_names,
@@ -521,9 +263,23 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
                         pre_arrival_calls_list, pre_arrival_texts_list,
                         post_arrival_calls_list, post_arrival_texts_list,
                         calls_under_40sec_list
-                    ) = fetch_communication_info(display_df, headers)
+                    ) = fetch_communication_info_func(display_df, headers)
 
-                    # Update display_df in bulk
+                    # Verify that all lists have the same length as display_df
+                    expected_length = len(display_df)
+                    actual_lengths = [
+                        len(statuses), len(dates), len(durations), len(agent_names),
+                        len(total_messages_list), len(total_calls_list),
+                        len(answered_calls_list), len(missed_calls_list),
+                        len(call_attempts_list), len(pre_arrival_calls_list), 
+                        len(pre_arrival_texts_list), len(post_arrival_calls_list), 
+                        len(post_arrival_texts_list), len(calls_under_40sec_list)
+                    ]
+                    if not all(length == expected_length for length in actual_lengths):
+                        st.error("Mismatch in communication data lengths. Aborting update to prevent data misalignment.")
+                        return
+
+                    # Assign communication data directly to display_df
                     display_df['Communication Status'] = statuses
                     display_df['Last Communication Date'] = dates
                     display_df['Call Duration (seconds)'] = durations
@@ -539,7 +295,7 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
                     display_df['Post-Arrival Texts'] = post_arrival_texts_list
                     display_df['Calls Under 40 sec'] = calls_under_40sec_list
 
-                    # Update session state
+                    # Update session state scoped to the selected resort
                     st.session_state['communication_data'][selected_resort] = {
                         phone: {
                             'status': status,
@@ -557,32 +313,31 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
                             'post_arrival_texts': post_texts,
                             'calls_under_40sec': under_40sec
                         }
-                        for phone, status, date, duration, agent, total_msgs, total_cls,
-                            answered_cls, missed_cls, call_atpts, pre_calls, pre_texts,
-                            post_calls, post_texts, under_40sec
+                        for phone, status, date, duration, agent, total_msgs, total_cls, answered_cls, missed_cls, call_atpts, pre_calls, pre_texts, post_calls, post_texts, under_40sec
                         in zip(
                             display_df['Phone Number'], statuses, dates, durations, agent_names,
-                            total_messages_list, total_calls_list, answered_calls_list,
-                            missed_calls_list, call_attempts_list, pre_arrival_calls_list,
-                            pre_arrival_texts_list, post_arrival_calls_list,
-                            post_arrival_texts_list, calls_under_40sec_list
+                            total_messages_list, total_calls_list, answered_calls_list, missed_calls_list, call_attempts_list,
+                            pre_arrival_calls_list, pre_arrival_texts_list,
+                            post_arrival_calls_list, post_arrival_texts_list,
+                            calls_under_40sec_list
                         )
                     }
+
                     st.success("Communication information successfully fetched and updated.")
 
             # Reorder columns
             display_df = display_df[
                 [
-                    'Select', 'Guest Name', 'Check In', 'Check Out', 'Phone Number',
-                    'Rate Code', 'Price', 'Communication Status', 'Last Communication Date',
-                    'Call Duration (seconds)', 'Agent Name', 'Total Messages', 'Total Calls',
-                    'Answered Calls', 'Missed Calls', 'Call Attempts', 'Pre-Arrival Calls',
-                    'Pre-Arrival Texts', 'Post-Arrival Calls', 'Post-Arrival Texts',
-                    'Calls Under 40 sec'
+                    'Select', 'Guest Name', 'Check In', 'Check Out',
+                    'Phone Number', 'Rate Code', 'Price',
+                    'Communication Status', 'Last Communication Date',
+                    'Call Duration (seconds)', 'Agent Name',
+                    'Total Messages', 'Total Calls', 'Answered Calls', 'Missed Calls', 'Call Attempts',
+                    'Pre-Arrival Calls', 'Pre-Arrival Texts', 'Post-Arrival Calls', 'Post-Arrival Texts', 'Calls Under 40 sec'
                 ]
             ]
 
-            # Data editor
+            # Display the interactive data editor
             edited_df = st.data_editor(
                 display_df,
                 column_config={
@@ -704,10 +459,14 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
                 key=f"guest_editor_{selected_resort}"
             )
 
-            # Ensure 'Select' column is boolean
+            # Ensure 'Select' column contains valid boolean values
             if 'Select' in edited_df.columns:
+                # Map string representations to booleans
                 edited_df['Select'] = edited_df['Select'].map({
-                    True: True, False: False, 'True': True, 'False': False
+                    True: True,
+                    False: False,
+                    'True': True,
+                    'False': False
                 })
                 edited_df['Select'] = edited_df['Select'].fillna(False)
                 edited_df['Select'] = edited_df['Select'].astype(bool)
@@ -719,7 +478,9 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
             st.write("Display DataFrame after editing:")
             st.dataframe(edited_df.head())
 
+            ###########################
             # Message Templates
+            ###########################
             st.markdown("---")
             st.subheader("Message Templates")
 
@@ -737,56 +498,46 @@ def show_marketing_tab(df, OPENPHONE_API_KEY, OPENPHONE_NUMBER):
             message_preview = message_templates[selected_template]
             st.text_area("Message Preview", value=message_preview, height=100, disabled=True)
 
-            # Send SMS
-            if not edited_df.empty:
-                selected_guests = edited_df[edited_df['Select']]
+            ###########################
+            # Send SMS to Selected Guests
+            ###########################
+            if not selected_guests.empty:
                 num_selected = len(selected_guests)
-                if not selected_guests.empty:
-                    button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
-                    if st.button(button_label):
-                        openphone_url = "https://api.openphone.com/v1/messages"
-                        headers_sms = {
-                            "Authorization": OPENPHONE_API_KEY,
-                            "Content-Type": "application/json"
-                        }
-                        sender_phone_number = OPENPHONE_NUMBER
+                button_label = f"Send SMS to {num_selected} Guest{'s' if num_selected != 1 else ''}"
+                if st.button(button_label):
+                    openphone_url = "https://api.openphone.com/v1/messages"
+                    headers_sms = {
+                        "Authorization": OPENPHONE_API_KEY,
+                        "Content-Type": "application/json"
+                    }
+                    sender_phone_number = OPENPHONE_NUMBER  # Your OpenPhone number
 
-                        for idx, row in selected_guests.iterrows():
-                            recipient_phone = row['Phone Number']
-                            payload = {
-                                "content": message_preview,
-                                "from": sender_phone_number,
-                                "to": [recipient_phone]
-                            }
-                            try:
-                                response = requests.post(
-                                    openphone_url, 
-                                    json=payload, 
-                                    headers=headers_sms
-                                )
-                                if response.status_code == 202:
-                                    st.success(
-                                        f"Message sent to {row['Guest Name']} ({recipient_phone})"
-                                    )
-                                else:
-                                    st.error(
-                                        f"Failed to send message to {row['Guest Name']} ({recipient_phone})"
-                                    )
-                                    st.write("Response Status Code:", response.status_code)
-                                    try:
-                                        st.write("Response Body:", response.json())
-                                    except:
-                                        st.write("Response Body:", response.text)
-                            except Exception as e:
-                                st.error(
-                                    f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}"
-                                )
-                            time.sleep(0.2)  # Respect rate limits
-                else:
-                    st.info("No guests selected to send SMS.")
+                    for idx, row in selected_guests.iterrows():
+                        recipient_phone = row['Phone Number']
+                        payload = {
+                            "content": message_preview,
+                            "from": sender_phone_number,
+                            "to": [recipient_phone]
+                        }
+
+                        try:
+                            response = requests.post(openphone_url, json=payload, headers=headers_sms)
+                            if response.status_code == 202:
+                                st.success(f"Message sent to {row['Guest Name']} ({recipient_phone})")
+                            else:
+                                st.error(f"Failed to send message to {row['Guest Name']} ({recipient_phone})")
+                                st.write("Response Status Code:", response.status_code)
+                                try:
+                                    st.write("Response Body:", response.json())
+                                except:
+                                    st.write("Response Body:", response.text)
+                        except Exception as e:
+                            st.error(f"Exception while sending message to {row['Guest Name']} ({recipient_phone}): {str(e)}")
+
+                        time.sleep(0.2)  # Respect rate limits
             else:
-                st.info("No guest data available to send SMS.")
+                st.info("No guests selected to send SMS.")
         else:
             st.warning("No data available for the selected filters.")
     else:
-        st.warning("No data for this resort.")
+        st.warning("No data available for this resort.")
