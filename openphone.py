@@ -111,7 +111,7 @@ def run_openphone_tab():
     ).fillna(0)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 7. DEFINE 'day' AND 'hour' *BEFORE* SUBSETS
+    # 7. DEFINE 'day' AND 'hour' (LOGICAL ORDER)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     hour_order = [
         "12 AM","01 AM","02 AM","03 AM","04 AM","05 AM","06 AM","07 AM",
@@ -119,20 +119,19 @@ def run_openphone_tab():
         "04 PM","05 PM","06 PM","07 PM","08 PM","09 PM","10 PM","11 PM"
     ]
 
-    # Add day/hour columns to calls DataFrame
+    # If calls/messages are not empty, add day/hour
     if not calls.empty:
         calls['day'] = calls['createdAtET'].dt.strftime('%A')  # e.g. "Monday"
         calls['hour'] = calls['createdAtET'].dt.strftime('%I %p')
         calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
 
-    # Add day/hour columns to messages DataFrame
     if not messages.empty:
         messages['day'] = messages['createdAtET'].dt.strftime('%A')
         messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
         messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 8. OUTBOUND & SUCCESSFUL OUTBOUND CALLS
+    # 8. OUTBOUND CALL SUCCESS RATE
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Outbound Call Success Rate")
 
@@ -311,7 +310,7 @@ def run_openphone_tab():
         st.warning("No outbound success data available.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 15. CALL VOLUME HEATMAP (AGGREGATE)
+    # 15. CALL VOLUME HEATMAP (AGGREGATE) with Logical Hour Order
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Call Volume Heatmap (ET, AM/PM) [Logical Order]")
     if not calls.empty:
@@ -369,4 +368,52 @@ def run_openphone_tab():
     else:
         st.warning("No successful outbound calls found in the selected filters or minimum duration.")
 
-    st.success("Enhanced Dashboard with ET (AM/PM), Agent Filter, Logical Hour Ordering, and Successful Call Heatmaps is Ready!")
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 17. AGENT SUCCESS RATE HEATMAP BY DAY & HOUR
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Agent Success Rate Heatmap by Day & Hour")
+
+    if not outbound_calls.empty:
+        # 1) Group outbound calls by agent, day, hour -> total_outbound
+        agent_outbound_grouped = outbound_calls.groupby(['userId', 'day', 'hour']).size().reset_index(name='outbound_count')
+
+        # 2) Group successful outbound calls by agent, day, hour -> success_count
+        agent_success_grouped = successful_outbound_calls.groupby(['userId', 'day', 'hour']).size().reset_index(name='success_count')
+
+        # 3) Merge them to compute success_rate
+        agent_day_hour = pd.merge(
+            agent_outbound_grouped,
+            agent_success_grouped,
+            on=['userId', 'day', 'hour'],
+            how='outer'
+        ).fillna(0)
+
+        agent_day_hour['success_rate'] = (
+            agent_day_hour['success_count'] / agent_day_hour['outbound_count']
+        ) * 100
+
+        # 4) Loop over each selected agent & build a heatmap of success_rate
+        for agent in selected_agents:
+            this_agent = agent_day_hour[agent_day_hour['userId'] == agent]
+            if this_agent.empty:
+                st.write(f"No outbound calls found for agent: {agent}")
+                continue
+
+            pivot_table = this_agent.pivot(index='day', columns='hour', values='success_rate').fillna(0)
+            pivot_table = pivot_table.reindex(columns=hour_order, fill_value=0)
+
+            fig = px.imshow(
+                pivot_table,
+                color_continuous_scale='Blues',
+                labels=dict(x="Hour (AM/PM)", y="Day", color="Success Rate (%)"),
+                title=f"Success Rate Heatmap for Agent: {agent}",
+            )
+            # Set a consistent color range from 0-100
+            fig.update_xaxes(side="top")
+            fig.update_layout(coloraxis=dict(cmin=0, cmax=100))
+
+            st.plotly_chart(fig)
+    else:
+        st.warning("No outbound calls to display success rate heatmap.")
+
+    st.success("Enhanced Dashboard with ET (AM/PM), Agent Filter, Logical Hour Ordering, and Additional Agent Success Rate Heatmaps is Ready!")
