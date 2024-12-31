@@ -1,28 +1,56 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import pytz
 from datetime import datetime
 
 def run_openphone_tab():
-    st.header("Enhanced OpenPhone Operations Dashboard")
+    st.header("Enhanced OpenPhone Operations Dashboard (with ET AM/PM & Agent Filter)")
 
-    # File uploader
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 1. UPLOAD FILE
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     uploaded_file = st.file_uploader("Upload OpenPhone CSV File", type=["csv"])
     if not uploaded_file:
         st.warning("Please upload the OpenPhone CSV file to proceed.")
         return
 
-    # Read the CSV file
     openphone_data = pd.read_csv(uploaded_file)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 2. TIME ZONE CONVERSION FROM PT -> ET
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # If createdAtPT is already in PT but naive, we localize to Los Angeles, then convert to New York
+    pacific_tz = pytz.timezone("America/Los_Angeles")
+    eastern_tz = pytz.timezone("America/New_York")
+
+    # Convert createdAtPT
     openphone_data['createdAtPT'] = pd.to_datetime(openphone_data['createdAtPT'], errors='coerce')
-    openphone_data['answeredAtPT'] = pd.to_datetime(openphone_data['answeredAtPT'], errors='coerce')
+    openphone_data = openphone_data.dropna(subset=['createdAtPT'])  # Ensure no NaT rows
+    openphone_data['createdAtET'] = (
+        openphone_data['createdAtPT']
+        .dt.tz_localize(pacific_tz, ambiguous='infer', nonexistent='shift_forward')
+        .dt.tz_convert(eastern_tz)
+    )
 
-    # Default filter range
-    min_date = openphone_data['createdAtPT'].min().date()
-    max_date = openphone_data['createdAtPT'].max().date()
+    # Convert answeredAtPT if needed
+    if 'answeredAtPT' in openphone_data.columns:
+        openphone_data['answeredAtPT'] = pd.to_datetime(openphone_data['answeredAtPT'], errors='coerce')
+        openphone_data['answeredAtET'] = (
+            openphone_data['answeredAtPT']
+            .dropna()
+            .dt.tz_localize(pacific_tz, ambiguous='infer', nonexistent='shift_forward')
+            .dt.tz_convert(eastern_tz)
+        )
 
-    # Filters
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 3. FILTERS (DATE RANGE & AGENTS)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Filters")
+
+    # A) Date Filters based on ET
+    min_date = openphone_data['createdAtET'].min().date()
+    max_date = openphone_data['createdAtET'].max().date()
     col1, col2 = st.columns(2)
     with col1:
         start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
@@ -33,34 +61,69 @@ def run_openphone_tab():
         st.error("Error: Start date must be before end date.")
         return
 
-    # Filter data by date
-    filtered_data = openphone_data[
-        (openphone_data['createdAtPT'].dt.date >= start_date) &
-        (openphone_data['createdAtPT'].dt.date <= end_date)
+    # Filter data by date range
+    openphone_data = openphone_data[
+        (openphone_data['createdAtET'].dt.date >= start_date) &
+        (openphone_data['createdAtET'].dt.date <= end_date)
     ]
 
-    # Calls and Messages
-    calls = filtered_data[filtered_data['type'] == 'call']
-    messages = filtered_data[filtered_data['type'] == 'message']
+    # B) Agent Filter
+    if 'userId' not in openphone_data.columns:
+        st.error("No 'userId' column found in the dataset.")
+        return
 
-    # Call and Message Conversion
-    bookings = filtered_data[filtered_data['status'] == 'booked']
+    all_agents = sorted(openphone_data['userId'].dropna().unique())
+    selected_agents = st.multiselect("Select Agents to Include", all_agents, default=all_agents)
+
+    # Filter data by selected agents
+    openphone_data = openphone_data[openphone_data['userId'].isin(selected_agents)]
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 4. SPLIT INTO CALLS VS. MESSAGES
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    calls = openphone_data[openphone_data['type'] == 'call']
+    messages = openphone_data[openphone_data['type'] == 'message']
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 5. CALCULATE BOOKING & CONVERSION RATES
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    bookings = openphone_data[openphone_data['status'] == 'booked']
     total_bookings = len(bookings)
-    call_conversion_rate = (len(calls[calls['status'] == 'booked']) / len(calls) * 100) if len(calls) > 0 else 0
-    message_conversion_rate = (len(messages[messages['status'] == 'booked']) / len(messages) * 100) if len(messages) > 0 else 0
 
-    # Agent Performance with Bookings
+    call_conversion_rate = (
+        len(calls[calls['status'] == 'booked']) / len(calls) * 100
+        if len(calls) > 0 else 0
+    )
+    message_conversion_rate = (
+        len(messages[messages['status'] == 'booked']) / len(messages) * 100
+        if len(messages) > 0 else 0
+    )
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 6. AGENT PERFORMANCE FOR CALLS & BOOKINGS
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     agent_bookings = bookings.groupby('userId').size().reset_index(name='total_bookings')
-    agent_performance = calls.groupby('userId').size().reset_index(name='total_calls')
-    agent_performance = pd.merge(agent_performance, agent_bookings, on='userId', how='outer').fillna(0)
-    agent_performance['booking_rate'] = (agent_performance['total_bookings'] / agent_performance['total_calls'] * 100).fillna(0)
+    agent_calls = calls.groupby('userId').size().reset_index(name='total_calls')
 
-    # Outbound Call Success Rate
+    agent_performance = pd.merge(agent_calls, agent_bookings, on='userId', how='outer').fillna(0)
+    agent_performance['booking_rate'] = (
+        agent_performance['total_bookings'] / agent_performance['total_calls'] * 100
+    ).fillna(0)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 7. OUTBOUND CALL SUCCESS RATE
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Outbound Call Success Rate")
+
+    # If 'duration' doesn't exist or all NaNs, set a default max
+    max_duration = 60
+    if 'duration' in calls.columns and not calls['duration'].isnull().all():
+        max_duration = int(calls['duration'].max())
+
     min_success_duration = st.slider(
         "Minimum Call Duration (seconds) to Count as Success",
         min_value=0,
-        max_value=int(calls['duration'].max()) if 'duration' in calls.columns and not calls['duration'].isnull().all() else 60,
+        max_value=max_duration,
         value=30
     )
 
@@ -68,7 +131,8 @@ def run_openphone_tab():
     successful_outbound_calls = outbound_calls[outbound_calls['duration'] >= min_success_duration]
 
     success_rate = (
-        len(successful_outbound_calls) / len(outbound_calls) * 100 if len(outbound_calls) > 0 else 0
+        len(successful_outbound_calls) / len(outbound_calls) * 100
+        if len(outbound_calls) > 0 else 0
     )
 
     # Success Rate per Agent
@@ -79,7 +143,9 @@ def run_openphone_tab():
         agent_success_rate['successful_calls'] / agent_success_rate['total_outbound_calls'] * 100
     ).fillna(0)
 
-    # Metrics
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 8. METRICS
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Key Metrics")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -91,62 +157,80 @@ def run_openphone_tab():
     with col4:
         st.metric("Outbound Call Success Rate", f"{success_rate:.2f}%")
 
-    # Hourly Trends
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 9. HOURLY TRENDS (AM/PM in ET)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Hourly Trends")
-    calls['hour'] = calls['createdAtPT'].dt.hour
+
+    # Create new columns for hour/day in ET with AM/PM
+    calls['hour'] = calls['createdAtET'].dt.strftime('%I %p')  # e.g. "01 PM"
+    calls['day'] = calls['createdAtET'].dt.strftime('%A')      # e.g. "Monday"
+
     hourly_stats = calls.groupby(['hour', 'direction']).size().reset_index(name='count')
-    fig = px.bar(hourly_stats, x='hour', y='count', color='direction', barmode='group', title='Call Volume by Hour')
+    fig = px.bar(hourly_stats, x='hour', y='count', color='direction', barmode='group',
+                 title='Call Volume by Hour (ET, AM/PM)')
     st.plotly_chart(fig)
 
-    # Call Duration Analysis
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 10. CALL DURATION ANALYSIS
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Call Duration Analysis")
     if 'duration' in calls.columns and not calls['duration'].isnull().all():
-        long_calls = calls[calls['duration'] >= calls['duration'].mean()]
-        long_call_times = long_calls.groupby('hour').size().reset_index(name='count')
-        fig = px.bar(long_call_times, x='hour', y='count', title='Long Calls by Hour')
+        mean_duration = calls['duration'].mean()
+        long_calls = calls[calls['duration'] >= mean_duration]
+
+        # Long Calls by Hour
+        long_hourly = long_calls.groupby('hour').size().reset_index(name='count')
+        fig = px.bar(long_hourly, x='hour', y='count',
+                     title='Long Calls (Above Mean Duration) by Hour (ET, AM/PM)')
         st.plotly_chart(fig)
 
-        # Heatmap for Call Duration
-        calls['day'] = calls['createdAtPT'].dt.day_name()
+        # Heatmap of Average Call Duration by Day & Hour
         duration_heatmap_data = calls.groupby(['day', 'hour'])['duration'].mean().reset_index()
         duration_heatmap_pivot = duration_heatmap_data.pivot(index='day', columns='hour', values='duration').fillna(0)
         fig = px.imshow(
             duration_heatmap_pivot,
-            title="Heatmap of Average Call Duration by Day and Hour",
+            title="Heatmap of Avg Call Duration by Day & Hour (ET, AM/PM)",
             labels=dict(x="Hour", y="Day", color="Duration (seconds)"),
         )
         st.plotly_chart(fig)
 
-    # Incoming Message Analysis
-    st.subheader("Incoming Messages by Hour")
-    messages['hour'] = messages['createdAtPT'].dt.hour
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 11. INCOMING MESSAGE ANALYSIS
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Incoming Messages by Hour (ET, AM/PM)")
+    messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
+    messages['day'] = messages['createdAtET'].dt.strftime('%A')
     incoming_messages = messages[messages['direction'] == 'incoming']
     incoming_message_times = incoming_messages.groupby('hour').size().reset_index(name='count')
-    fig = px.bar(incoming_message_times, x='hour', y='count', title='Incoming Messages by Hour')
+    fig = px.bar(incoming_message_times, x='hour', y='count', title='Incoming Messages by Hour (ET, AM/PM)')
     st.plotly_chart(fig)
 
-    # Heatmap for Messages
-    st.subheader("Message Volume Heatmap")
-    messages['day'] = messages['createdAtPT'].dt.day_name()
+    # Heatmap for Message Volume
+    st.subheader("Message Volume Heatmap (ET, AM/PM)")
     message_heatmap_data = messages.groupby(['day', 'hour']).size().reset_index(name='count')
     message_heatmap_pivot = message_heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
     fig = px.imshow(
         message_heatmap_pivot,
-        title="Heatmap of Message Volume by Day and Hour",
+        title="Heatmap of Message Volume by Day & Hour (ET, AM/PM)",
         labels=dict(x="Hour", y="Day", color="Volume"),
     )
     st.plotly_chart(fig)
 
-    # Agent Performance
-    st.subheader("Agent Performance")
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 12. AGENT PERFORMANCE: CALLS & BOOKINGS
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Agent Performance: Calls & Bookings")
     fig = px.bar(
         agent_performance,
         x='userId',
         y=['total_calls', 'total_bookings'],
-        title="Agent Performance: Calls and Bookings",
+        title="Agent Performance (Calls vs. Bookings)",
         barmode='group',
     )
     st.plotly_chart(fig)
+
+    # Show table for side-by-side comparison
     st.dataframe(agent_performance.rename(columns={
         'userId': 'Agent',
         'total_calls': 'Total Calls',
@@ -154,7 +238,9 @@ def run_openphone_tab():
         'booking_rate': 'Booking Rate (%)'
     }))
 
-    # Agent Outbound Success Rate
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 13. AGENT OUTBOUND SUCCESS RATE
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Outbound Success Rate")
     fig = px.bar(
         agent_success_rate,
@@ -164,6 +250,8 @@ def run_openphone_tab():
         barmode='group',
     )
     st.plotly_chart(fig)
+
+    # Side-by-side data table
     st.dataframe(agent_success_rate.rename(columns={
         'userId': 'Agent',
         'total_outbound_calls': 'Total Outbound Calls',
@@ -171,16 +259,17 @@ def run_openphone_tab():
         'success_rate': 'Success Rate (%)'
     }))
 
-    # Heatmap of Call Volume by Time
-    st.subheader("Call Volume Heatmap")
-    calls['day'] = calls['createdAtPT'].dt.day_name()
-    heatmap_data = calls.groupby(['day', 'hour']).size().reset_index(name='count')
-    heatmap_pivot = heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 14. CALL VOLUME HEATMAP
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Call Volume Heatmap (ET, AM/PM)")
+    call_heatmap_data = calls.groupby(['day', 'hour']).size().reset_index(name='count')
+    call_heatmap_pivot = call_heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
     fig = px.imshow(
-        heatmap_pivot,
-        title="Heatmap of Call Volume by Day and Hour",
+        call_heatmap_pivot,
+        title="Heatmap of Call Volume by Day & Hour (ET, AM/PM)",
         labels=dict(x="Hour", y="Day", color="Volume"),
     )
     st.plotly_chart(fig)
 
-    st.success("Enhanced Dashboard Ready!")
+    st.success("Enhanced Dashboard with ET (AM/PM) and Agent Filter is Ready!")
