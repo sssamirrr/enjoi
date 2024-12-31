@@ -70,10 +70,9 @@ def run_openphone_tab():
         return
 
     all_agents = sorted(openphone_data['userId'].dropna().unique())
-    # The key change: default is an empty list, so no agents are selected initially
+    # Default selection is empty, so no agents are pre-selected
     selected_agents = st.multiselect("Select Agents", all_agents, default=[])
 
-    # Filter by selected agents
     openphone_data = openphone_data[openphone_data['userId'].isin(selected_agents)]
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -110,6 +109,7 @@ def run_openphone_tab():
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 7. DEFINE day AND hour (STRING) + day_order & hour_order
+    #    to ensure a logical sequence from 12 AM -> 11 PM
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     hour_order = [
@@ -166,20 +166,24 @@ def run_openphone_tab():
     with c1:
         st.metric("Total Bookings", total_bookings)
     with c2:
-        st.metric("Call Conversion Rate", f"{call_conversion_rate:.2f}%")
+        st.metric("Call Conv. Rate", f"{call_conversion_rate:.2f}%")
     with c3:
-        st.metric("Msg Conversion Rate", f"{message_conversion_rate:.2f}%")
+        st.metric("Msg Conv. Rate", f"{message_conversion_rate:.2f}%")
     with c4:
         st.metric("Outbound Success Rate", f"{success_rate:.2f}%")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 10. HOURLY TRENDS
+    #    Ensuring hours go from 12 AM to 11 PM in order
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Hourly Trends")
     if not calls.empty:
-        hstats = calls.groupby(['hour','direction']).size().reset_index(name='count')
-        fig = px.bar(hstats, x='hour', y='count', color='direction',
-                     barmode='group', title="Calls by Hour")
+        # Convert calls['hour'] to a categorical with hour_order
+        calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
+
+        hourly_stats = calls.groupby(['hour','direction']).size().reset_index(name='count')
+        fig = px.bar(hourly_stats, x='hour', y='count', color='direction',
+                     barmode='group', title="Calls by Hour (12 AM -> 11 PM)")
         st.plotly_chart(fig)
     else:
         st.warning("No calls found in range/filters.")
@@ -192,9 +196,12 @@ def run_openphone_tab():
         mean_dur = calls['duration'].mean()
         long_calls = calls[calls['duration'] >= mean_dur]
 
+        # Also ensure hour is categorical in long_calls
         if not long_calls.empty:
+            long_calls['hour'] = pd.Categorical(long_calls['hour'], categories=hour_order, ordered=True)
+
             lc_df = long_calls.groupby('hour').size().reset_index(name='count')
-            fig = px.bar(lc_df, x='hour', y='count', title="Long Calls by Hour")
+            fig = px.bar(lc_df, x='hour', y='count', title="Long Calls by Hour (12 AM -> 11 PM)")
             st.plotly_chart(fig)
 
         # Heatmap: day vs. hour (Avg Duration)
@@ -204,17 +211,17 @@ def run_openphone_tab():
             pivot_dur.index = pivot_dur.index.astype(str)
             pivot_dur.columns = pivot_dur.columns.astype(str)
 
-            # Intersection-based reindex to keep order
+            # Reindex day/hour intersection
             actual_days = [d for d in day_order if d in pivot_dur.index]
             actual_hours = [h for h in hour_order if h in pivot_dur.columns]
 
             pivot_dur = pivot_dur.reindex(index=actual_days, columns=actual_hours).fillna(0)
-
-            fig = px.imshow(pivot_dur,
-                            title="Heatmap of Avg Call Duration (Day vs. Hour)",
-                            labels=dict(x="Hour", y="Day", color="Avg Duration (s)"))
+            fig = px.imshow(
+                pivot_dur,
+                title="Heatmap of Avg Call Duration (Day vs. Hour)",
+                labels=dict(x="Hour", y="Day", color="Duration (s)")
+            )
             st.plotly_chart(fig)
-
     else:
         st.warning("No 'duration' data or no calls in filters.")
 
@@ -225,7 +232,11 @@ def run_openphone_tab():
     if not messages.empty:
         inc_msgs = messages[messages['direction'] == 'incoming']
         inc_counts = inc_msgs.groupby('hour').size().reset_index(name='count')
-        fig = px.bar(inc_counts, x='hour', y='count', title="Incoming Msgs by Hour")
+
+        # We can also define hour as a categorical for messages
+        messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
+
+        fig = px.bar(inc_counts, x='hour', y='count', title="Incoming Msgs by Hour (12 AM -> 11 PM)")
         st.plotly_chart(fig)
 
         # Heatmap: day vs. hour
@@ -239,8 +250,11 @@ def run_openphone_tab():
             actual_hours = [h for h in hour_order if h in pivot_msg.columns]
             pivot_msg = pivot_msg.reindex(index=actual_days, columns=actual_hours).fillna(0)
 
-            fig = px.imshow(pivot_msg, title="Message Volume Heatmap",
-                            labels=dict(x="Hour", y="Day", color="Volume"))
+            fig = px.imshow(
+                pivot_msg,
+                title="Message Volume Heatmap (Day vs. Hour)",
+                labels=dict(x="Hour", y="Day", color="Volume")
+            )
             st.plotly_chart(fig)
     else:
         st.warning("No messages found in range/filters.")
@@ -301,9 +315,11 @@ def run_openphone_tab():
 
             pivot_vol = pivot_vol.reindex(index=actual_days, columns=actual_hours).fillna(0)
 
-            fig = px.imshow(pivot_vol,
-                            title="Call Volume Heatmap (Day vs. Hour)",
-                            labels=dict(x="Hour", y="Day", color="Count"))
+            fig = px.imshow(
+                pivot_vol,
+                title="Call Volume Heatmap (Day vs. Hour)",
+                labels=dict(x="Hour", y="Day", color="Count")
+            )
             st.plotly_chart(fig)
     else:
         st.warning("No calls to show volume heatmap.")
@@ -331,7 +347,7 @@ def run_openphone_tab():
         )
         st.plotly_chart(fig)
 
-        # Compare Agents
+        # Compare Agents (Individually)
         st.subheader("Compare Agents: Successful Outbound Calls (Day vs. Hour)")
         df_agent_so = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
 
@@ -409,5 +425,48 @@ def run_openphone_tab():
     else:
         st.warning("No outbound calls for success rate heatmap.")
 
-    st.success("Enhanced Dashboard - Done!")
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 18. COMPARE AGENTS (SIDE BY SIDE) - SUCCESSFUL OUTBOUND CALLS HEATMAP
+    #     Using Plotly faceting for a single figure with subplots.
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Compare Agents Side by Side: Successful Outbound Calls Heatmap (Facet)")
 
+    if not successful_outbound_calls.empty and len(selected_agents) > 1:
+        # 1) Group data by (userId, day, hour)
+        facet_data = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
+
+        # Convert day/hour to strings
+        facet_data['day'] = facet_data['day'].astype(str)
+        facet_data['hour'] = facet_data['hour'].astype(str)
+
+        # We'll use px.density_heatmap for side-by-side agent subplots.
+        # We'll specify category_orders so day/hour show in the correct sequence.
+        fig = px.density_heatmap(
+            facet_data,
+            x='hour',
+            y='day',
+            z='count',
+            facet_col='userId',            # each agent in its own subplot
+            facet_col_wrap=3,             # how many subplots per row
+            color_continuous_scale="Blues",
+            title="Side-by-Side Heatmap of Successful Outbound Calls by Day & Hour (All Agents)",
+            category_orders={
+                "hour": hour_order,
+                "day": day_order
+            },
+            text_auto=True  # shows numeric counts on the cells
+        )
+        # Optionally flip y-axis so Monday is at the top:
+        # for axis in fig.layout.yaxis:
+        #     axis.autorange = "reversed"
+
+        # We can fix the color scale range:
+        # First find the max count to fix cmax
+        max_count = facet_data['count'].max()
+        fig.update_layout(coloraxis=dict(cmin=0, cmax=max_count))
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Side-by-side heatmap not shown. Either no successful outbound calls, or only 1 (or zero) agents selected.")
+
+    st.success("Enhanced Dashboard Complete!")
