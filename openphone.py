@@ -115,7 +115,7 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Outbound Call Success Rate")
 
-    max_duration = 60  # default if no 'duration' column
+    max_duration = 60  # default if no 'duration'
     if 'duration' in calls.columns and not calls['duration'].isnull().all():
         max_duration = int(calls['duration'].max())
 
@@ -156,25 +156,29 @@ def run_openphone_tab():
         st.metric("Outbound Call Success Rate", f"{success_rate:.2f}%")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 9. HOURLY TRENDS (AM/PM in ET) with Logical Hour Order
+    # 9. LOGICAL HOUR ORDER (12 AM to 11 PM)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Hourly Trends")
-
-    # Define desired order from 12 AM through 11 PM
     hour_order = [
         "12 AM","01 AM","02 AM","03 AM","04 AM","05 AM","06 AM","07 AM",
         "08 AM","09 AM","10 AM","11 AM","12 PM","01 PM","02 PM","03 PM",
         "04 PM","05 PM","06 PM","07 PM","08 PM","09 PM","10 PM","11 PM"
     ]
 
-    # Convert createdAtET to day/hour columns
+    # We define 'day' and 'hour' for calls here, with a fixed categorical order
     calls['day'] = calls['createdAtET'].dt.strftime('%A')  # e.g. "Monday"
-    calls['hour'] = calls['createdAtET'].dt.strftime('%I %p')  # e.g. "01 PM"
-
-    # Make hour a categorical with a fixed order
+    calls['hour'] = calls['createdAtET'].dt.strftime('%I %p')
     calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
 
-    # Aggregate for chart
+    # Also for messages
+    messages['day'] = messages['createdAtET'].dt.strftime('%A')
+    messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
+    messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 10. HOURLY TRENDS (AM/PM in ET)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Hourly Trends")
+
     hourly_stats = calls.groupby(['hour', 'direction']).size().reset_index(name='count')
     fig = px.bar(
         hourly_stats,
@@ -187,7 +191,7 @@ def run_openphone_tab():
     st.plotly_chart(fig)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 10. CALL DURATION ANALYSIS
+    # 11. CALL DURATION ANALYSIS
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Call Duration Analysis")
     if 'duration' in calls.columns and not calls['duration'].isnull().all():
@@ -219,15 +223,9 @@ def run_openphone_tab():
         st.plotly_chart(fig)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 11. INCOMING MESSAGE ANALYSIS
+    # 12. INCOMING MESSAGE ANALYSIS
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Incoming Messages by Hour (ET, AM/PM)")
-    messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
-    messages['day'] = messages['createdAtET'].dt.strftime('%A')
-
-    # Make hour a categorical with the same hour_order
-    messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
-
+    st.subheader("Incoming Messages by Hour (ET, AM/PM) [Logical Order]")
     incoming_messages = messages[messages['direction'] == 'incoming']
     incoming_message_times = incoming_messages.groupby('hour').size().reset_index(name='count')
     fig = px.bar(
@@ -254,7 +252,7 @@ def run_openphone_tab():
     st.plotly_chart(fig)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 12. AGENT PERFORMANCE: CALLS & BOOKINGS
+    # 13. AGENT PERFORMANCE: CALLS & BOOKINGS
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Performance: Calls & Bookings")
     fig = px.bar(
@@ -266,15 +264,17 @@ def run_openphone_tab():
     )
     st.plotly_chart(fig)
 
-    st.dataframe(agent_performance.rename(columns={
-        'userId': 'Agent',
-        'total_calls': 'Total Calls',
-        'total_bookings': 'Total Bookings',
-        'booking_rate': 'Booking Rate (%)'
-    }))
+    st.dataframe(
+        agent_performance.rename(columns={
+            'userId': 'Agent',
+            'total_calls': 'Total Calls',
+            'total_bookings': 'Total Bookings',
+            'booking_rate': 'Booking Rate (%)'
+        })
+    )
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 13. AGENT OUTBOUND SUCCESS RATE
+    # 14. AGENT OUTBOUND SUCCESS RATE
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Outbound Success Rate")
     fig = px.bar(
@@ -286,24 +286,22 @@ def run_openphone_tab():
     )
     st.plotly_chart(fig)
 
-    st.dataframe(agent_success_rate.rename(columns={
-        'userId': 'Agent',
-        'total_outbound_calls': 'Total Outbound Calls',
-        'successful_calls': 'Successful Calls',
-        'success_rate': 'Success Rate (%)'
-    }))
+    st.dataframe(
+        agent_success_rate.rename(columns={
+            'userId': 'Agent',
+            'total_outbound_calls': 'Total Outbound Calls',
+            'successful_calls': 'Successful Calls',
+            'success_rate': 'Success Rate (%)'
+        })
+    )
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 14. CALL VOLUME HEATMAP (AGGREGATE) with Logical Hour Order
+    # 15. CALL VOLUME HEATMAP (AGGREGATE) with Logical Hour Order
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Call Volume Heatmap (ET, AM/PM) [Logical Order]")
-
     call_heatmap_data = calls.groupby(['day', 'hour']).size().reset_index(name='count')
     call_heatmap_pivot = call_heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
-
-    # Reindex columns (hours)
     call_heatmap_pivot = call_heatmap_pivot.reindex(columns=hour_order, fill_value=0)
-
     fig = px.imshow(
         call_heatmap_pivot,
         title="Heatmap of Call Volume by Day & Hour (ET, AM/PM)",
@@ -312,27 +310,42 @@ def run_openphone_tab():
     st.plotly_chart(fig)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 15. COMPARE AGENTS: INDIVIDUAL HEATMAPS (Logical Hour Order)
+    # 16. SUCCESSFUL OUTBOUND CALLS HEATMAP (AGGREGATE & INDIVIDUAL)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Compare Agents: Call Volume Heatmap by Day & Hour")
+    st.subheader("Successful Outbound Calls Heatmap (ET, AM/PM) [Logical Order]")
 
-    df_agent_heat = calls.groupby(['userId', 'day', 'hour']).size().reset_index(name='count')
+    # Group successful_outbound_calls (already has day/hour from calls DataFrame)
+    success_heat_data = successful_outbound_calls.groupby(['day', 'hour']).size().reset_index(name='count')
+    # Pivot to day vs. hour
+    success_heat_pivot = success_heat_data.pivot(index='day', columns='hour', values='count').fillna(0)
+    success_heat_pivot = success_heat_pivot.reindex(columns=hour_order, fill_value=0)
+
+    fig = px.imshow(
+        success_heat_pivot,
+        title="Heatmap of Successful Outbound Calls by Day & Hour (ET, AM/PM)",
+        labels=dict(x="Hour", y="Day", color="Volume"),
+        color_continuous_scale="Blues",
+    )
+    st.plotly_chart(fig)
+
+    # Individual Agent Comparison
+    st.subheader("Compare Agents: Successful Outbound Calls Heatmap by Day & Hour")
+    df_agent_success_heat = successful_outbound_calls.groupby(['userId', 'day', 'hour']).size().reset_index(name='count')
+
     for agent in selected_agents:
-        agent_data = df_agent_heat[df_agent_heat['userId'] == agent]
+        agent_data = df_agent_success_heat[df_agent_success_heat['userId'] == agent]
         if agent_data.empty:
             continue
 
         pivot_table = agent_data.pivot(index='day', columns='hour', values='count').fillna(0)
-
-        # Reindex to ensure "12 AM" through "11 PM" columns in order
         pivot_table = pivot_table.reindex(columns=hour_order, fill_value=0)
 
         fig = px.imshow(
             pivot_table,
             color_continuous_scale='Blues',
             labels=dict(x="Hour (AM/PM)", y="Day of Week", color="Call Volume"),
-            title=f"Call Volume Heatmap for Agent: {agent}",
+            title=f"Successful Outbound Calls Heatmap for Agent: {agent}",
         )
         st.plotly_chart(fig)
 
-    st.success("Enhanced Dashboard with ET (AM/PM), Agent Filter, and Logical 12 AM-11 PM Hour Ordering is Ready!")
+    st.success("Enhanced Dashboard with ET (AM/PM), Agent Filter, Logical Hour Ordering, and Successful Call Heatmaps is Ready!")
