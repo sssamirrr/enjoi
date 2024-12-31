@@ -109,7 +109,6 @@ def run_openphone_tab():
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 7. DEFINE day AND hour (STRING) + day_order & hour_order
-    #    to ensure a logical sequence from 12 AM -> 11 PM
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     hour_order = [
@@ -174,16 +173,15 @@ def run_openphone_tab():
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 10. HOURLY TRENDS
-    #    Ensuring hours go from 12 AM to 11 PM in order
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Hourly Trends")
+    st.subheader("Hourly Trends (12 AM -> 11 PM)")
     if not calls.empty:
-        # Convert calls['hour'] to a categorical with hour_order
+        # Ensure calls['hour'] is categorical
         calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
 
         hourly_stats = calls.groupby(['hour','direction']).size().reset_index(name='count')
         fig = px.bar(hourly_stats, x='hour', y='count', color='direction',
-                     barmode='group', title="Calls by Hour (12 AM -> 11 PM)")
+                     barmode='group', title="Calls by Hour")
         st.plotly_chart(fig)
     else:
         st.warning("No calls found in range/filters.")
@@ -199,7 +197,6 @@ def run_openphone_tab():
         # Also ensure hour is categorical in long_calls
         if not long_calls.empty:
             long_calls['hour'] = pd.Categorical(long_calls['hour'], categories=hour_order, ordered=True)
-
             lc_df = long_calls.groupby('hour').size().reset_index(name='count')
             fig = px.bar(lc_df, x='hour', y='count', title="Long Calls by Hour (12 AM -> 11 PM)")
             st.plotly_chart(fig)
@@ -230,12 +227,11 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Incoming Messages by Hour")
     if not messages.empty:
-        inc_msgs = messages[messages['direction'] == 'incoming']
-        inc_counts = inc_msgs.groupby('hour').size().reset_index(name='count')
-
-        # We can also define hour as a categorical for messages
+        # Make messages['hour'] a categorical
         messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
 
+        inc_msgs = messages[messages['direction'] == 'incoming']
+        inc_counts = inc_msgs.groupby('hour').size().reset_index(name='count')
         fig = px.bar(inc_counts, x='hour', y='count', title="Incoming Msgs by Hour (12 AM -> 11 PM)")
         st.plotly_chart(fig)
 
@@ -426,47 +422,67 @@ def run_openphone_tab():
         st.warning("No outbound calls for success rate heatmap.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. COMPARE AGENTS (SIDE BY SIDE) - SUCCESSFUL OUTBOUND CALLS HEATMAP
-    #     Using Plotly faceting for a single figure with subplots.
+    # 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
+    #     in one figure (if 2+ agents are selected)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Compare Agents Side by Side: Successful Outbound Calls Heatmap (Facet)")
+    st.subheader("Compare Agents Side-by-Side: Calls vs. Success Rate in One Figure")
 
-    if not successful_outbound_calls.empty and len(selected_agents) > 1:
-        # 1) Group data by (userId, day, hour)
-        facet_data = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
+    if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
+        # 1) Build 'count' dataset
+        df_count = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
+        df_count['day'] = df_count['day'].astype(str)
+        df_count['hour'] = df_count['hour'].astype(str)
+        df_count['metric'] = "Count"
+        df_count.rename(columns={'count': 'value'}, inplace=True)
 
-        # Convert day/hour to strings
-        facet_data['day'] = facet_data['day'].astype(str)
-        facet_data['hour'] = facet_data['hour'].astype(str)
+        # 2) Build 'success_rate' dataset
+        # Reuse the 'merged' approach from #17
+        group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
+        group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
+        merged_df = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
+        merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
+        merged_df['day'] = merged_df['day'].astype(str)
+        merged_df['hour'] = merged_df['hour'].astype(str)
 
-        # We'll use px.density_heatmap for side-by-side agent subplots.
-        # We'll specify category_orders so day/hour show in the correct sequence.
+        # convert success_rate into 'metric','value'
+        df_srate = merged_df[['userId','day','hour','success_rate']].copy()
+        df_srate['metric'] = "Success Rate"
+        df_srate.rename(columns={'success_rate': 'value'}, inplace=True)
+
+        # 3) Combine them
+        combined = pd.concat([df_count, df_srate], ignore_index=True)
+
+        # 4) We'll use facet_col='userId' and facet_row='metric'
+        #    so top row = metric=Count, bottom row=metric=Success Rate
+        #    left to right = userId
         fig = px.density_heatmap(
-            facet_data,
+            combined,
             x='hour',
             y='day',
-            z='count',
-            facet_col='userId',            # each agent in its own subplot
-            facet_col_wrap=3,             # how many subplots per row
-            color_continuous_scale="Blues",
-            title="Side-by-Side Heatmap of Successful Outbound Calls by Day & Hour (All Agents)",
+            z='value',
+            facet_col='userId',
+            facet_row='metric',
+            color_continuous_scale='Blues',
             category_orders={
                 "hour": hour_order,
-                "day": day_order
+                "day": day_order,
+                "metric": ["Count", "Success Rate"],  # ensures Count row is top
+                "userId": list(selected_agents)       # show chosen agents in order
             },
-            text_auto=True  # shows numeric counts on the cells
+            title="Side-by-Side: Successful Calls (Count) vs. Success Rate per Agent",
+            text_auto=True
         )
-        # Optionally flip y-axis so Monday is at the top:
-        # for axis in fig.layout.yaxis:
-        #     axis.autorange = "reversed"
+        # For success rate, we might want cmax=100. But we are mixing count and % in one figure
+        # So let's let Plotly auto-scale. Alternatively, separate color scales:
+        # But px.density_heatmap only has one coloraxis for all facets.
 
-        # We can fix the color scale range:
-        # First find the max count to fix cmax
-        max_count = facet_data['count'].max()
-        fig.update_layout(coloraxis=dict(cmin=0, cmax=max_count))
+        # Reverse y-axis so Monday top -> Sunday bottom (if you prefer):
+        # for axis in fig.layout:
+        #     # or do something like axis.autorange="reversed"
+        #     pass
 
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Side-by-side heatmap not shown. Either no successful outbound calls, or only 1 (or zero) agents selected.")
+        st.warning("Side-by-side calls vs. success rate not shown. Need 2+ agents selected and some calls present.")
 
     st.success("Enhanced Dashboard Complete!")
