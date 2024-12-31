@@ -123,6 +123,7 @@ def run_openphone_tab():
     if not calls.empty:
         calls['day'] = calls['createdAtET'].dt.strftime('%A')  # e.g. "Monday"
         calls['hour'] = calls['createdAtET'].dt.strftime('%I %p')
+        # Make them categorical with your hour_order
         calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
 
     if not messages.empty:
@@ -216,8 +217,13 @@ def run_openphone_tab():
         # Heatmap of Average Call Duration by Day & Hour
         duration_heatmap_data = calls.groupby(['day', 'hour'])['duration'].mean().reset_index()
         if not duration_heatmap_data.empty:
-            duration_heatmap_pivot = duration_heatmap_data.pivot(index='day', columns='hour', values='duration').fillna(0)
-            duration_heatmap_pivot = duration_heatmap_pivot.reindex(columns=hour_order, fill_value=0)
+            duration_heatmap_pivot = duration_heatmap_data.pivot(index='day', columns='hour', values='duration')
+
+            # Convert columns to non-categorical so reindex won't break
+            duration_heatmap_pivot.columns = duration_heatmap_pivot.columns.astype(str)
+
+            duration_heatmap_pivot = duration_heatmap_pivot.reindex(columns=hour_order)
+            duration_heatmap_pivot = duration_heatmap_pivot.fillna(0)
 
             fig = px.imshow(
                 duration_heatmap_pivot,
@@ -247,8 +253,13 @@ def run_openphone_tab():
         # Heatmap for Message Volume
         st.subheader("Message Volume Heatmap (ET, AM/PM)")
         message_heatmap_data = messages.groupby(['day', 'hour']).size().reset_index(name='count')
-        message_heatmap_pivot = message_heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
-        message_heatmap_pivot = message_heatmap_pivot.reindex(columns=hour_order, fill_value=0)
+        message_heatmap_pivot = message_heatmap_data.pivot(index='day', columns='hour', values='count')
+
+        # Convert columns to non-categorical so reindex won't break
+        message_heatmap_pivot.columns = message_heatmap_pivot.columns.astype(str)
+
+        message_heatmap_pivot = message_heatmap_pivot.reindex(columns=hour_order)
+        message_heatmap_pivot = message_heatmap_pivot.fillna(0)
 
         fig = px.imshow(
             message_heatmap_pivot,
@@ -315,8 +326,13 @@ def run_openphone_tab():
     st.subheader("Call Volume Heatmap (ET, AM/PM) [Logical Order]")
     if not calls.empty:
         call_heatmap_data = calls.groupby(['day', 'hour']).size().reset_index(name='count')
-        call_heatmap_pivot = call_heatmap_data.pivot(index='day', columns='hour', values='count').fillna(0)
-        call_heatmap_pivot = call_heatmap_pivot.reindex(columns=hour_order, fill_value=0)
+        call_heatmap_pivot = call_heatmap_data.pivot(index='day', columns='hour', values='count')
+
+        # Convert columns so they're not categorical
+        call_heatmap_pivot.columns = call_heatmap_pivot.columns.astype(str)
+
+        call_heatmap_pivot = call_heatmap_pivot.reindex(columns=hour_order)
+        call_heatmap_pivot = call_heatmap_pivot.fillna(0)
 
         fig = px.imshow(
             call_heatmap_pivot,
@@ -334,8 +350,13 @@ def run_openphone_tab():
 
     if not successful_outbound_calls.empty:
         success_heat_data = successful_outbound_calls.groupby(['day', 'hour']).size().reset_index(name='count')
-        success_heat_pivot = success_heat_data.pivot(index='day', columns='hour', values='count').fillna(0)
-        success_heat_pivot = success_heat_pivot.reindex(columns=hour_order, fill_value=0)
+        success_heat_pivot = success_heat_data.pivot(index='day', columns='hour', values='count')
+
+        # Convert columns to non-categorical
+        success_heat_pivot.columns = success_heat_pivot.columns.astype(str)
+
+        success_heat_pivot = success_heat_pivot.reindex(columns=hour_order)
+        success_heat_pivot = success_heat_pivot.fillna(0)
 
         fig = px.imshow(
             success_heat_pivot,
@@ -355,8 +376,12 @@ def run_openphone_tab():
                 st.write(f"No successful outbound calls for agent: {agent}")
                 continue
 
-            pivot_table = agent_data.pivot(index='day', columns='hour', values='count').fillna(0)
-            pivot_table = pivot_table.reindex(columns=hour_order, fill_value=0)
+            pivot_table = agent_data.pivot(index='day', columns='hour', values='count')
+
+            # Convert columns
+            pivot_table.columns = pivot_table.columns.astype(str)
+            pivot_table = pivot_table.reindex(columns=hour_order)
+            pivot_table = pivot_table.fillna(0)
 
             fig = px.imshow(
                 pivot_table,
@@ -399,8 +424,12 @@ def run_openphone_tab():
                 st.write(f"No outbound calls found for agent: {agent}")
                 continue
 
-            pivot_table = this_agent.pivot(index='day', columns='hour', values='success_rate').fillna(0)
-            pivot_table = pivot_table.reindex(columns=hour_order, fill_value=0)
+            pivot_table = this_agent.pivot(index='day', columns='hour', values='success_rate')
+
+            # Convert columns to non-categorical
+            pivot_table.columns = pivot_table.columns.astype(str)
+            pivot_table = pivot_table.reindex(columns=hour_order)
+            pivot_table = pivot_table.fillna(0)
 
             fig = px.imshow(
                 pivot_table,
@@ -416,4 +445,5 @@ def run_openphone_tab():
     else:
         st.warning("No outbound calls to display success rate heatmap.")
 
-    st.success("Enhanced Dashboard with ET (AM/PM), Agent Filter, Logical Hour Ordering, and Additional Agent Success Rate Heatmaps is Ready!")
+    st.success("Enhanced Dashboard with ET (AM/PM), Agent Filter, Logical Hour Ordering, "
+               "and Additional Agent Success Rate Heatmaps is Ready!")
