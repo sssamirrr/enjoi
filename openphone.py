@@ -48,10 +48,10 @@ def run_openphone_tab():
 
     min_date = openphone_data['createdAtET'].min().date()
     max_date = openphone_data['createdAtET'].max().date()
-    c1, c2 = st.columns(2)
-    with c1:
+    col1, col2 = st.columns(2)
+    with col1:
         start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
-    with c2:
+    with col2:
         end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
 
     if start_date > end_date:
@@ -66,18 +66,14 @@ def run_openphone_tab():
 
     # Agent filter
     if 'userId' not in openphone_data.columns:
-    st.error("No 'userId' column found in the dataset.")
-    return
+        st.error("No 'userId' column found in the dataset.")
+        return
 
     all_agents = sorted(openphone_data['userId'].dropna().unique())
-    
-    # Previously, something like:
-    # selected_agents = st.multiselect("Select Agents to Include", all_agents, default=all_agents)
-    
-    # Now we make the default selection empty:
-    selected_agents = st.multiselect("Select Agents to Include", all_agents, default=[])
-    
-    # Filter data by selected agents
+    # The key change: default is an empty list, so no agents are selected initially
+    selected_agents = st.multiselect("Select Agents", all_agents, default=[])
+
+    # Filter by selected agents
     openphone_data = openphone_data[openphone_data['userId'].isin(selected_agents)]
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -113,7 +109,7 @@ def run_openphone_tab():
     ).fillna(0)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 7. DEFINE day AND hour (STRING), day_order & hour_order
+    # 7. DEFINE day AND hour (STRING) + day_order & hour_order
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     hour_order = [
@@ -123,7 +119,6 @@ def run_openphone_tab():
     ]
 
     if not calls.empty:
-        # Convert to string (removes any leftover categoricals)
         calls['day'] = calls['createdAtET'].dt.strftime('%A').astype(str)
         calls['hour'] = calls['createdAtET'].dt.strftime('%I %p').astype(str)
 
@@ -206,16 +201,14 @@ def run_openphone_tab():
         dur_data = calls.groupby(['day','hour'])['duration'].mean().reset_index()
         if not dur_data.empty:
             pivot_dur = dur_data.pivot(index='day', columns='hour', values='duration')
-            # Convert pivot index/cols to str
             pivot_dur.index = pivot_dur.index.astype(str)
             pivot_dur.columns = pivot_dur.columns.astype(str)
 
-            # Reindex rows/cols with existing intersection
+            # Intersection-based reindex to keep order
             actual_days = [d for d in day_order if d in pivot_dur.index]
             actual_hours = [h for h in hour_order if h in pivot_dur.columns]
 
-            pivot_dur = pivot_dur.reindex(index=actual_days, columns=actual_hours)
-            pivot_dur = pivot_dur.fillna(0)
+            pivot_dur = pivot_dur.reindex(index=actual_days, columns=actual_hours).fillna(0)
 
             fig = px.imshow(pivot_dur,
                             title="Heatmap of Avg Call Duration (Day vs. Hour)",
@@ -325,10 +318,9 @@ def run_openphone_tab():
         pivot_so.index = pivot_so.index.astype(str)
         pivot_so.columns = pivot_so.columns.astype(str)
 
-        # Reindex to preserve order but only for existing day/hour
+        # Reindex
         actual_days = [d for d in day_order if d in pivot_so.index]
         actual_hours = [h for h in hour_order if h in pivot_so.columns]
-
         pivot_so = pivot_so.reindex(index=actual_days, columns=actual_hours).fillna(0)
 
         fig = px.imshow(
@@ -408,7 +400,7 @@ def run_openphone_tab():
             fig = px.imshow(
                 pivot_srate,
                 color_continuous_scale='Blues',
-                labels=dict(x="Hour", y="Day", color="Success Rate (%)"),
+                labels=dict(x="Hour (AM/PM)", y="Day", color="Success Rate (%)"),
                 title=f"Success Rate Heatmap - {agent}",
             )
             fig.update_xaxes(side="top")
@@ -417,6 +409,5 @@ def run_openphone_tab():
     else:
         st.warning("No outbound calls for success rate heatmap.")
 
-    # Done
     st.success("Enhanced Dashboard - Done!")
 
