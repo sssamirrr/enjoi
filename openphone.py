@@ -66,12 +66,18 @@ def run_openphone_tab():
 
     # Agent filter
     if 'userId' not in openphone_data.columns:
-        st.error("No 'userId' column found in the dataset.")
-        return
+    st.error("No 'userId' column found in the dataset.")
+    return
 
     all_agents = sorted(openphone_data['userId'].dropna().unique())
-    selected_agents = st.multiselect("Select Agents", all_agents, default=all_agents)
-
+    
+    # Previously, something like:
+    # selected_agents = st.multiselect("Select Agents to Include", all_agents, default=all_agents)
+    
+    # Now we make the default selection empty:
+    selected_agents = st.multiselect("Select Agents to Include", all_agents, default=[])
+    
+    # Filter data by selected agents
     openphone_data = openphone_data[openphone_data['userId'].isin(selected_agents)]
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
