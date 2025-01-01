@@ -502,27 +502,26 @@ def run_openphone_tab():
                 if total_outbound_left == 0:
                     st.write("No outbound calls for this agent.")
                 else:
-                    # We’ll display both success_rate (color) and outbound_count (tooltip)
+                    # We'll display success_rate in color, from 0→100
                     df_rate = merged_df[['day','hour','success_rate','outbound_count']].copy()
-    
                     fig_rate = px.density_heatmap(
                         df_rate,
                         x='hour',
                         y='day',
                         z='success_rate',
-                        color_continuous_scale='RdYlGn',
+                        color_continuous_scale='Blues',         # <-- same "Blues" as calls
+                        range_color=[0, 100],                   # <-- ensures 100% = darkest blue
                         title="Success Rate by Day/Hour",
-                        # Provide "outbound_count" and formatted "success_rate" in tooltips
                         hover_data={
-                            'outbound_count': True,    # show total calls
-                            'success_rate': ':.1f'    # show rate with 1 decimal
+                            'success_rate': ':.1f',
+                            'outbound_count': True
                         },
                         labels={
                             'success_rate': 'Success Rate (%)',
-                            'outbound_count': 'Total Outbound Calls',
+                            'outbound_count': 'Total Outbound Calls'
                         }
                     )
-                    # Reorder day/hour axes if needed
+                    # Reorder day/hour if needed
                     fig_rate.update_yaxes(categoryorder='array', categoryarray=day_order)
                     fig_rate.update_xaxes(categoryorder='array', categoryarray=hour_order)
                     fig_rate.update_layout(height=400)
@@ -536,25 +535,24 @@ def run_openphone_tab():
                 if total_outbound_right == 0:
                     st.write("No outbound calls for this agent.")
                 else:
-                    # We’ll display both outbound_count (color) and success_rate (tooltip)
                     df_calls = merged_df[['day','hour','outbound_count','success_rate']].copy()
-    
                     fig_calls = px.density_heatmap(
                         df_calls,
                         x='hour',
                         y='day',
                         z='outbound_count',
-                        color_continuous_scale='Blues',
+                        color_continuous_scale='Blues',  # same color scale
                         title="Outbound Calls by Day/Hour",
                         hover_data={
-                            'success_rate': ':.1f',   # show rate with 1 decimal
-                            'outbound_count': True
+                            'outbound_count': True,
+                            'success_rate': ':.1f'
                         },
                         labels={
                             'outbound_count': 'Total Outbound Calls',
                             'success_rate': 'Success Rate (%)'
                         }
                     )
+                    # Reorder day/hour if needed
                     fig_calls.update_yaxes(categoryorder='array', categoryarray=day_order)
                     fig_calls.update_xaxes(categoryorder='array', categoryarray=hour_order)
                     fig_calls.update_layout(height=400)
@@ -579,6 +577,7 @@ def run_openphone_tab():
     
     else:
         st.warning("No outbound calls or no agents selected. Cannot show agent-by-agent heatmaps.")
+
 
 
 
