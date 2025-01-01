@@ -541,15 +541,35 @@ def run_openphone_tab():
                 else:
                     df_calls = merged_df[['day','hour','outbound_count','success_rate']].copy()
     
-                    fig_calls = px.density_heatmap(
+                   fig_calls = px.density_heatmap(
                         df_calls,
                         x='hour',
                         y='day',
                         z='outbound_count',
+                        histfunc='sum',              # or 'avg' if you want to average
+                        nbinsx=len(hour_order),
+                        nbinsy=len(day_order),
                         color_continuous_scale='Blues',
-                        histfunc='sum',  # or 'avg' if each (day,hour) is unique
                         title="Outbound Calls by Day/Hour"
                     )
+                    
+                    # Pass success_rate in customdata so the tooltip can display it
+                    fig_calls.update_traces(
+                        customdata=df_calls[['success_rate']].values,
+                        hovertemplate=(
+                            "Hour: %{x}<br>"
+                            + "Day: %{y}<br>"
+                            + "Outbound Calls: %{z}<br>"
+                            + "Success Rate: %{customdata[0]:.1f} %"
+                        ),
+                        selector=dict(type='heatmap')
+                    )
+                    
+                    fig_calls.update_yaxes(categoryorder='array', categoryarray=day_order)
+                    fig_calls.update_xaxes(categoryorder='array', categoryarray=hour_order)
+                    fig_calls.update_layout(height=400)
+                    st.plotly_chart(fig_calls, use_container_width=True)
+
     
                     # Put success_rate in customdata for the tooltip
                     fig_calls.update_traces(
