@@ -464,61 +464,61 @@ def run_openphone_tab():
         st.warning("No outbound calls for success rate heatmap.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
-    #     in one figure (if 2+ agents are selected)
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Compare Agents Side-by-Side: Calls vs. Success Rate in One Figure")
+# 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
+#     in one figure (if 2+ agents are selected)
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+st.subheader("Compare Agents Side-by-Side: Calls vs. Success Rate in One Figure")
 
-    if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
-        # 1) Build 'count' dataset
-        df_count = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
-        df_count['day'] = df_count['day'].astype(str)
-        df_count['hour'] = df_count['hour'].astype(str)
-        df_count['metric'] = "Count"
-        df_count.rename(columns={'count': 'value'}, inplace=True)
+if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
+    # 1) Build 'count' dataset
+    df_count = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
+    df_count['day'] = df_count['day'].astype(str)
+    df_count['hour'] = df_count['hour'].astype(str)
+    df_count['metric'] = "Count"
+    df_count.rename(columns={'count': 'value'}, inplace=True)
 
-        # 2) Build 'success_rate' dataset
-        group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
-        group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
-        merged_df = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
-        merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
-        merged_df['day'] = merged_df['day'].astype(str)
-        merged_df['hour'] = merged_df['hour'].astype(str)
+    # 2) Build 'success_rate' dataset
+    group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
+    group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
+    merged_df = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
+    merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
+    merged_df['day'] = merged_df['day'].astype(str)
+    merged_df['hour'] = merged_df['hour'].astype(str)
 
-        df_srate = merged_df[['userId','day','hour','success_rate']].copy()
-        df_srate['metric'] = "Success Rate"
-        df_srate.rename(columns={'success_rate': 'value'}, inplace=True)
+    df_srate = merged_df[['userId','day','hour','success_rate']].copy()
+    df_srate['metric'] = "Success Rate"
+    df_srate.rename(columns={'success_rate': 'value'}, inplace=True)
 
-        # 3) Combine them
-        combined = pd.concat([df_count, df_srate], ignore_index=True)
+    # 3) Combine them
+    combined = pd.concat([df_count, df_srate], ignore_index=True)
 
-        # 4) We'll use facet_col='userId' and facet_row='metric'
-        #    so top row = metric=Count, bottom row=metric=Success Rate
-        #    left to right = userId
-        # But we want the short names on the facet columns
-        # --> We can replace userId in "combined" with the short names:
-        combined['short_user'] = combined['userId'].map(agent_map)
+    # 4) Replace userId with short name
+    combined['short_user'] = combined['userId'].map(agent_map)
 
-        fig = px.density_heatmap(
-            combined,
-            x='hour',
-            y='day',
-            z='value',
-            facet_col='short_user',  # <-- use the short name in the facets
-            facet_row='metric',
-            color_continuous_scale='Blues',
-            category_orders={
-                "hour": hour_order,
-                "day": day_order,
-                "metric": ["Count", "Success Rate"],  # ensures Count row is top
-                "short_user": [agent_map[a] for a in selected_agents],  # keep user-chosen order
-            },
-            title="Side-by-Side: Successful Calls (Count) vs. Success Rate per Agent",
-            text_auto=True
-        )
+    # 5) Plot with max 2 agents per row
+    fig = px.density_heatmap(
+        combined,
+        x='hour',
+        y='day',
+        z='value',
+        facet_col='short_user',
+        facet_row='metric',
+        facet_col_wrap=2,  # <---- ADD THIS
+        color_continuous_scale='Blues',
+        category_orders={
+            "hour": hour_order,
+            "day": day_order,
+            "metric": ["Count", "Success Rate"],
+            # Show selected agents in order (short names)
+            "short_user": [agent_map[a] for a in selected_agents],
+        },
+        title="Side-by-Side: Successful Calls (Count) vs. Success Rate per Agent",
+        text_auto=True
+    )
 
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("Side-by-side calls vs. success rate not shown. Need 2+ agents selected and some calls present.")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("Side-by-side calls vs. success rate not shown. "
+               "Need 2+ agents selected and some calls present.")
 
     st.success("Enhanced Dashboard Complete!")
