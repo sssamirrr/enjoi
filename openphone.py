@@ -467,22 +467,25 @@ def run_openphone_tab():
     # 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
     #     in one figure (if 2+ agents are selected)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Compare Agents Side-by-Side: Calls vs. Success Rate in One Figure")
     
     if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
-        # 1) Build 'count' dataset
+        # 1) Build the "Successful Calls" dataset
         df_count = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
         df_count['day'] = df_count['day'].astype(str)
         df_count['hour'] = df_count['hour'].astype(str)
-        df_count['metric'] = "Count"
+        df_count['metric'] = "Successful Calls"
         df_count.rename(columns={'count': 'value'}, inplace=True)
     
-        # 2) Build 'success_rate' dataset
+        # 2) Build the "Success Rate" dataset
         group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
-        group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
+        group_success  = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
         merged_df = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
         merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
-        merged_df['day'] = merged_df['day'].astype(str)
+        merged_df['day']  = merged_df['day'].astype(str)
         merged_df['hour'] = merged_df['hour'].astype(str)
     
         df_srate = merged_df[['userId','day','hour','success_rate']].copy()
@@ -496,43 +499,41 @@ def run_openphone_tab():
         combined['short_user'] = combined['userId'].map(agent_map)
     
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 5) TWO-DIMENSIONAL FACETING
-        #    - Rows = each agent
-        #    - Columns = metric ("Count" vs. "Success Rate")
+        # 5) SWAP the facet dimensions:
+        #    - facet_col='short_user'  so agent name is along the TOP
+        #    - facet_row='metric'      so each row is a metric
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         fig = px.density_heatmap(
             combined,
             x='hour',
             y='day',
             z='value',
-            facet_row='short_user',   # <-- UPDATED: one row per agent
-            facet_col='metric',       # <-- UPDATED: left col=Count, right col=Success Rate
+            facet_col='short_user',   # columns = agent (top)
+            facet_row='metric',       # rows = "Success Rate" or "Successful Calls"
             color_continuous_scale='Blues',
             category_orders={
+                # Make sure "Success Rate" row is first (top), then "Successful Calls" row
+                "metric": ["Success Rate", "Successful Calls"],
+                "short_user": [agent_map[a] for a in selected_agents],
                 "hour": hour_order,
                 "day": day_order,
-                # Ensure columns appear as [Count, Success Rate]
-                "metric": ["Count", "Success Rate"],
-                # Optional: control the order of the agents top->bottom
-                "short_user": [agent_map[a] for a in selected_agents],
             },
-            title="Side-by-Side: Successful Calls (Count) vs. Success Rate per Agent",
+            title="Side-by-Side: Successful Calls vs. Success Rate per Agent",
             text_auto=True
         )
     
-        # Optional: you might want to flip the y-axis so Monday appears at the top
-        # for each subplot. In that case, do something like:
-        # for axis in fig.layout:
-        #     if 'yaxis' in axis:
-        #         axis.autorange = "reversed"
+        # Optional: If you want Monday at the top, you can do:
+        # for axis_name in fig.layout:
+        #     if 'yaxis' in axis_name:
+        #         fig.layout[axis_name].autorange = "reversed"
     
         st.plotly_chart(fig, use_container_width=True)
     
     else:
         st.warning("Side-by-side calls vs. success rate not shown. "
                    "Need 2+ agents selected and some calls present.")
-
-    st.subheader("Compare Agents Side-by-Side: Successful vs Total Calls")
+    
+        st.subheader("Compare Agents Side-by-Side: Successful vs Total Calls")
 
     if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
         # Calculate totals for each agent
