@@ -460,8 +460,10 @@ def run_openphone_tab():
                     pivot_outbound = merged_df.pivot(index='day', columns='hour', values='outbound_count')
                     pivot_success = merged_df.pivot(index='day', columns='hour', values='success_count')
                     
-                    for pivot in [pivot_rate, pivot_outbound, pivot_success]:
-                        pivot.reindex(index=day_order, columns=hour_order).fillna(0)
+                    # Reindex and fill NaN values with 0
+                    pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order).fillna(0)
+                    pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order).fillna(0)
+                    pivot_success = pivot_success.reindex(index=day_order, columns=hour_order).fillna(0)
 
                     fig_rate = px.imshow(
                         pivot_rate,
@@ -472,7 +474,7 @@ def run_openphone_tab():
                     )
 
                     hover_text = [
-                        [f"Hour: {hour}<br>Day: {day}<br>Success Rate: {pivot_rate.loc[day, hour]:.1f}%<br>Successful: {int(pivot_success.loc[day, hour])}<br>Total: {int(pivot_outbound.loc[day, hour])}"
+                        [f"Hour: {hour}<br>Day: {day}<br>Success Rate: {pivot_rate.loc[day, hour]:.1f}%<br>Successful: {int(float(pivot_success.loc[day, hour]))}<br>Total: {int(float(pivot_outbound.loc[day, hour]))}"
                          for hour in pivot_rate.columns]
                         for day in pivot_rate.index
                     ]
@@ -492,8 +494,10 @@ def run_openphone_tab():
                     pivot_success = merged_df.pivot(index='day', columns='hour', values='success_count')
                     pivot_rate = merged_df.pivot(index='day', columns='hour', values='success_rate')
                     
-                    for pivot in [pivot_outbound, pivot_success, pivot_rate]:
-                        pivot.reindex(index=day_order, columns=hour_order).fillna(0)
+                    # Reindex and fill NaN values with 0
+                    pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order).fillna(0)
+                    pivot_success = pivot_success.reindex(index=day_order, columns=hour_order).fillna(0)
+                    pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order).fillna(0)
 
                     fig_calls = px.imshow(
                         pivot_outbound,
@@ -503,7 +507,7 @@ def run_openphone_tab():
                     )
 
                     hover_text = [
-                        [f"Hour: {hour}<br>Day: {day}<br>Total: {int(pivot_outbound.loc[day, hour])}<br>Successful: {int(pivot_success.loc[day, hour])}<br>Rate: {pivot_rate.loc[day, hour]:.1f}%"
+                        [f"Hour: {hour}<br>Day: {day}<br>Total: {int(float(pivot_outbound.loc[day, hour]))}<br>Successful: {int(float(pivot_success.loc[day, hour]))}<br>Rate: {pivot_rate.loc[day, hour]:.1f}%"
                          for hour in pivot_outbound.columns]
                         for day in pivot_outbound.index
                     ]
@@ -524,7 +528,6 @@ def run_openphone_tab():
 
     else:
         st.warning("No outbound calls or no agents selected.")
-
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 19. AGENT-COLUMNS (Compare Agents Side-by-Side)
