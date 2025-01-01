@@ -558,5 +558,190 @@ def run_openphone_tab():
 
     else:
         st.warning("Comparison not shown. Need 2+ agents selected and some calls present.")
+    # 20. TEXT SUCCESS RATE HEATMAP BY DAY & HOUR
+    def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=None):
+        """
+        messages: DataFrame of text messages with columns:
+           - userId (str) => agent email
+           - direction (str) => 'incoming' or 'outgoing'
+           - createdAtET (datetime64[ns, tz]) => timestamp in Eastern Time
+           - phoneNumber (str) => or some unique ID for the message recipient
+           - (Optional) type == 'message' to differentiate from calls, if needed
+    
+        day_order: list of days in desired order, e.g.:
+            ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    
+        hour_order: list of 12-hour clock strings, e.g.:
+            ["12 AM","01 AM","02 AM","...","11 PM"]
+    
+        agent_map: dict (optional), mapping full emails to short agent names
+            e.g. {"john@enjoiresorts.com": "john", ...}
+            If None, the function uses the raw userId.
+    
+        This code:
+           1) Identifies 'first outbound messages' each day by userId + phoneNumber
+           2) Checks for any incoming reply from the same phoneNumber within 24 hrs
+           3) Computes success rate per (agent, day, hour)
+           4) Renders a heatmap for each agent, coloring by success rate
+           5) Tooltip shows day, hour, success rate, # first messages, # successful
+        """
+    
+        import pandas as pd
+        import numpy as np
+        import plotly.express as px
+        import streamlit as st
+    
+        # Make a copy to avoid modifying the original df
+        messages = messages.copy()
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Filter to text messages if 'type' is present (optional)
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # If the dataframe has calls and messages in the same table,
+        # you can do: messages = messages[messages['type'] == 'message']
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Add day/hour columns
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        messages['day'] = messages['createdAtET'].dt.strftime('%A')
+        messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Separate outgoing vs. incoming
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        msgs_out = messages[messages['direction'] == 'outgoing'].copy()
+        msgs_in  = messages[messages['direction'] == 'incoming'].copy()
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Identify FIRST OUTBOUND message each day (agent + phoneNumber)
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        msgs_out.sort_values(by=['userId','phoneNumber','day','createdAtET'], inplace=True)
+    
+        # Rank messages within each (userId, phoneNumber, day) group by timestamp
+        # The first outbound text is rank=1 => is_first_message=1
+        msgs_out['is_first_message'] = (
+            msgs_out.groupby(['userId','phoneNumber','day'])['createdAtET']
+            .rank(method='first')
+            .eq(1)
+            .astype(int)
+        )
+    
+        df_first = msgs_out[msgs_out['is_first_message'] == 1].copy()
+        df_first['window_end'] = df_first['createdAtET'] + pd.Timedelta(hours=24)
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Check if there's an inbound reply within 24 hrs for each first msg
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Merge each first outbound with inbound texts on phoneNumber
+        df_first = df_first.reset_index(drop=False).rename(columns={'index':'orig_index'})
+        merged = df_first.merge(
+            msgs_in[['phoneNumber','createdAtET','direction']],
+            on='phoneNumber', how='left', suffixes=('_out','_in')
+        )
+    
+        # Condition: inbound_time >= outbound_time AND <= outbound_time+24h
+        cond = (
+            (merged['createdAtET_in'] >= merged['createdAtET_out']) &
+            (merged['createdAtET_in'] <= merged['window_end'])
+        )
+        merged['reply_success'] = np.where(cond, 1, 0)
+    
+        # For each unique 'first message' (orig_index), success_flag=1 if ANY inbound matched
+        success_df = merged.groupby('orig_index')['reply_success'].max().reset_index(name='success_flag')
+    
+        # Merge success_flag back to df_first
+        df_first = df_first.merge(success_df, on='orig_index', how='left')
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Summarize by agent, day, hour
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        df_first['day'] = df_first['day'].astype(str)
+        df_first['hour'] = df_first['hour'].astype(str)
+    
+        group_text = df_first.groupby(['userId','day','hour']).agg(
+            first_messages=('is_first_message','sum'),  # sum of 1's
+            successful=('success_flag','sum')          # sum of 1's if success
+        ).reset_index()
+    
+        group_text['success_rate'] = (
+            group_text['successful'] / group_text['first_messages'] * 100
+        ).fillna(0)
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Build Heatmaps per Agent
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # If agent_map is None, fallback to identity mapping
+        if agent_map is None:
+            agent_map = {}
+        def get_agent_short(u):
+            return agent_map.get(u, u)
+    
+        st.subheader("20) Agent Text Success Rate Heatmap by Day & Hour")
+    
+        all_agents = group_text['userId'].unique()
+        for agent_id in all_agents:
+            agent_df = group_text[group_text['userId'] == agent_id].copy()
+            if agent_df.empty:
+                continue
+    
+            # Pivot for success_rate, # first msgs, # successes
+            pivot_rate  = agent_df.pivot(index='day', columns='hour', values='success_rate').fillna(0)
+            pivot_first = agent_df.pivot(index='day', columns='hour', values='first_messages').fillna(0)
+            pivot_succ  = agent_df.pivot(index='day', columns='hour', values='successful').fillna(0)
+    
+            # Reindex to day_order, hour_order
+            pivot_rate  = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_first = pivot_first.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_succ  = pivot_succ.reindex(index=day_order, columns=hour_order, fill_value=0)
+    
+            agent_title = f"{get_agent_short(agent_id)} ({agent_id})"
+    
+            fig = px.imshow(
+                pivot_rate,
+                color_continuous_scale='Blues',
+                range_color=[0,100],
+                labels=dict(x="Hour", y="Day", color="Rate (%)"),
+                title=f"Agent: {agent_title} - Text Success Rate"
+            )
+    
+            # Build custom hover text
+            hover_text = []
+            for d in day_order:
+                row_text = []
+                for h in hour_order:
+                    r_val   = pivot_rate.loc[d,h]
+                    f_count = pivot_first.loc[d,h]
+                    s_count = pivot_succ.loc[d,h]
+                    text_ = (
+                        f"Day: {d}<br>Hour: {h}<br>"
+                        f"Success Rate: {r_val:.1f}%<br>"
+                        f"First Msgs: {int(f_count)}<br>"
+                        f"Successful: {int(s_count)}"
+                    )
+                    row_text.append(text_)
+                hover_text.append(row_text)
+    
+            fig.update_traces(
+                customdata=hover_text,
+                hovertemplate="%{customdata}<extra></extra>"
+            )
+            fig.update_xaxes(side="top")
+            fig.update_layout(height=400, margin=dict(l=50, r=50, t=50, b=50))
+    
+            st.plotly_chart(fig, use_container_width=True)
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Overall Summary
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Summarize total first msgs and successes for each agent
+        sum_agent = group_text.groupby('userId').agg(
+            total_first=('first_messages','sum'),
+            total_success=('successful','sum')
+        ).reset_index()
+        sum_agent['success_rate'] = (sum_agent['total_success'] / sum_agent['total_first'] * 100).round(1).fillna(0)
+        sum_agent['Agent'] = sum_agent['userId'].map(get_agent_short)
+    
+        st.subheader("Texting Summary by Agent")
+        st.dataframe(sum_agent[['Agent', 'userId', 'total_first', 'total_success', 'success_rate']])
 
     st.success("Enhanced Dashboard Complete!")
