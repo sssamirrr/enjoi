@@ -433,22 +433,18 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 18. AGENT-BY-AGENT HEATMAPS: Success Rate & Outbound Calls
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. AGENT-BY-AGENT HEATMAPS: Success Rate & Outbound Calls
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # 18. AGENT-BY-AGENT HEATMAPS: Success Rate & Outbound Calls
     st.subheader("Agent-by-Agent Heatmaps: Success Rate & Outbound Calls")
 
     if len(selected_agents) >= 1 and not successful_outbound_calls.empty and not outbound_calls.empty:
         for agent_id in selected_agents:
             agent_name = agent_map.get(agent_id, agent_id)
-
-            st.markdown(f"### {agent_name}")
+            st.markdown(f"#### {agent_name}", help="Click column headers to sort")
             col1, col2 = st.columns(2)
 
             # Build data
             agent_outbound = outbound_calls[outbound_calls['userId'] == agent_id].copy()
             agent_success  = successful_outbound_calls[successful_outbound_calls['userId'] == agent_id].copy()
-
             outb_df = agent_outbound.groupby(['day','hour']).size().reset_index(name='outbound_count')
             succ_df = agent_success.groupby(['day','hour']).size().reset_index(name='success_count')
             merged_df = pd.merge(outb_df, succ_df, on=['day','hour'], how='outer').fillna(0)
@@ -456,112 +452,78 @@ def run_openphone_tab():
 
             # --- Left Column: Success Rate ---
             with col1:
-                st.subheader("Success Rate (%)")
                 total_outbound_left = merged_df['outbound_count'].sum()
                 if total_outbound_left == 0:
-                    st.write("No outbound calls for this agent.")
+                    st.write("No outbound calls")
                 else:
                     pivot_rate = merged_df.pivot(index='day', columns='hour', values='success_rate')
                     pivot_outbound = merged_df.pivot(index='day', columns='hour', values='outbound_count')
                     pivot_success = merged_df.pivot(index='day', columns='hour', values='success_count')
                     
-                    # Reindex with correct order
-                    pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order).fillna(0)
-                    pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order).fillna(0)
-                    pivot_success = pivot_success.reindex(index=day_order, columns=hour_order).fillna(0)
+                    for pivot in [pivot_rate, pivot_outbound, pivot_success]:
+                        pivot.reindex(index=day_order, columns=hour_order).fillna(0)
 
                     fig_rate = px.imshow(
                         pivot_rate,
                         color_continuous_scale='Blues',
                         range_color=[0, 100],
                         labels=dict(x="Hour", y="Day", color="Success Rate (%)"),
-                        title="Success Rate by Day/Hour"
+                        title="Success Rate"
                     )
 
-                    # Create hover text with all metrics
                     hover_text = [
-                        [
-                            f"Hour: {hour}<br>" +
-                            f"Day: {day}<br>" +
-                            f"Success Rate: {pivot_rate.loc[day, hour]:.1f}%<br>" +
-                            f"Successful Calls: {int(pivot_success.loc[day, hour])}<br>" +
-                            f"Total Outbound: {int(pivot_outbound.loc[day, hour])}"
-                            for hour in pivot_rate.columns
-                        ]
+                        [f"Hour: {hour}<br>Day: {day}<br>Success Rate: {pivot_rate.loc[day, hour]:.1f}%<br>Successful: {int(pivot_success.loc[day, hour])}<br>Total: {int(pivot_outbound.loc[day, hour])}"
+                         for hour in pivot_rate.columns]
                         for day in pivot_rate.index
                     ]
 
-                    fig_rate.update_traces(
-                        hovertemplate="%{customdata}<extra></extra>",
-                        customdata=hover_text
-                    )
-                    
+                    fig_rate.update_traces(hovertemplate="%{customdata}<extra></extra>", customdata=hover_text)
                     fig_rate.update_xaxes(side="top")
-                    fig_rate.update_layout(height=400)
+                    fig_rate.update_layout(height=300, margin=dict(l=50, r=50, t=50, b=20))
                     st.plotly_chart(fig_rate, use_container_width=True)
 
             # --- Right Column: Outbound Calls ---
             with col2:
-                st.subheader("Total Outbound Calls (#)")
                 total_outbound_right = merged_df['outbound_count'].sum()
                 if total_outbound_right == 0:
-                    st.write("No outbound calls for this agent.")
+                    st.write("No outbound calls")
                 else:
                     pivot_outbound = merged_df.pivot(index='day', columns='hour', values='outbound_count')
                     pivot_success = merged_df.pivot(index='day', columns='hour', values='success_count')
                     pivot_rate = merged_df.pivot(index='day', columns='hour', values='success_rate')
                     
-                    # Reindex with correct order
-                    pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order).fillna(0)
-                    pivot_success = pivot_success.reindex(index=day_order, columns=hour_order).fillna(0)
-                    pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order).fillna(0)
+                    for pivot in [pivot_outbound, pivot_success, pivot_rate]:
+                        pivot.reindex(index=day_order, columns=hour_order).fillna(0)
 
                     fig_calls = px.imshow(
                         pivot_outbound,
                         color_continuous_scale='Blues',
-                        labels=dict(x="Hour", y="Day", color="Number of Calls"),
-                        title="Outbound Calls by Day/Hour"
+                        labels=dict(x="Hour", y="Day", color="Calls"),
+                        title="Total Outbound"
                     )
 
-                    # Create hover text with all metrics
                     hover_text = [
-                        [
-                            f"Hour: {hour}<br>" +
-                            f"Day: {day}<br>" +
-                            f"Total Outbound: {int(pivot_outbound.loc[day, hour])}<br>" +
-                            f"Successful Calls: {int(pivot_success.loc[day, hour])}<br>" +
-                            f"Success Rate: {pivot_rate.loc[day, hour]:.1f}%"
-                            for hour in pivot_outbound.columns
-                        ]
+                        [f"Hour: {hour}<br>Day: {day}<br>Total: {int(pivot_outbound.loc[day, hour])}<br>Successful: {int(pivot_success.loc[day, hour])}<br>Rate: {pivot_rate.loc[day, hour]:.1f}%"
+                         for hour in pivot_outbound.columns]
                         for day in pivot_outbound.index
                     ]
 
-                    fig_calls.update_traces(
-                        hovertemplate="%{customdata}<extra></extra>",
-                        customdata=hover_text
-                    )
-                    
+                    fig_calls.update_traces(hovertemplate="%{customdata}<extra></extra>", customdata=hover_text)
                     fig_calls.update_xaxes(side="top")
-                    fig_calls.update_layout(height=400)
+                    fig_calls.update_layout(height=300, margin=dict(l=50, r=50, t=50, b=20))
                     st.plotly_chart(fig_calls, use_container_width=True)
 
-        # Optional summary table
-        st.subheader("Summary Table: Outbound Calls & Success Rate")
-        total_success = successful_outbound_calls.groupby('userId').size()
-        total_calls   = outbound_calls.groupby('userId').size()
+        # Compact summary table
         summary_df = pd.DataFrame({
-            'Total Outbound Calls': total_calls,
-            'Successful Calls': total_success
+            'Total': outbound_calls.groupby('userId').size(),
+            'Success': successful_outbound_calls.groupby('userId').size()
         }).fillna(0)
-        summary_df['Success Rate (%)'] = (
-            summary_df['Successful Calls'] / summary_df['Total Outbound Calls'] * 100
-        ).round(1)
+        summary_df['Rate %'] = (summary_df['Success'] / summary_df['Total'] * 100).round(1)
         summary_df['Agent'] = summary_df.index.map(agent_map)
-        summary_table = summary_df[['Agent','Successful Calls','Total Outbound Calls','Success Rate (%)']]
-        st.table(summary_table)
+        st.table(summary_df[['Agent', 'Success', 'Total', 'Rate %']])
 
     else:
-        st.warning("No outbound calls or no agents selected. Cannot show agent-by-agent heatmaps.")
+        st.warning("No outbound calls or no agents selected.")
 
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
