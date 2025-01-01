@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import pytz
 from datetime import datetime
 
@@ -200,9 +201,7 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Hourly Trends")
     if not calls.empty:
-        # Make calls['hour'] a categorical for the bar chart order
         calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
-
         hourly_stats = calls.groupby(['hour','direction']).size().reset_index(name='count')
         fig = px.bar(hourly_stats, x='hour', y='count', color='direction',
                      barmode='group', title='Call Volume by Hour (12 AM -> 11 PM)')
@@ -231,8 +230,6 @@ def run_openphone_tab():
             pivot_dur = dur_data.pivot(index='day', columns='hour', values='duration')
             pivot_dur.index = pivot_dur.index.astype(str)
             pivot_dur.columns = pivot_dur.columns.astype(str)
-
-            # Reindex day/hour intersection
             actual_days = [d for d in day_order if d in pivot_dur.index]
             actual_hours = [h for h in hour_order if h in pivot_dur.columns]
             pivot_dur = pivot_dur.reindex(index=actual_days, columns=actual_hours).fillna(0)
@@ -268,7 +265,6 @@ def run_openphone_tab():
             pivot_msg = msg_heat_data.pivot(index='day', columns='hour', values='count')
             pivot_msg.index = pivot_msg.index.astype(str)
             pivot_msg.columns = pivot_msg.columns.astype(str)
-
             actual_days = [d for d in day_order if d in pivot_msg.index]
             actual_hours = [h for h in hour_order if h in pivot_msg.columns]
             pivot_msg = pivot_msg.reindex(index=actual_days, columns=actual_hours).fillna(0)
@@ -342,7 +338,6 @@ def run_openphone_tab():
             pivot_call = call_heatmap_data.pivot(index='day', columns='hour', values='count')
             pivot_call.index = pivot_call.index.astype(str)
             pivot_call.columns = pivot_call.columns.astype(str)
-
             actual_days = [d for d in day_order if d in pivot_call.index]
             actual_hours = [h for h in hour_order if h in pivot_call.columns]
             pivot_call = pivot_call.reindex(index=actual_days, columns=actual_hours).fillna(0)
@@ -365,7 +360,6 @@ def run_openphone_tab():
         pivot_so = so_data.pivot(index='day', columns='hour', values='count')
         pivot_so.index = pivot_so.index.astype(str)
         pivot_so.columns = pivot_so.columns.astype(str)
-
         actual_days = [d for d in day_order if d in pivot_so.index]
         actual_hours = [h for h in hour_order if h in pivot_so.columns]
         pivot_so = pivot_so.reindex(index=actual_days, columns=actual_hours).fillna(0)
@@ -457,67 +451,135 @@ def run_openphone_tab():
         st.warning("No outbound calls for success rate heatmap.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. SIDE-BY-SIDE HEATMAP (MAX 2 AGENTS/ROW): SUCCESSFUL CALLS vs. SUCCESS RATE
+    # 18. SLIDER FOR TEXT->CALL TIME & SANKEY
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Side-by-Side: Successful Calls vs. Success Rate (Max 2 Agents per Row)")
+    st.subheader("Sankey: Call with/without Preceding Text within X Minutes, Then Success/Fail")
 
-    if not calls.empty and not outbound_calls.empty and not successful_outbound_calls.empty:
-        if len(selected_emails) > 0:
-            # 1) Build 'Count' dataset
-            df_count = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
-            df_count['day'] = df_count['day'].astype(str)
-            df_count['hour'] = df_count['hour'].astype(str)
-            df_count['metric'] = "Count"
-            df_count.rename(columns={'count': 'value'}, inplace=True)
+    # 1) Let user pick how many minutes is considered a valid preceding text
+    text_window = st.slider(
+        "Minutes for 'Text < X min' before Call",
+        min_value=1,
+        max_value=720,
+        value=60,  # default 60
+        help="If there's a text from the same phoneNumber in the last X minutes, we'll label calls as 'Text < X min'"
+    )
 
-            # 2) Build 'Success Rate' dataset
-            df_outb = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
-            df_succ = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
-            merged_df = pd.merge(df_outb, df_succ, on=['userId','day','hour'], how='outer').fillna(0)
-            merged_df['success_rate'] = merged_df['success_count'] / merged_df['outbound_count'] * 100
-            merged_df['day'] = merged_df['day'].astype(str)
-            merged_df['hour'] = merged_df['hour'].astype(str)
+    # Only do Sankey if we have calls
+    if not calls.empty:
+        # We'll do a simple approach: 
+        #   - sort by createdAtET,
+        #   - track the last text time for each phoneNumber,
+        #   - if a call occurs within X minutes of that text, label "Text < X min" else "No Text"
 
-            df_srate = merged_df[['userId','day','hour','success_rate']].copy()
-            df_srate['metric'] = "Success Rate"
-            df_srate.rename(columns={'success_rate': 'value'}, inplace=True)
+        # Sort in ascending order of time
+        calls_and_messages = openphone_data.sort_values(by='createdAtET').reset_index(drop=True)
 
-            # 3) Combine
-            combined = pd.concat([df_count, df_srate], ignore_index=True)
+        # For convenience, let's define how to get phoneNumber
+        # We'll guess: if direction == outgoing => toPhone, else fromPhone
+        # If your CSV is different, adapt.
+        def get_phone(row):
+            if row['direction'] == 'outgoing':
+                return row['toPhone']
+            else:
+                return row['fromPhone']
 
-            # 4) Create 'agent_display' so the short name is used
-            def get_shortname(full_email):
-                for k, v in agent_map.items():
-                    if v == full_email:
-                        return k
-                return full_email
+        calls_and_messages['phoneNumber'] = calls_and_messages.apply(
+            lambda r: get_phone(r) if pd.notnull(r['direction']) else None,
+            axis=1
+        )
 
-            combined['agent_display'] = combined['userId'].apply(get_shortname)
+        last_text_time = {}  # phoneNumber -> last text datetime
+        text_bucket = []     # store "Text < X min" or "No Text" (or None if not a call)
 
-            # 5) Use px.density_heatmap with facet_col_wrap=2
-            fig = px.density_heatmap(
-                combined,
-                x='hour',
-                y='day',
-                z='value',
-                facet_col='agent_display',   # columns = each agent
-                facet_row='metric',          # rows = Count vs. Success Rate
-                facet_col_wrap=2,           # max 2 agents per row
-                color_continuous_scale='Blues',
-                category_orders={
-                    "hour": hour_order,
-                    "day": day_order,
-                    "metric": ["Count", "Success Rate"],
-                    # Sort the short names to keep a nice order
-                    "agent_display": sorted([get_shortname(e) for e in selected_emails])
-                },
-                title="Side-by-Side: Successful Calls vs. Success Rate (2 Agents per row)",
-                text_auto=True
+        # For calls, also define success/fail
+        def is_success(row):
+            # adapt your logic if 'completed' means success
+            return (row['status'] == 'completed')
+
+        for _, row in calls_and_messages.iterrows():
+            if row['type'] == 'message':
+                # update last_text_time
+                pn = row['phoneNumber']
+                last_text_time[pn] = row['createdAtET']
+                text_bucket.append(None)
+            elif row['type'] == 'call':
+                pn = row['phoneNumber']
+                if pn in last_text_time:
+                    delta_sec = (row['createdAtET'] - last_text_time[pn]).total_seconds()
+                    if delta_sec <= text_window * 60:
+                        text_bucket.append("Text < X min")
+                    else:
+                        text_bucket.append("No Text")
+                else:
+                    text_bucket.append("No Text")
+            else:
+                text_bucket.append(None)
+
+        calls_and_messages['text_bucket'] = text_bucket
+
+        # Now filter just calls
+        sankey_calls = calls_and_messages[calls_and_messages['type'] == 'call'].copy()
+        sankey_calls.dropna(subset=['text_bucket'], inplace=True)  # keep only rows with text_bucket labels
+
+        # Label success/fail
+        sankey_calls['call_result'] = sankey_calls.apply(lambda r: "Success" if is_success(r) else "Fail", axis=1)
+
+        # Count how many calls in each bucket
+        text_count = len(sankey_calls[sankey_calls['text_bucket'] == "Text < X min"])
+        no_text_count = len(sankey_calls[sankey_calls['text_bucket'] == "No Text"])
+
+        success_count = len(sankey_calls[sankey_calls['call_result'] == "Success"])
+        fail_count = len(sankey_calls[sankey_calls['call_result'] == "Fail"])
+
+        # Sankey node indexing:
+        # 0 = "Text < X min"
+        # 1 = "No Text"
+        # 2 = "Call"
+        # 3 = "Call Success"
+        # 4 = "Call Fail"
+
+        source = []
+        target = []
+        value  = []
+
+        # (0 -> 2)
+        source.append(0); target.append(2); value.append(text_count)
+        # (1 -> 2)
+        source.append(1); target.append(2); value.append(no_text_count)
+        # (2 -> 3)
+        source.append(2); target.append(3); value.append(success_count)
+        # (2 -> 4)
+        source.append(2); target.append(4); value.append(fail_count)
+
+        labels = [
+            f"Text < {text_window} min",
+            "No Text",
+            "Call",
+            "Call Success",
+            "Call Fail"
+        ]
+
+        sankey_fig = go.Figure(data=[go.Sankey(
+            arrangement = "snap",
+            node = dict(
+                pad = 15,
+                thickness = 20,
+                line = dict(color="black", width=0.5),
+                label = labels
+            ),
+            link = dict(
+                source = source,
+                target = target,
+                value = value
             )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No agents selected to show side-by-side heatmap.")
+        )])
+        sankey_fig.update_layout(
+            title_text=f"Sankey: Text < {text_window}min vs. No Text → Call → Success/Fail",
+            font_size=14
+        )
+        st.plotly_chart(sankey_fig)
     else:
-        st.warning("Not enough data (outbound calls or successful calls) to show side-by-side heatmap.")
+        st.warning("No calls in data for Sankey diagram logic.")
 
-    st.success("Enhanced Dashboard with Full Restored Functions is Ready!")
+
+    st.success("Enhanced Dashboard with Full Restored Functions + Text-Logic Sankey is Ready!")
