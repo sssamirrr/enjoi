@@ -532,5 +532,59 @@ def run_openphone_tab():
         st.warning("Side-by-side calls vs. success rate not shown. "
                    "Need 2+ agents selected and some calls present.")
 
+    st.subheader("Compare Agents Side-by-Side: Successful vs Total Calls")
+
+    if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
+        # Calculate totals for each agent
+        success_totals = successful_outbound_calls.groupby('userId').size().reset_index(name='successful_calls')
+        total_calls = outbound_calls.groupby('userId').size().reset_index(name='total_calls')
+        
+        # Merge the data
+        summary = pd.merge(success_totals, total_calls, on='userId', how='outer').fillna(0)
+        
+        # Add agent names
+        summary['agent_name'] = summary['userId'].map(agent_map)
+        
+        # Calculate success rate
+        summary['success_rate'] = (summary['successful_calls'] / summary['total_calls'] * 100).round(2)
+        
+        # Create a figure with two subplots side by side for each agent
+        fig = px.bar(
+            summary,
+            x=['successful_calls', 'total_calls'],
+            y='agent_name',
+            orientation='h',
+            barmode='group',
+            title="Successful vs Total Calls by Agent",
+            labels={
+                'value': 'Number of Calls',
+                'agent_name': 'Agent',
+                'variable': 'Call Type'
+            },
+            color_discrete_map={
+                'successful_calls': 'green',
+                'total_calls': 'blue'
+            },
+            text_auto=True
+        )
+    
+        # Update layout
+        fig.update_layout(
+            showlegend=True,
+            legend_title_text='Call Type',
+            yaxis={'categoryorder': 'total ascending'}
+        )
+    
+        # Display the plot
+        st.plotly_chart(fig, use_container_width=True)
+    
+        # Optional: Display as a table as well
+        st.write("Detailed Summary:")
+        summary_table = summary[['agent_name', 'successful_calls', 'total_calls', 'success_rate']]
+        summary_table.columns = ['Agent', 'Successful Calls', 'Total Calls', 'Success Rate (%)']
+        st.table(summary_table)
+    
+    else:
+        st.warning("Comparison not shown. Need 2+ agents selected and some calls present.")
 
     st.success("Enhanced Dashboard Complete!")
