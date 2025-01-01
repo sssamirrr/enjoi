@@ -75,7 +75,7 @@ def run_openphone_tab():
     all_agents = sorted([
         agent for agent in openphone_data['userId'].dropna().unique()
         if agent.endswith("@enjoiresorts.com")
-    ])  # <-- UPDATED
+    ])
 
     # Step B: Map each agent’s full email --> shortened (remove domain)
     def short_agent_name(full_email):
@@ -84,13 +84,13 @@ def run_openphone_tab():
     agent_map = {agent: short_agent_name(agent) for agent in all_agents}
 
     # We present only the "shortened" names in the multiselect
-    agent_choices = list(agent_map.values())  # all shortened names
+    agent_choices = list(agent_map.values())
 
     selected_short_names = st.multiselect(
         "Select Agents",
         agent_choices,
         default=[]
-    )  # by default no agent is selected
+    )
 
     # Convert user’s choice (shortened name) back to the full email
     selected_agents = [
@@ -132,9 +132,7 @@ def run_openphone_tab():
     agent_performance['booking_rate'] = (
         agent_performance['total_bookings'] / agent_performance['total_calls'] * 100
     ).fillna(0)
-
-    # Create a column with the shortened agent name for display
-    agent_performance['Agent'] = agent_performance['userId'].map(agent_map)  # <-- UPDATED
+    agent_performance['Agent'] = agent_performance['userId'].map(agent_map)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 7. DEFINE day AND hour (STRING) + day_order & hour_order
@@ -185,9 +183,7 @@ def run_openphone_tab():
     agent_success_rate['success_rate'] = (
         agent_success_rate['successful_calls'] / agent_success_rate['total_outbound_calls'] * 100
     ).fillna(0)
-
-    # Shorten agent name for display
-    agent_success_rate['Agent'] = agent_success_rate['userId'].map(agent_map)  # <-- UPDATED
+    agent_success_rate['Agent'] = agent_success_rate['userId'].map(agent_map)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 9. KEY METRICS
@@ -208,9 +204,7 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Hourly Trends (12 AM -> 11 PM)")
     if not calls.empty:
-        # Ensure calls['hour'] is categorical
         calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
-
         hourly_stats = calls.groupby(['hour','direction']).size().reset_index(name='count')
         fig = px.bar(hourly_stats, x='hour', y='count', color='direction',
                      barmode='group', title="Calls by Hour")
@@ -225,8 +219,6 @@ def run_openphone_tab():
     if 'duration' in calls.columns and not calls['duration'].isnull().all() and not calls.empty:
         mean_dur = calls['duration'].mean()
         long_calls = calls[calls['duration'] >= mean_dur]
-
-        # Also ensure hour is categorical in long_calls
         if not long_calls.empty:
             long_calls['hour'] = pd.Categorical(long_calls['hour'], categories=hour_order, ordered=True)
             lc_df = long_calls.groupby('hour').size().reset_index(name='count')
@@ -239,12 +231,10 @@ def run_openphone_tab():
             pivot_dur = dur_data.pivot(index='day', columns='hour', values='duration')
             pivot_dur.index = pivot_dur.index.astype(str)
             pivot_dur.columns = pivot_dur.columns.astype(str)
-
-            # Reindex day/hour intersection
             actual_days = [d for d in day_order if d in pivot_dur.index]
             actual_hours = [h for h in hour_order if h in pivot_dur.columns]
-
             pivot_dur = pivot_dur.reindex(index=actual_days, columns=actual_hours).fillna(0)
+
             fig = px.imshow(
                 pivot_dur,
                 title="Heatmap of Avg Call Duration (Day vs. Hour)",
@@ -259,9 +249,7 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Incoming Messages by Hour")
     if not messages.empty:
-        # Make messages['hour'] a categorical
         messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
-
         inc_msgs = messages[messages['direction'] == 'incoming']
         inc_counts = inc_msgs.groupby('hour').size().reset_index(name='count')
         fig = px.bar(inc_counts, x='hour', y='count', title="Incoming Msgs by Hour (12 AM -> 11 PM)")
@@ -273,7 +261,6 @@ def run_openphone_tab():
             pivot_msg = msg_df.pivot(index='day', columns='hour', values='count')
             pivot_msg.index = pivot_msg.index.astype(str)
             pivot_msg.columns = pivot_msg.columns.astype(str)
-
             actual_days = [d for d in day_order if d in pivot_msg.index]
             actual_hours = [h for h in hour_order if h in pivot_msg.columns]
             pivot_msg = pivot_msg.reindex(index=actual_days, columns=actual_hours).fillna(0)
@@ -292,16 +279,14 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Performance: Calls vs. Bookings")
     if not agent_performance.empty:
-        # We use 'Agent' (the shortened name) as the x-axis
         fig = px.bar(
             agent_performance,
-            x='Agent',  # <-- UPDATED
+            x='Agent',
             y=['total_calls','total_bookings'],
             title="Agent Performance",
             barmode='group'
         )
         st.plotly_chart(fig)
-
         st.dataframe(agent_performance.rename(columns={
             'Agent': 'Agent (short)',
             'total_calls': 'Total Calls',
@@ -318,13 +303,12 @@ def run_openphone_tab():
     if not agent_success_rate.empty:
         fig = px.bar(
             agent_success_rate,
-            x='Agent',  # <-- UPDATED
+            x='Agent',
             y=['total_outbound_calls','successful_calls'],
             title="Outbound Success Rate",
             barmode='group'
         )
         st.plotly_chart(fig)
-
         st.dataframe(agent_success_rate.rename(columns={
             'Agent': 'Agent (short)',
             'total_outbound_calls': 'Total Outbound Calls',
@@ -344,10 +328,8 @@ def run_openphone_tab():
             pivot_vol = vol_df.pivot(index='day', columns='hour', values='count')
             pivot_vol.index = pivot_vol.index.astype(str)
             pivot_vol.columns = pivot_vol.columns.astype(str)
-
             actual_days = [d for d in day_order if d in pivot_vol.index]
             actual_hours = [h for h in hour_order if h in pivot_vol.columns]
-
             pivot_vol = pivot_vol.reindex(index=actual_days, columns=actual_hours).fillna(0)
 
             fig = px.imshow(
@@ -368,8 +350,6 @@ def run_openphone_tab():
         pivot_so = so_df.pivot(index='day', columns='hour', values='count')
         pivot_so.index = pivot_so.index.astype(str)
         pivot_so.columns = pivot_so.columns.astype(str)
-
-        # Reindex
         actual_days = [d for d in day_order if d in pivot_so.index]
         actual_hours = [h for h in hour_order if h in pivot_so.columns]
         pivot_so = pivot_so.reindex(index=actual_days, columns=actual_hours).fillna(0)
@@ -382,12 +362,9 @@ def run_openphone_tab():
         )
         st.plotly_chart(fig)
 
-        # Compare Agents (Individually)
         st.subheader("Compare Agents: Successful Outbound Calls (Day vs. Hour)")
         df_agent_so = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
-
         for agent in selected_agents:
-            # use short name for the header
             agent_short = agent_map.get(agent, agent)
             adf = df_agent_so[df_agent_so['userId'] == agent]
             if adf.empty:
@@ -397,11 +374,10 @@ def run_openphone_tab():
             pivot_a = adf.pivot(index='day', columns='hour', values='count')
             pivot_a.index = pivot_a.index.astype(str)
             pivot_a.columns = pivot_a.columns.astype(str)
-
             a_days = [d for d in day_order if d in pivot_a.index]
             a_hours = [h for h in hour_order if h in pivot_a.columns]
-
             pivot_a = pivot_a.reindex(index=a_days, columns=a_hours).fillna(0)
+
             fig = px.imshow(
                 pivot_a,
                 color_continuous_scale='Blues',
@@ -416,37 +392,28 @@ def run_openphone_tab():
     # 17. AGENT SUCCESS RATE HEATMAP (Day & Hour)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Success Rate Heatmap by Day & Hour")
-
     if not outbound_calls.empty:
-        # Group outbound calls
         group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
-        # Group successful
         group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
 
-        # Convert to string if not already
         group_outbound['day'] = group_outbound['day'].astype(str)
         group_outbound['hour'] = group_outbound['hour'].astype(str)
         group_success['day'] = group_success['day'].astype(str)
         group_success['hour'] = group_success['hour'].astype(str)
 
-        # Merge
         merged = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
         merged['success_rate'] = (merged['success_count'] / merged['outbound_count']) * 100
 
-        # Pivot per agent
         for agent in selected_agents:
-            agent_short = agent_map.get(agent, agent)  # short name
+            agent_short = agent_map.get(agent, agent)
             agent_df = merged[merged['userId'] == agent]
             if agent_df.empty:
                 st.write(f"No outbound calls for agent: {agent_short}")
                 continue
 
             pivot_srate = agent_df.pivot(index='day', columns='hour', values='success_rate')
-
             pivot_srate.index = pivot_srate.index.astype(str)
             pivot_srate.columns = pivot_srate.columns.astype(str)
-
-            # Reindex rows & columns by intersection with day_order / hour_order
             a_days = [d for d in day_order if d in pivot_srate.index]
             a_hours = [h for h in hour_order if h in pivot_srate.columns]
             pivot_srate = pivot_srate.reindex(index=a_days, columns=a_hours).fillna(0)
@@ -463,38 +430,28 @@ def run_openphone_tab():
     else:
         st.warning("No outbound calls for success rate heatmap.")
 
-       # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
-    #     in one figure (if 2+ agents are selected)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. AGENT-BY-AGENT HEATMAPS:
-    #     Left: Success Rate by day/hour (tooltip also shows calls)
-    #     Right: Total Outbound Calls by day/hour (tooltip also shows rate)
+    # 18. AGENT-BY-AGENT HEATMAPS: Success Rate & Outbound Calls
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent-by-Agent Heatmaps: Success Rate & Outbound Calls")
-    
+
     if len(selected_agents) >= 1 and not successful_outbound_calls.empty and not outbound_calls.empty:
         for agent_id in selected_agents:
             agent_name = agent_map.get(agent_id, agent_id)
-    
-            # One row per agent, with 2 columns side-by-side
+
             st.markdown(f"### {agent_name}")
             col1, col2 = st.columns(2)
-    
-            # ~~~ 1) Build data for this agent’s calls ~~~
+
+            # Build data
             agent_outbound = outbound_calls[outbound_calls['userId'] == agent_id].copy()
             agent_success  = successful_outbound_calls[successful_outbound_calls['userId'] == agent_id].copy()
-    
-            # Group by (day, hour)
+
             outb_df = agent_outbound.groupby(['day','hour']).size().reset_index(name='outbound_count')
             succ_df = agent_success.groupby(['day','hour']).size().reset_index(name='success_count')
-    
-            # Merge to compute success rate = (success_count / outbound_count) * 100
             merged_df = pd.merge(outb_df, succ_df, on=['day','hour'], how='outer').fillna(0)
             merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
-    
-            # ~~~ 2) Left Column = Success Rate Heatmap (hover shows calls too) ~~~
+
+            # --- Left Column: Success Rate ---
             with col1:
                 st.subheader("Success Rate (%)")
                 total_outbound_left = merged_df['outbound_count'].sum()
@@ -502,20 +459,19 @@ def run_openphone_tab():
                     st.write("No outbound calls for this agent.")
                 else:
                     df_rate = merged_df[['day','hour','success_rate','outbound_count']].copy()
-    
-                    # Build the heatmap, using success_rate as z
+
                     fig_rate = px.density_heatmap(
                         df_rate,
                         x='hour',
                         y='day',
                         z='success_rate',
+                        histfunc='avg',                       # average if duplicates
+                        nbinsx=len(hour_order),               # ensure 1 bin per hour
+                        nbinsy=len(day_order),                # ensure 1 bin per day
                         color_continuous_scale='Blues',
-                        range_color=[0, 100],   # 0% to 100% for darkest blue
-                        histfunc='avg',        # no extra binning if day/hour is unique
+                        range_color=[0, 100],                 # 0-100% range
                         title="Success Rate by Day/Hour"
                     )
-    
-                    # Pass outbound_count as customdata for the tooltip
                     fig_rate.update_traces(
                         customdata=df_rate[['outbound_count']].values,
                         hovertemplate=(
@@ -523,16 +479,15 @@ def run_openphone_tab():
                             + "Day: %{y}<br>"
                             + "Success Rate: %{z:.1f} %<br>"
                             + "Outbound Calls: %{customdata[0]}"
-                        )
+                        ),
+                        selector=dict(type='heatmap')
                     )
-    
-                    # Reorder day/hour if needed
                     fig_rate.update_yaxes(categoryorder='array', categoryarray=day_order)
                     fig_rate.update_xaxes(categoryorder='array', categoryarray=hour_order)
                     fig_rate.update_layout(height=400)
                     st.plotly_chart(fig_rate, use_container_width=True)
-    
-            # ~~~ 3) Right Column = Outbound Calls Heatmap (hover shows success_rate) ~~~
+
+            # --- Right Column: Outbound Calls ---
             with col2:
                 st.subheader("Total Outbound Calls (#)")
                 total_outbound_right = merged_df['outbound_count'].sum()
@@ -540,18 +495,18 @@ def run_openphone_tab():
                     st.write("No outbound calls for this agent.")
                 else:
                     df_calls = merged_df[['day','hour','outbound_count','success_rate']].copy()
-    
+
                     fig_calls = px.density_heatmap(
                         df_calls,
                         x='hour',
                         y='day',
                         z='outbound_count',
+                        histfunc='sum',  # sum calls if duplicates exist
+                        nbinsx=len(hour_order),
+                        nbinsy=len(day_order),
                         color_continuous_scale='Blues',
-                        histfunc='sum',  # or 'avg' if each (day,hour) is unique
                         title="Outbound Calls by Day/Hour"
                     )
-    
-                    # Put success_rate in customdata for the tooltip
                     fig_calls.update_traces(
                         customdata=df_calls[['success_rate']].values,
                         hovertemplate=(
@@ -559,19 +514,18 @@ def run_openphone_tab():
                             + "Day: %{y}<br>"
                             + "Outbound Calls: %{z}<br>"
                             + "Success Rate: %{customdata[0]:.1f} %"
-                        )
+                        ),
+                        selector=dict(type='heatmap')
                     )
-    
                     fig_calls.update_yaxes(categoryorder='array', categoryarray=day_order)
                     fig_calls.update_xaxes(categoryorder='array', categoryarray=hour_order)
                     fig_calls.update_layout(height=400)
                     st.plotly_chart(fig_calls, use_container_width=True)
-    
-        # (Optional) Summary table for all agents
+
+        # Optional summary table
         st.subheader("Summary Table: Outbound Calls & Success Rate")
         total_success = successful_outbound_calls.groupby('userId').size()
         total_calls   = outbound_calls.groupby('userId').size()
-    
         summary_df = pd.DataFrame({
             'Total Outbound Calls': total_calls,
             'Successful Calls': total_success
@@ -580,35 +534,32 @@ def run_openphone_tab():
             summary_df['Successful Calls'] / summary_df['Total Outbound Calls'] * 100
         ).round(1)
         summary_df['Agent'] = summary_df.index.map(agent_map)
-    
         summary_table = summary_df[['Agent','Successful Calls','Total Outbound Calls','Success Rate (%)']]
         st.table(summary_table)
-    
+
     else:
         st.warning("No outbound calls or no agents selected. Cannot show agent-by-agent heatmaps.")
-    
 
-
-      # 19. AGENT-columns
-
-    
-        st.subheader("Compare Agents Side-by-Side: Successful vs Total Calls")
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 19. AGENT-COLUMNS (Compare Agents Side-by-Side)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Compare Agents Side-by-Side: Successful vs Total Calls")
 
     if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
         # Calculate totals for each agent
         success_totals = successful_outbound_calls.groupby('userId').size().reset_index(name='successful_calls')
-        total_calls = outbound_calls.groupby('userId').size().reset_index(name='total_calls')
-        
+        total_calls_df = outbound_calls.groupby('userId').size().reset_index(name='total_calls')
+
         # Merge the data
-        summary = pd.merge(success_totals, total_calls, on='userId', how='outer').fillna(0)
-        
+        summary = pd.merge(success_totals, total_calls_df, on='userId', how='outer').fillna(0)
+
         # Add agent names
         summary['agent_name'] = summary['userId'].map(agent_map)
-        
+
         # Calculate success rate
         summary['success_rate'] = (summary['successful_calls'] / summary['total_calls'] * 100).round(2)
-        
-        # Create a figure with two subplots side by side for each agent
+
+        # Create a figure with grouped bars for each agent
         fig = px.bar(
             summary,
             x=['successful_calls', 'total_calls'],
@@ -627,23 +578,20 @@ def run_openphone_tab():
             },
             text_auto=True
         )
-    
-        # Update layout
+
         fig.update_layout(
             showlegend=True,
             legend_title_text='Call Type',
             yaxis={'categoryorder': 'total ascending'}
         )
-    
-        # Display the plot
+
         st.plotly_chart(fig, use_container_width=True)
-    
-        # Optional: Display as a table as well
+
         st.write("Detailed Summary:")
         summary_table = summary[['agent_name', 'successful_calls', 'total_calls', 'success_rate']]
         summary_table.columns = ['Agent', 'Successful Calls', 'Total Calls', 'Success Rate (%)']
         st.table(summary_table)
-    
+
     else:
         st.warning("Comparison not shown. Need 2+ agents selected and some calls present.")
 
