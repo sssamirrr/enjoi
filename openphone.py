@@ -718,7 +718,7 @@ def run_openphone_tab():
     # CALLING #20: TEXT SUCCESS RATE HEATMAP
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     if not messages.empty:
-        st.subheader("Run #20: Text Success Rate Heatmap")
+        st.subheader("Run #20: Text Success Rate Heatmam - Initial outbound message received a response within 24 hours ") 
         # If phoneNumber doesn't exist, #20 won't work
         if 'phoneNumber' not in messages.columns:
             st.warning("No 'phoneNumber' column found in messages. #20 requires it to group texts by recipient.")
