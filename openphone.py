@@ -469,8 +469,8 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 18. AGENT-BY-AGENT HEATMAPS:
-    #     Left: Success Rate by day/hour
-    #     Right: Total Outbound Calls by day/hour
+    #     Left: Success Rate by day/hour (tooltip also shows calls)
+    #     Right: Total Outbound Calls by day/hour (tooltip also shows rate)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent-by-Agent Heatmaps: Success Rate & Outbound Calls")
     
@@ -494,65 +494,74 @@ def run_openphone_tab():
             merged_df = pd.merge(outb_df, succ_df, on=['day','hour'], how='outer').fillna(0)
             merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
     
-            # ~~~ 2) Left Column = Success Rate Heatmap ~~~
+            # ~~~ 2) Left Column = Success Rate Heatmap (hover shows calls too) ~~~
             with col1:
                 st.subheader("Success Rate (%)")
                 total_outbound_left = merged_df['outbound_count'].sum()
-    
                 if total_outbound_left == 0:
                     st.write("No outbound calls for this agent.")
                 else:
-                    # We'll display success_rate in color, from 0→100
                     df_rate = merged_df[['day','hour','success_rate','outbound_count']].copy()
+    
+                    # Build the heatmap, using success_rate as z
                     fig_rate = px.density_heatmap(
                         df_rate,
                         x='hour',
                         y='day',
                         z='success_rate',
-                        color_continuous_scale='Blues',         # <-- same "Blues" as calls
-                        range_color=[0, 100],                   # <-- ensures 100% = darkest blue
-                        title="Success Rate by Day/Hour",
-                        hover_data={
-                            'success_rate': ':.1f',
-                            'outbound_count': True
-                        },
-                        labels={
-                            'success_rate': 'Success Rate (%)',
-                            'outbound_count': 'Total Outbound Calls'
-                        }
+                        color_continuous_scale='Blues',
+                        range_color=[0, 100],   # 0% to 100% for darkest blue
+                        histfunc='avg',        # no extra binning if day/hour is unique
+                        title="Success Rate by Day/Hour"
                     )
+    
+                    # Pass outbound_count as customdata for the tooltip
+                    fig_rate.update_traces(
+                        customdata=df_rate[['outbound_count']].values,
+                        hovertemplate=(
+                            "Hour: %{x}<br>"
+                            + "Day: %{y}<br>"
+                            + "Success Rate: %{z:.1f} %<br>"
+                            + "Outbound Calls: %{customdata[0]}"
+                        )
+                    )
+    
                     # Reorder day/hour if needed
                     fig_rate.update_yaxes(categoryorder='array', categoryarray=day_order)
                     fig_rate.update_xaxes(categoryorder='array', categoryarray=hour_order)
                     fig_rate.update_layout(height=400)
                     st.plotly_chart(fig_rate, use_container_width=True)
     
-            # ~~~ 3) Right Column = Total Outbound Calls Heatmap ~~~
+            # ~~~ 3) Right Column = Outbound Calls Heatmap (hover shows success_rate) ~~~
             with col2:
                 st.subheader("Total Outbound Calls (#)")
                 total_outbound_right = merged_df['outbound_count'].sum()
-    
                 if total_outbound_right == 0:
                     st.write("No outbound calls for this agent.")
                 else:
                     df_calls = merged_df[['day','hour','outbound_count','success_rate']].copy()
+    
                     fig_calls = px.density_heatmap(
                         df_calls,
                         x='hour',
                         y='day',
                         z='outbound_count',
-                        color_continuous_scale='Blues',  # same color scale
-                        title="Outbound Calls by Day/Hour",
-                        hover_data={
-                            'outbound_count': True,
-                            'success_rate': ':.1f'
-                        },
-                        labels={
-                            'outbound_count': 'Total Outbound Calls',
-                            'success_rate': 'Success Rate (%)'
-                        }
+                        color_continuous_scale='Blues',
+                        histfunc='sum',  # or 'avg' if each (day,hour) is unique
+                        title="Outbound Calls by Day/Hour"
                     )
-                    # Reorder day/hour if needed
+    
+                    # Put success_rate in customdata for the tooltip
+                    fig_calls.update_traces(
+                        customdata=df_calls[['success_rate']].values,
+                        hovertemplate=(
+                            "Hour: %{x}<br>"
+                            + "Day: %{y}<br>"
+                            + "Outbound Calls: %{z}<br>"
+                            + "Success Rate: %{customdata[0]:.1f} %"
+                        )
+                    )
+    
                     fig_calls.update_yaxes(categoryorder='array', categoryarray=day_order)
                     fig_calls.update_xaxes(categoryorder='array', categoryarray=hour_order)
                     fig_calls.update_layout(height=400)
@@ -577,8 +586,7 @@ def run_openphone_tab():
     
     else:
         st.warning("No outbound calls or no agents selected. Cannot show agent-by-agent heatmaps.")
-
-
+    
 
 
       # 19. AGENT-columns
