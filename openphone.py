@@ -492,31 +492,41 @@ def run_openphone_tab():
         # 3) Combine them
         combined = pd.concat([df_count, df_srate], ignore_index=True)
     
-        # 4) Replace userId with short name
+        # 4) Map userId -> short name
         combined['short_user'] = combined['userId'].map(agent_map)
     
-        # 5) Plot with max 2 agents per row
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # 5) Create ONE facet dimension short_user_metric = "agent + metric"
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # e.g. b.sade: Count, b.sade: Success Rate, etc.
+        combined['short_user_metric'] = combined['short_user'] + ": " + combined['metric']  # <-- UPDATED
+    
+        # 6) Plot with facet_col_wrap=2  (ONE facet dimension only)
+        #    This ensures no more than 2 subplots per row
         fig = px.density_heatmap(
             combined,
             x='hour',
             y='day',
             z='value',
-            facet_col='short_user',
-            facet_row='metric',
-            facet_col_wrap=2,  # <---- ADD THIS
+            facet_col='short_user_metric',  # <-- single dimension
+            facet_col_wrap=2,              # <-- ensures 2 columns max
             color_continuous_scale='Blues',
             category_orders={
                 "hour": hour_order,
                 "day": day_order,
-                "metric": ["Count", "Success Rate"],
-                # Show selected agents in order (short names)
-                "short_user": [agent_map[a] for a in selected_agents],
+                # Keep subplots in a certain order if desired:
+                "short_user_metric": [
+                    f"{agent_map[a]}: Count" for a in selected_agents
+                ] + [
+                    f"{agent_map[a]}: Success Rate" for a in selected_agents
+                ]
             },
             title="Side-by-Side: Successful Calls (Count) vs. Success Rate per Agent",
             text_auto=True
         )
     
         st.plotly_chart(fig, use_container_width=True)
+    
     else:
         st.warning("Side-by-side calls vs. success rate not shown. "
                    "Need 2+ agents selected and some calls present.")
