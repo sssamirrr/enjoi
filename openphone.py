@@ -28,7 +28,7 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
         e.g. {"john@enjoiresorts.com": "john", ...}
         If None, the function uses the raw userId.
 
-    This code:
+    Steps in this code:
        1) Identifies 'first outbound messages' each day by userId + phoneNumber
        2) Checks for any incoming reply from the same phoneNumber within 24 hrs
        3) Computes success rate per (agent, day, hour)
@@ -39,31 +39,18 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     # Make a copy to avoid modifying the original df
     messages = messages.copy()
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # If needed, filter to text messages only (optional)
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # If your entire `messages` DF is already only text, skip this.
-    # Otherwise:
-    # messages = messages[messages['type'] == 'message']
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Add day/hour columns if not present
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Create 'day' & 'hour' columns if not present
     messages['day'] = messages['createdAtET'].dt.strftime('%A')
     messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Separate outgoing vs. incoming
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     msgs_out = messages[messages['direction'] == 'outgoing'].copy()
     msgs_in  = messages[messages['direction'] == 'incoming'].copy()
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Identify FIRST OUTBOUND message each day (agent + phoneNumber)
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Sort outgoing by time
     msgs_out.sort_values(by=['userId','phoneNumber','day','createdAtET'], inplace=True)
 
-    # The first outbound text in each (userId, phoneNumber, day) group => rank=1
+    # Mark only the FIRST outbound text per (agent, phoneNumber, day)
     msgs_out['is_first_message'] = (
         msgs_out.groupby(['userId','phoneNumber','day'])['createdAtET']
         .rank(method='first')
@@ -74,12 +61,10 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     df_first = msgs_out[msgs_out['is_first_message'] == 1].copy()
     df_first['window_end'] = df_first['createdAtET'] + pd.Timedelta(hours=24)
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Check if there's an inbound reply within [outbound_time, outbound_time+24h]
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Merge each first outbound with potential inbound replies (same phoneNumber)
     df_first = df_first.reset_index(drop=False).rename(columns={'index':'orig_index'})
     merged = df_first.merge(
-        msgs_in[['phoneNumber','createdAtET','direction']],   # Inbound subset
+        msgs_in[['phoneNumber','createdAtET','direction']],
         on='phoneNumber', how='left', suffixes=('_out','_in')
     )
 
@@ -89,13 +74,11 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     )
     merged['reply_success'] = np.where(cond, 1, 0)
 
-    # If ANY inbound matched, success_flag=1
+    # If ANY inbound matched for that orig_index, success_flag=1
     success_df = merged.groupby('orig_index')['reply_success'].max().reset_index(name='success_flag')
     df_first = df_first.merge(success_df, on='orig_index', how='left')
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Summarize by agent, day, hour
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     df_first['day'] = df_first['day'].astype(str)
     df_first['hour'] = df_first['hour'].astype(str)
 
@@ -108,9 +91,7 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
         group_text['successful'] / group_text['first_messages'] * 100
     ).fillna(0)
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Build Heatmaps per Agent
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Build Heatmaps per agent
     if agent_map is None:
         agent_map = {}
 
@@ -133,7 +114,6 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
         pivot_first = agent_df.pivot(index='day', columns='hour', values='first_messages').fillna(0)
         pivot_succ  = agent_df.pivot(index='day', columns='hour', values='successful').fillna(0)
 
-        # Reindex to day_order, hour_order
         pivot_rate  = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
         pivot_first = pivot_first.reindex(index=day_order, columns=hour_order, fill_value=0)
         pivot_succ  = pivot_succ.reindex(index=day_order, columns=hour_order, fill_value=0)
@@ -156,13 +136,13 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
                 r_val   = pivot_rate.loc[d, h]
                 f_count = pivot_first.loc[d, h]
                 s_count = pivot_succ.loc[d, h]
-                text_ = (
+                txt = (
                     f"Day: {d}<br>Hour: {h}<br>"
                     f"Success Rate: {r_val:.1f}%<br>"
                     f"First Msgs: {int(f_count)}<br>"
                     f"Successful: {int(s_count)}"
                 )
-                row_text.append(text_)
+                row_text.append(txt)
             hover_text.append(row_text)
 
         fig.update_traces(
@@ -174,9 +154,7 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
 
         st.plotly_chart(fig, use_container_width=True)
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Overall Summary
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Overall Summary Table
     sum_agent = group_text.groupby('userId').agg(
         total_first=('first_messages','sum'),
         total_success=('successful','sum')
@@ -282,7 +260,19 @@ def run_openphone_tab():
         if short_name in selected_short_names
     ]
 
+    # Filter only selected agents
     openphone_data = openphone_data[openphone_data['userId'].isin(selected_agents)]
+
+    # ----------------------------------------------------------------------
+    # CREATE A "phoneNumber" COLUMN FOR #20 (TEXT SUCCESS RATE)
+    # For outgoing => use the 'to' column
+    # For incoming => use the 'from' column
+    # ----------------------------------------------------------------------
+    openphone_data['phoneNumber'] = np.where(
+        openphone_data['direction'] == 'incoming',
+        openphone_data['from'],
+        openphone_data['to']
+    )
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 4. SPLIT: CALLS VS. MESSAGES
@@ -729,8 +719,19 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     if not messages.empty:
         st.subheader("Run #20: Text Success Rate Heatmap")
-        run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map)
+        # If phoneNumber doesn't exist, #20 won't work
+        if 'phoneNumber' not in messages.columns:
+            st.warning("No 'phoneNumber' column found in messages. #20 requires it to group texts by recipient.")
+        else:
+            run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map)
     else:
         st.warning("No text messages to analyze for #20.")
 
     st.success("Enhanced Dashboard Complete!")
+
+# Optionally, define a main() if you prefer:
+# def main():
+#     run_openphone_tab()
+#
+# if __name__ == "__main__":
+#     main()
