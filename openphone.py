@@ -468,25 +468,24 @@ def run_openphone_tab():
     #     in one figure (if 2+ agents are selected)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
-    #     in one figure (if 2+ agents are selected)
+    # 18. SIDE-BY-SIDE HEATMAP (Single Dimension) with 2-Column Wrap
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Compare Agents Side-by-Side: Calls vs. Success Rate in One Figure")
+    st.subheader("Compare Agents Side-by-Side: Success Rate & Calls (Two Columns per Agent)")
     
-    if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
-        # 1) Build 'Successful Calls' dataset
-        df_count = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
-        df_count['day'] = df_count['day'].astype(str)
-        df_count['hour'] = df_count['hour'].astype(str)
-        df_count['metric'] = "Successful Calls"  # Renamed from just "Count"
-        df_count.rename(columns={'count': 'value'}, inplace=True)
+    if len(selected_agents) >= 1 and not successful_outbound_calls.empty and not outbound_calls.empty:
+        # 1) Build the "Calls" dataset
+        df_calls = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
+        df_calls['day']  = df_calls['day'].astype(str)
+        df_calls['hour'] = df_calls['hour'].astype(str)
+        df_calls['metric'] = "Calls"
+        df_calls.rename(columns={'count': 'value'}, inplace=True)
     
-        # 2) Build 'Success Rate' dataset
+        # 2) Build the "Success Rate" dataset
         group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
-        group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
+        group_success  = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
         merged_df = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
         merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
-        merged_df['day'] = merged_df['day'].astype(str)
+        merged_df['day']  = merged_df['day'].astype(str)
         merged_df['hour'] = merged_df['hour'].astype(str)
     
         df_srate = merged_df[['userId','day','hour','success_rate']].copy()
@@ -494,44 +493,56 @@ def run_openphone_tab():
         df_srate.rename(columns={'success_rate': 'value'}, inplace=True)
     
         # 3) Combine them
-        combined = pd.concat([df_count, df_srate], ignore_index=True)
+        combined = pd.concat([df_calls, df_srate], ignore_index=True)
     
         # 4) Map userId -> short name
         combined['short_user'] = combined['userId'].map(agent_map)
     
-        # 5) Use two-dimensional faceting + wrap on the columns
-        #    - row  = "metric"          => top row = "Success Rate", next row = "Successful Calls"
-        #    - col  = "short_user"      => each agent is a column
-        #    - wrap = 2                 => max 2 columns, then wrap to a new row
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # 5) Create one single facet dimension:
+        #    e.g. "b.sade: Success Rate" and "b.sade: Calls"
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        def make_label(row):
+            return f"{row['short_user']}: {row['metric']}"
+    
+        combined['facet_label'] = combined.apply(make_label, axis=1)
+    
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # 6) Plot with facet_col='facet_label' + facet_col_wrap=2
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Because we have only ONE dimension, Plotly WILL respect facet_col_wrap=2
         fig = px.density_heatmap(
             combined,
             x='hour',
             y='day',
             z='value',
-            facet_row='metric',         # each metric is its own row
-            facet_col='short_user',     # each agent is its own column
-            facet_col_wrap=2,          # <= ensures only 2 agent-columns per row
+            facet_col='facet_label',  
+            facet_col_wrap=2,         # max 2 columns => 2 columns for each agent (Rate & Calls)
             color_continuous_scale='Blues',
+            # Optional ordering so each agent’s "Success Rate" facet shows up before "Calls"
             category_orders={
-                "metric": ["Success Rate", "Successful Calls"],
-                "short_user": [agent_map[a] for a in selected_agents],
-                "hour": hour_order,  # from your global definition
-                "day": day_order,    # from your global definition
+                "facet_label": [
+                    f"{agent_map[a]}: Success Rate" for a in selected_agents
+                ] + [
+                    f"{agent_map[a]}: Calls" for a in selected_agents
+                ],
+                "hour": hour_order,
+                "day": day_order,
             },
-            title="Side-by-Side: Successful Calls vs. Success Rate per Agent",
+            title="Side-by-Side: Success Rate & Calls (2 Columns Per Agent)",
             text_auto=True
         )
     
-        # Optional: if you want Monday on top => reverse the y-axis
+        # (Optional) Reverse the y-axis so Monday is on top
         # for axis_name in fig.layout:
-        #     if "yaxis" in axis_name:
+        #     if 'yaxis' in axis_name:
         #         fig.layout[axis_name].autorange = "reversed"
     
         st.plotly_chart(fig, use_container_width=True)
     
     else:
-        st.warning("Side-by-side calls vs. success rate not shown. "
-                   "Need 2+ agents selected and some calls present.")
+        st.warning("Side-by-side calls vs. success rate not shown. Need at least 1 agent selected and some calls present.")
+    
 
     
         st.subheader("Compare Agents Side-by-Side: Successful vs Total Calls")
