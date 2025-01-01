@@ -64,14 +64,40 @@ def run_openphone_tab():
         (openphone_data['createdAtET'].dt.date <= end_date)
     ]
 
-    # Agent filter
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # AGENT FILTER WITH @enjoiresorts.com ONLY
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     if 'userId' not in openphone_data.columns:
         st.error("No 'userId' column found in the dataset.")
         return
 
-    all_agents = sorted(openphone_data['userId'].dropna().unique())
-    # Default selection is empty, so no agents are pre-selected
-    selected_agents = st.multiselect("Select Agents", all_agents, default=[])
+    # Step A: Only agents whose emails end with "@enjoiresorts.com"
+    all_agents = sorted([
+        agent for agent in openphone_data['userId'].dropna().unique()
+        if agent.endswith("@enjoiresorts.com")
+    ])  # <-- UPDATED
+
+    # Step B: Map each agent’s full email --> shortened (remove domain)
+    def short_agent_name(full_email):
+        return full_email.replace("@enjoiresorts.com", "")
+
+    agent_map = {agent: short_agent_name(agent) for agent in all_agents}
+
+    # We present only the "shortened" names in the multiselect
+    agent_choices = list(agent_map.values())  # all shortened names
+
+    selected_short_names = st.multiselect(
+        "Select Agents",
+        agent_choices,
+        default=[]
+    )  # by default no agent is selected
+
+    # Convert user’s choice (shortened name) back to the full email
+    selected_agents = [
+        full_email
+        for full_email, short_name in agent_map.items()
+        if short_name in selected_short_names
+    ]
 
     openphone_data = openphone_data[openphone_data['userId'].isin(selected_agents)]
 
@@ -106,6 +132,9 @@ def run_openphone_tab():
     agent_performance['booking_rate'] = (
         agent_performance['total_bookings'] / agent_performance['total_calls'] * 100
     ).fillna(0)
+
+    # Create a column with the shortened agent name for display
+    agent_performance['Agent'] = agent_performance['userId'].map(agent_map)  # <-- UPDATED
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 7. DEFINE day AND hour (STRING) + day_order & hour_order
@@ -156,6 +185,9 @@ def run_openphone_tab():
     agent_success_rate['success_rate'] = (
         agent_success_rate['successful_calls'] / agent_success_rate['total_outbound_calls'] * 100
     ).fillna(0)
+
+    # Shorten agent name for display
+    agent_success_rate['Agent'] = agent_success_rate['userId'].map(agent_map)  # <-- UPDATED
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 9. KEY METRICS
@@ -260,14 +292,18 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Performance: Calls vs. Bookings")
     if not agent_performance.empty:
-        fig = px.bar(agent_performance, x='userId',
-                     y=['total_calls','total_bookings'],
-                     title="Agent Performance",
-                     barmode='group')
+        # We use 'Agent' (the shortened name) as the x-axis
+        fig = px.bar(
+            agent_performance,
+            x='Agent',  # <-- UPDATED
+            y=['total_calls','total_bookings'],
+            title="Agent Performance",
+            barmode='group'
+        )
         st.plotly_chart(fig)
 
         st.dataframe(agent_performance.rename(columns={
-            'userId': 'Agent',
+            'Agent': 'Agent (short)',
             'total_calls': 'Total Calls',
             'total_bookings': 'Total Bookings',
             'booking_rate': 'Booking Rate (%)'
@@ -280,14 +316,17 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Outbound Success Rate")
     if not agent_success_rate.empty:
-        fig = px.bar(agent_success_rate, x='userId',
-                     y=['total_outbound_calls','successful_calls'],
-                     title="Outbound Success Rate",
-                     barmode='group')
+        fig = px.bar(
+            agent_success_rate,
+            x='Agent',  # <-- UPDATED
+            y=['total_outbound_calls','successful_calls'],
+            title="Outbound Success Rate",
+            barmode='group'
+        )
         st.plotly_chart(fig)
 
         st.dataframe(agent_success_rate.rename(columns={
-            'userId': 'Agent',
+            'Agent': 'Agent (short)',
             'total_outbound_calls': 'Total Outbound Calls',
             'successful_calls': 'Successful Calls',
             'success_rate': 'Success Rate (%)'
@@ -348,9 +387,11 @@ def run_openphone_tab():
         df_agent_so = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
 
         for agent in selected_agents:
+            # use short name for the header
+            agent_short = agent_map.get(agent, agent)
             adf = df_agent_so[df_agent_so['userId'] == agent]
             if adf.empty:
-                st.write(f"No successful outbound calls for: {agent}")
+                st.write(f"No successful outbound calls for: {agent_short}")
                 continue
 
             pivot_a = adf.pivot(index='day', columns='hour', values='count')
@@ -365,7 +406,7 @@ def run_openphone_tab():
                 pivot_a,
                 color_continuous_scale='Blues',
                 labels=dict(x="Hour", y="Day", color="Count"),
-                title=f"Agent {agent} - Successful Outbound Calls"
+                title=f"Agent {agent_short} - Successful Outbound Calls"
             )
             st.plotly_chart(fig)
     else:
@@ -394,9 +435,10 @@ def run_openphone_tab():
 
         # Pivot per agent
         for agent in selected_agents:
+            agent_short = agent_map.get(agent, agent)  # short name
             agent_df = merged[merged['userId'] == agent]
             if agent_df.empty:
-                st.write(f"No outbound calls for agent: {agent}")
+                st.write(f"No outbound calls for agent: {agent_short}")
                 continue
 
             pivot_srate = agent_df.pivot(index='day', columns='hour', values='success_rate')
@@ -413,7 +455,7 @@ def run_openphone_tab():
                 pivot_srate,
                 color_continuous_scale='Blues',
                 labels=dict(x="Hour (AM/PM)", y="Day", color="Success Rate (%)"),
-                title=f"Success Rate Heatmap - {agent}",
+                title=f"Success Rate Heatmap - {agent_short}",
             )
             fig.update_xaxes(side="top")
             fig.update_layout(coloraxis=dict(cmin=0, cmax=100))
@@ -436,7 +478,6 @@ def run_openphone_tab():
         df_count.rename(columns={'count': 'value'}, inplace=True)
 
         # 2) Build 'success_rate' dataset
-        # Reuse the 'merged' approach from #17
         group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
         group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
         merged_df = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
@@ -444,7 +485,6 @@ def run_openphone_tab():
         merged_df['day'] = merged_df['day'].astype(str)
         merged_df['hour'] = merged_df['hour'].astype(str)
 
-        # convert success_rate into 'metric','value'
         df_srate = merged_df[['userId','day','hour','success_rate']].copy()
         df_srate['metric'] = "Success Rate"
         df_srate.rename(columns={'success_rate': 'value'}, inplace=True)
@@ -455,31 +495,27 @@ def run_openphone_tab():
         # 4) We'll use facet_col='userId' and facet_row='metric'
         #    so top row = metric=Count, bottom row=metric=Success Rate
         #    left to right = userId
+        # But we want the short names on the facet columns
+        # --> We can replace userId in "combined" with the short names:
+        combined['short_user'] = combined['userId'].map(agent_map)
+
         fig = px.density_heatmap(
             combined,
             x='hour',
             y='day',
             z='value',
-            facet_col='userId',
+            facet_col='short_user',  # <-- use the short name in the facets
             facet_row='metric',
             color_continuous_scale='Blues',
             category_orders={
                 "hour": hour_order,
                 "day": day_order,
                 "metric": ["Count", "Success Rate"],  # ensures Count row is top
-                "userId": list(selected_agents)       # show chosen agents in order
+                "short_user": [agent_map[a] for a in selected_agents],  # keep user-chosen order
             },
             title="Side-by-Side: Successful Calls (Count) vs. Success Rate per Agent",
             text_auto=True
         )
-        # For success rate, we might want cmax=100. But we are mixing count and % in one figure
-        # So let's let Plotly auto-scale. Alternatively, separate color scales:
-        # But px.density_heatmap only has one coloraxis for all facets.
-
-        # Reverse y-axis so Monday top -> Sunday bottom (if you prefer):
-        # for axis in fig.layout:
-        #     # or do something like axis.autorange="reversed"
-        #     pass
 
         st.plotly_chart(fig, use_container_width=True)
     else:
