@@ -467,81 +467,71 @@ def run_openphone_tab():
     # 18. SIDE-BY-SIDE HEATMAP: SUCCESSFUL OUTBOUND CALLS + SUCCESS RATE
     #     in one figure (if 2+ agents are selected)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. SIDE-BY-SIDE HEATMAP (Single Dimension) with 2-Column Wrap
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Compare Agents Side-by-Side: Success Rate & Calls (Two Columns per Agent)")
-    
+    st.subheader("Agent Performance Overview")
+
     if len(selected_agents) >= 1 and not successful_outbound_calls.empty and not outbound_calls.empty:
-        # 1) Build the "Calls" dataset
-        df_calls = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
-        df_calls['day']  = df_calls['day'].astype(str)
-        df_calls['hour'] = df_calls['hour'].astype(str)
-        df_calls['metric'] = "Calls"
-        df_calls.rename(columns={'count': 'value'}, inplace=True)
+        # Calculate total calls and success rates for each agent
+        total_success = successful_outbound_calls.groupby('userId').size()
+        total_calls = outbound_calls.groupby('userId').size()
+        
+        # Create summary DataFrame
+        summary = pd.DataFrame({
+            'Total Calls': total_calls,
+            'Successful Calls': total_success
+        }).fillna(0)
+        
+        # Calculate success rate
+        summary['Success Rate'] = (summary['Successful Calls'] / summary['Total Calls'] * 100).round(1)
+        
+        # Add agent names
+        summary['Agent'] = summary.index.map(agent_map)
+        
+        # Create two separate heatmaps side by side
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Success Rates (%)")
+            success_fig = px.density_heatmap(
+                data_frame=pd.DataFrame({
+                    'Agent': summary['Agent'],
+                    'Success Rate': summary['Success Rate']
+                }),
+                y='Agent',
+                x=['Success Rate'],
+                color_continuous_scale='RdYlGn',  # Red to Yellow to Green scale
+                text=summary['Success Rate'].apply(lambda x: f'{x:.1f}%'),
+                title="Success Rates by Agent"
+            )
+            success_fig.update_traces(showscale=False)  # Hide color scale
+            success_fig.update_layout(height=400)
+            st.plotly_chart(success_fig, use_container_width=True)
     
-        # 2) Build the "Success Rate" dataset
-        group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
-        group_success  = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
-        merged_df = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
-        merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
-        merged_df['day']  = merged_df['day'].astype(str)
-        merged_df['hour'] = merged_df['hour'].astype(str)
+        with col2:
+            st.subheader("Call Volumes")
+            calls_fig = px.density_heatmap(
+                data_frame=pd.DataFrame({
+                    'Agent': summary['Agent'],
+                    'Total Calls': summary['Total Calls']
+                }),
+                y='Agent',
+                x=['Total Calls'],
+                color_continuous_scale='Blues',
+                text=summary['Total Calls'].astype(int),
+                title="Total Calls by Agent"
+            )
+            calls_fig.update_traces(showscale=False)  # Hide color scale
+            calls_fig.update_layout(height=400)
+            st.plotly_chart(calls_fig, use_container_width=True)
     
-        df_srate = merged_df[['userId','day','hour','success_rate']].copy()
-        df_srate['metric'] = "Success Rate"
-        df_srate.rename(columns={'success_rate': 'value'}, inplace=True)
-    
-        # 3) Combine them
-        combined = pd.concat([df_calls, df_srate], ignore_index=True)
-    
-        # 4) Map userId -> short name
-        combined['short_user'] = combined['userId'].map(agent_map)
-    
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 5) Create one single facet dimension:
-        #    e.g. "b.sade: Success Rate" and "b.sade: Calls"
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        def make_label(row):
-            return f"{row['short_user']}: {row['metric']}"
-    
-        combined['facet_label'] = combined.apply(make_label, axis=1)
-    
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 6) Plot with facet_col='facet_label' + facet_col_wrap=2
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # Because we have only ONE dimension, Plotly WILL respect facet_col_wrap=2
-        fig = px.density_heatmap(
-            combined,
-            x='hour',
-            y='day',
-            z='value',
-            facet_col='facet_label',  
-            facet_col_wrap=2,         # max 2 columns => 2 columns for each agent (Rate & Calls)
-            color_continuous_scale='Blues',
-            # Optional ordering so each agent’s "Success Rate" facet shows up before "Calls"
-            category_orders={
-                "facet_label": [
-                    f"{agent_map[a]}: Success Rate" for a in selected_agents
-                ] + [
-                    f"{agent_map[a]}: Calls" for a in selected_agents
-                ],
-                "hour": hour_order,
-                "day": day_order,
-            },
-            title="Side-by-Side: Success Rate & Calls (2 Columns Per Agent)",
-            text_auto=True
-        )
-    
-        # (Optional) Reverse the y-axis so Monday is on top
-        # for axis_name in fig.layout:
-        #     if 'yaxis' in axis_name:
-        #         fig.layout[axis_name].autorange = "reversed"
-    
-        st.plotly_chart(fig, use_container_width=True)
+        # Display summary table
+        st.subheader("Detailed Summary")
+        summary_table = summary[['Agent', 'Successful Calls', 'Total Calls', 'Success Rate']].sort_values('Success Rate', ascending=False)
+        summary_table['Success Rate'] = summary_table['Success Rate'].apply(lambda x: f'{x:.1f}%')
+        st.table(summary_table)
     
     else:
-        st.warning("Side-by-side calls vs. success rate not shown. Need at least 1 agent selected and some calls present.")
+        st.warning("Performance overview not shown. Need at least 1 agent selected and some calls present.")
+
     
 
     
