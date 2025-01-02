@@ -732,156 +732,156 @@ def run_openphone_tab():
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 22. CALL DURATION COMPARISON: WITH vs. WITHOUT A PRECEDING TEXT
-    #       (Only for phoneNumbers whose FIRST CONTACT was an Outbound Text)
+# 22. CALL DURATION COMPARISON: WITH vs. WITHOUT A PRECEDING TEXT
+#       (Only for phoneNumbers whose FIRST CONTACT was an Outbound Text)
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def run_call_duration_preceded_by_text(messages, calls,
+                                       default_time_window=8):
+    """
+    Compare call durations for calls preceded by an outbound text (within X hours)
+    vs. calls that had no prior text. BUT ONLY for (userId, phoneNumber) pairs
+    whose very first contact was an OUTBOUND TEXT.
+
+    Steps:
+      1) Identify userId+phoneNumber pairs whose earliest contact in the dataset 
+         (by createdAtET) is an outbound text.
+      2) Filter calls to only those pairs from step 1.
+      3) For each call, check if there's an outbound text in [call_time - X hrs, call_time).
+      4) Compare average call duration for "preceded by text" vs. "not preceded".
+    """
+
+    st.subheader("22) Compare Call Durations (Only Where 1st Contact Was an Outbound Text)")
+
+    if messages.empty or calls.empty:
+        st.warning("No messages or calls to analyze.")
+        return
+
+    # Ask the user how many hours back we consider a text to have "preceded" the call
+    time_window_hours = st.slider(
+        "Time Window (hours) for a Preceding Outbound Text",
+        min_value=1, max_value=72, value=default_time_window, step=1
+    )
+
+    # We need a 'duration' column in calls
+    if 'duration' not in calls.columns:
+        st.warning("No 'duration' column found in calls. Cannot measure durations.")
+        return
+
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    def run_call_duration_preceded_by_text(messages, calls,
-                                           default_time_window=8):
-        """
-        Compare call durations for calls preceded by an outbound text (within X hours)
-        vs. calls that had no prior text. BUT ONLY for (userId, phoneNumber) pairs
-        whose very first contact was an OUTBOUND TEXT.
-    
-        Steps:
-          1) Identify userId+phoneNumber pairs whose earliest contact in the dataset 
-             (by createdAtET) is an outbound text.
-          2) Filter calls to only those pairs from step 1.
-          3) For each call, check if there's an outbound text in [call_time - X hrs, call_time).
-          4) Compare average call duration for "preceded by text" vs. "not preceded".
-        """
-    
-        st.subheader("22) Compare Call Durations (Only Where 1st Contact Was an Outbound Text)")
-    
-        if messages.empty or calls.empty:
-            st.warning("No messages or calls to analyze.")
-            return
-    
-        # Ask the user how many hours back we consider a text to have "preceded" the call
-        time_window_hours = st.slider(
-            "Time Window (hours) for a Preceding Outbound Text",
-            min_value=1, max_value=72, value=default_time_window, step=1
+    # 1) Identify phoneNumber pairs whose FIRST contact is an Outbound Text
+    #    We'll do this by combining messages+calls, finding the earliest event,
+    #    and checking if it is an 'outgoing' message.
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    # For convenience, create a combined DataFrame: all events
+    # We'll keep minimal columns:
+    combined = pd.concat([
+        messages[['userId','phoneNumber','createdAtET','direction','type']],
+        calls[['userId','phoneNumber','createdAtET','direction','type']]
+    ], ignore_index=True)
+
+    # Sort combined by userId, phoneNumber, and time
+    combined.sort_values(by=['userId','phoneNumber','createdAtET'], inplace=True)
+
+    # Group by userId+phoneNumber, track the earliest time
+    combined['earliest_time'] = combined.groupby(['userId','phoneNumber'])['createdAtET'].transform('min')
+
+    # Mark which row(s) is that earliest event
+    combined['is_earliest_event'] = (combined['createdAtET'] == combined['earliest_time'])
+
+    # For those earliest rows, we only keep them if type='message' and direction='outgoing'
+    # That means the first contact was an outbound text.
+    earliest_df = combined[combined['is_earliest_event']]
+
+    # Pairs that qualify
+    valid_pairs = earliest_df[
+        (earliest_df['type'] == 'message') & 
+        (earliest_df['direction'] == 'outgoing')
+    ][['userId','phoneNumber']].drop_duplicates()
+
+    # Now we only keep calls that belong to these valid pairs
+    calls_out = calls.copy()
+    calls_out = calls_out.merge(valid_pairs, on=['userId','phoneNumber'], how='inner')
+
+    # Also only measure outbound calls that have a valid duration
+    calls_out = calls_out[(calls_out['direction'] == 'outgoing') & (calls_out['duration'] >= 0)].copy()
+
+    if calls_out.empty:
+        st.warning("No outbound calls found where the phoneNumber's first contact was an outbound text.")
+        return
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 2) For each call, check if there's any outbound text in [call_time - X hrs, call_time)
+    #    We'll consider the calls we just filtered above (calls_out),
+    #    and the outbound texts in the original messages (also filtered by those valid pairs).
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    calls_out['call_time'] = calls_out['createdAtET']
+    msgs_out = messages[
+        (messages['direction'] == 'outgoing') &
+        (messages['type'] == 'message')
+    ].copy()
+
+    # Only keep text messages for those same valid pairs
+    msgs_out = msgs_out.merge(valid_pairs, on=['userId','phoneNumber'], how='inner')
+    msgs_out['text_time'] = msgs_out['createdAtET']
+
+    # Sort them
+    msgs_out.sort_values(by=['userId','phoneNumber','text_time'], inplace=True)
+    calls_out.sort_values(by=['userId','phoneNumber','call_time'], inplace=True)
+
+    # For each call, define the earliest text_time we allow
+    calls_out['min_text_time'] = calls_out['call_time'] - pd.Timedelta(hours=time_window_hours)
+
+    merged = calls_out.merge(
+        msgs_out[['userId','phoneNumber','text_time']],
+        on=['userId','phoneNumber'],
+        how='left'
+    )
+
+    # Condition: text_time in [call_time - X hrs, call_time)
+    cond = (
+        (merged['text_time'] >= merged['min_text_time']) &
+        (merged['text_time'] < merged['call_time'])
+    )
+    merged['text_preceded'] = np.where(cond, 1, 0)
+
+    # For each *call*, if ANY merged text_preceded=1 => call_preceded=1
+    merged = merged.reset_index(drop=False).rename(columns={'index':'call_index'})
+    preceded_df = merged.groupby('call_index')['text_preceded'].max().reset_index(name='call_preceded_flag')
+
+    # Attach that to calls_out
+    calls_out = calls_out.reset_index(drop=False).rename(columns={'index':'orig_call_idx'})
+    calls_out = calls_out.merge(
+        preceded_df, left_on='orig_call_idx', right_on='call_index', how='left'
+    ).drop(columns=['call_index'])
+
+    # 1 => preceded by text, 0 => not preceded
+    calls_out['call_preceded_flag'] = calls_out['call_preceded_flag'].fillna(0).astype(int)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 3) Compare average durations: preceded vs. not preceded
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    comp_df = calls_out.groupby('call_preceded_flag')['duration'].mean().reset_index()
+    comp_df['call_preceded_flag'] = comp_df['call_preceded_flag'].map({0: 'No preceding text', 1: 'Preceded by text'})
+    comp_df.rename(columns={'duration': 'avg_duration'}, inplace=True)
+
+    # Bar chart
+    fig = px.bar(
+        comp_df,
+        x='call_preceded_flag',
+        y='avg_duration',
+        color='call_preceded_flag',
+        labels=dict(call_preceded_flag="Preceding Text?", avg_duration="Avg Duration (sec)"),
+        title=(
+            "Avg Call Duration: Calls w/o vs. w/ Preceding Text"
+            "<br><sup>(Only phoneNumbers whose FIRST contact was an Outbound Text)</sup>"
         )
-    
-        # We need a 'duration' column in calls
-        if 'duration' not in calls.columns:
-            st.warning("No 'duration' column found in calls. Cannot measure durations.")
-            return
-    
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 1) Identify phoneNumber pairs whose FIRST contact is an Outbound Text
-        #    We'll do this by combining messages+calls, finding the earliest event,
-        #    and checking if it is an 'outgoing' message.
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
-        # For convenience, create a combined DataFrame: all events
-        # We'll keep minimal columns:
-        combined = pd.concat([
-            messages[['userId','phoneNumber','createdAtET','direction','type']],
-            calls[['userId','phoneNumber','createdAtET','direction','type']]
-        ], ignore_index=True)
-    
-        # Sort combined by userId, phoneNumber, and time
-        combined.sort_values(by=['userId','phoneNumber','createdAtET'], inplace=True)
-    
-        # Group by userId+phoneNumber, track the earliest time
-        combined['earliest_time'] = combined.groupby(['userId','phoneNumber'])['createdAtET'].transform('min')
-    
-        # Mark which row(s) is that earliest event
-        combined['is_earliest_event'] = (combined['createdAtET'] == combined['earliest_time'])
-    
-        # For those earliest rows, we only keep them if type='message' and direction='outgoing'
-        # That means the first contact was an outbound text.
-        earliest_df = combined[combined['is_earliest_event']]
-    
-        # Pairs that qualify
-        valid_pairs = earliest_df[
-            (earliest_df['type'] == 'message') & 
-            (earliest_df['direction'] == 'outgoing')
-        ][['userId','phoneNumber']].drop_duplicates()
-    
-        # Now we only keep calls that belong to these valid pairs
-        calls_out = calls.copy()
-        calls_out = calls_out.merge(valid_pairs, on=['userId','phoneNumber'], how='inner')
-    
-        # Also only measure outbound calls that have a valid duration
-        calls_out = calls_out[(calls_out['direction'] == 'outgoing') & (calls_out['duration'] >= 0)].copy()
-    
-        if calls_out.empty:
-            st.warning("No outbound calls found where the phoneNumber's first contact was an outbound text.")
-            return
-    
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 2) For each call, check if there's any outbound text in [call_time - X hrs, call_time)
-        #    We'll consider the calls we just filtered above (calls_out),
-        #    and the outbound texts in the original messages (also filtered by those valid pairs).
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
-        calls_out['call_time'] = calls_out['createdAtET']
-        msgs_out = messages[
-            (messages['direction'] == 'outgoing') &
-            (messages['type'] == 'message')
-        ].copy()
-    
-        # Only keep text messages for those same valid pairs
-        msgs_out = msgs_out.merge(valid_pairs, on=['userId','phoneNumber'], how='inner')
-        msgs_out['text_time'] = msgs_out['createdAtET']
-    
-        # Sort them
-        msgs_out.sort_values(by=['userId','phoneNumber','text_time'], inplace=True)
-        calls_out.sort_values(by=['userId','phoneNumber','call_time'], inplace=True)
-    
-        # For each call, define the earliest text_time we allow
-        calls_out['min_text_time'] = calls_out['call_time'] - pd.Timedelta(hours=time_window_hours)
-    
-        merged = calls_out.merge(
-            msgs_out[['userId','phoneNumber','text_time']],
-            on=['userId','phoneNumber'],
-            how='left'
-        )
-    
-        # Condition: text_time in [call_time - X hrs, call_time)
-        cond = (
-            (merged['text_time'] >= merged['min_text_time']) &
-            (merged['text_time'] < merged['call_time'])
-        )
-        merged['text_preceded'] = np.where(cond, 1, 0)
-    
-        # For each *call*, if ANY merged text_preceded=1 => call_preceded=1
-        merged = merged.reset_index(drop=False).rename(columns={'index':'call_index'})
-        preceded_df = merged.groupby('call_index')['text_preceded'].max().reset_index(name='call_preceded_flag')
-    
-        # Attach that to calls_out
-        calls_out = calls_out.reset_index(drop=False).rename(columns={'index':'orig_call_idx'})
-        calls_out = calls_out.merge(
-            preceded_df, left_on='orig_call_idx', right_on='call_index', how='left'
-        ).drop(columns=['call_index'])
-    
-        # 1 => preceded by text, 0 => not preceded
-        calls_out['call_preceded_flag'] = calls_out['call_preceded_flag'].fillna(0).astype(int)
-    
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 3) Compare average durations: preceded vs. not preceded
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        comp_df = calls_out.groupby('call_preceded_flag')['duration'].mean().reset_index()
-        comp_df['call_preceded_flag'] = comp_df['call_preceded_flag'].map({0: 'No preceding text', 1: 'Preceded by text'})
-        comp_df.rename(columns={'duration': 'avg_duration'}, inplace=True)
-    
-        # Bar chart
-        fig = px.bar(
-            comp_df,
-            x='call_preceded_flag',
-            y='avg_duration',
-            color='call_preceded_flag',
-            labels=dict(call_preceded_flag="Preceding Text?", avg_duration="Avg Duration (sec)"),
-            title=(
-                "Avg Call Duration: Calls w/o vs. w/ Preceding Text"
-                "<br><sup>(Only phoneNumbers whose FIRST contact was an Outbound Text)</sup>"
-            )
-        )
-        fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
-    
-        st.table(comp_df)
+    )
+    fig.update_layout(showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.table(comp_df)
 
 
 
