@@ -274,6 +274,14 @@ def run_openphone_tab():
         openphone_data['to']
     )
 
+    # Split multiple phone numbers into separate rows
+    openphone_data['phoneNumber'] = openphone_data['phoneNumber'].str.split(',')
+    openphone_data = openphone_data.explode('phoneNumber')
+    openphone_data['phoneNumber'] = openphone_data['phoneNumber'].str.strip()
+
+    # Drop rows with missing phoneNumber
+    openphone_data = openphone_data.dropna(subset=['phoneNumber'])
+
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 4. SPLIT: CALLS VS. MESSAGES
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -743,56 +751,63 @@ def run_openphone_tab():
             (openphone_data['duration'] > 0)
         ].copy()
 
-        # Sort DataFrames
-        sms_df = sms_df.sort_values(['userId', 'phoneNumber', 'createdAtET'])
-        successful_calls_df = successful_calls_df.sort_values(['userId', 'phoneNumber', 'createdAtET'])
+        if sms_df.empty or successful_calls_df.empty:
+            st.warning("Not enough data to analyze SMS Follow-up Call Effectiveness.")
+        else:
+            # Sort DataFrames
+            sms_df = sms_df.sort_values(['userId', 'phoneNumber', 'sms_time'])
+            successful_calls_df = successful_calls_df.sort_values(['userId', 'phoneNumber', 'call_time'])
 
-        # Rename columns for merge_asof
-        sms_df = sms_df.rename(columns={'createdAtET': 'sms_time'})
-        successful_calls_df = successful_calls_df.rename(columns={'createdAtET': 'call_time'})
+            # Rename columns for merge_asof
+            sms_df = sms_df.rename(columns={'createdAtET': 'sms_time'})
+            successful_calls_df = successful_calls_df.rename(columns={'createdAtET': 'call_time'})
 
-        # Perform merge_asof to find the first call after SMS within the time window
-        merged_calls = pd.merge_asof(
-            sms_df,
-            successful_calls_df,
-            left_on='sms_time',
-            right_on='call_time',
-            by=['userId', 'phoneNumber'],
-            direction='forward',
-            tolerance=pd.Timedelta(hours=time_window_hours)
-        )
+            # Ensure 'sms_time' and 'call_time' are datetime
+            sms_df['sms_time'] = pd.to_datetime(sms_df['sms_time'])
+            successful_calls_df['call_time'] = pd.to_datetime(successful_calls_df['call_time'])
 
-        # Calculate time difference
-        merged_calls['time_diff_hours'] = (merged_calls['call_time'] - merged_calls['sms_time']).dt.total_seconds() / 3600
+            # Perform merge_asof to find the first call after SMS within the time window
+            merged_calls = pd.merge_asof(
+                sms_df,
+                successful_calls_df,
+                left_on='sms_time',
+                right_on='call_time',
+                by=['userId', 'phoneNumber'],
+                direction='forward',
+                tolerance=pd.Timedelta(hours=time_window_hours)
+            )
 
-        # Drop rows where no call was found within the time window
-        merged_calls = merged_calls.dropna(subset=['call_time'])
+            # Calculate time difference
+            merged_calls['time_diff_hours'] = (merged_calls['call_time'] - merged_calls['sms_time']).dt.total_seconds() / 3600
 
-        # Only keep calls that occurred after SMS
-        merged_calls = merged_calls[merged_calls['time_diff_hours'] >= 0]
+            # Drop rows where no call was found within the time window
+            merged_calls = merged_calls.dropna(subset=['call_time'])
 
-        # Now, each row represents an SMS followed by a successful Call within the time window
-        # Count total interactions
-        total_interactions = len(merged_calls)
+            # Only keep calls that occurred after SMS
+            merged_calls = merged_calls[merged_calls['time_diff_hours'] >= 0]
 
-        # Count interactions per agent
-        interactions_per_agent = merged_calls.groupby('userId').size().reset_index(name='interactions')
-        interactions_per_agent['Agent'] = interactions_per_agent['userId'].map(agent_map)
+            # Now, each row represents an SMS followed by a successful Call within the time window
+            # Count total interactions
+            total_interactions = len(merged_calls)
 
-        # Display statistics
-        st.markdown(f"**Total SMS Follow-up Call Interactions within {time_window_hours} hours:** {total_interactions}")
-        st.subheader(f"Interactions per Agent within {time_window_hours} hours")
-        st.dataframe(interactions_per_agent[['Agent', 'interactions']])
+            # Count interactions per agent
+            interactions_per_agent = merged_calls.groupby('userId').size().reset_index(name='interactions')
+            interactions_per_agent['Agent'] = interactions_per_agent['userId'].map(agent_map)
 
-        # Optional: Success Rate per Agent (if needed)
-        # Here, since we only count successful calls, it's equivalent to the interaction count
-        # If you have a different definition, adjust accordingly
+            # Display statistics
+            st.markdown(f"**Total SMS Follow-up Call Interactions within {time_window_hours} hours:** {total_interactions}")
+            st.subheader(f"Interactions per Agent within {time_window_hours} hours")
+            st.dataframe(interactions_per_agent[['Agent', 'interactions']])
+
+            # Optional: Success Rate per Agent (if needed)
+            # Here, since we only count successful calls, it's equivalent to the interaction count
+            # If you have a different definition, adjust accordingly
 
     else:
         st.warning("No text messages available to analyze SMS Follow-up Call Effectiveness.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 21. SMS SUCCESS RATE HEATMAP
+    # CALLING #20: TEXT SUCCESS RATE HEATMAP
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Run #20: Text Success Rate Heatmap - Initial outbound message received a response within 24 hours") 
     # If phoneNumber doesn't exist, #20 won't work
