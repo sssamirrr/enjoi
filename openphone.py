@@ -48,10 +48,10 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     msgs_in  = messages[messages['direction'] == 'incoming'].copy()
 
     # Sort outgoing by userId, phoneNumber, day, createdAtET
-    msgs_out.sort_values(by=['userId','phoneNumber','day','createdAtET'], inplace=True)
+    msgs_out = msgs_out.sort_values(by=['userId','phoneNumber','day','createdAtET'])
 
     # Mark only the FIRST outbound text per (agent, phoneNumber, day)
-    msgs_out['is_first_message'] = (
+    msgs_out.loc[:, 'is_first_message'] = (
         msgs_out.groupby(['userId','phoneNumber','day'])['createdAtET']
         .rank(method='first')
         .eq(1)
@@ -59,33 +59,41 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     )
 
     df_first = msgs_out[msgs_out['is_first_message'] == 1].copy()
-    df_first['window_end'] = df_first['createdAtET'] + pd.Timedelta(hours=24)
+    df_first.loc[:, 'window_end'] = df_first['createdAtET'] + pd.Timedelta(hours=24)
 
     # Merge each first outbound with potential inbound replies (same phoneNumber)
-    df_first = df_first.reset_index(drop=True).rename(columns={'index':'orig_index'})
-    merged = df_first.merge(
-        msgs_in[['phoneNumber','createdAtET','direction']],
-        on='phoneNumber', how='left', suffixes=('_out','_in')
+    # Ensure both DataFrames are sorted by 'userId', 'phoneNumber', and 'sms_time'
+    msgs_in_sorted = msgs_in.sort_values(by=['userId','phoneNumber','createdAtET'])
+    df_first_sorted = df_first.sort_values(by=['userId','phoneNumber','createdAtET'])
+
+    # Perform merge_asof
+    merged = pd.merge_asof(
+        df_first_sorted,
+        msgs_in_sorted,
+        left_on='createdAtET',
+        right_on='createdAtET',
+        by='phoneNumber',
+        direction='forward',
+        tolerance=pd.Timedelta(hours=24)
     )
 
-    cond = (
-        (merged['createdAtET_in'] >= merged['createdAtET_out']) &
-        (merged['createdAtET_in'] <= merged['window_end'])
+    # Determine reply success
+    merged['reply_success'] = np.where(
+        (merged['createdAtET_y'] >= merged['createdAtET_x']) &
+        (merged['createdAtET_y'] <= merged['window_end']),
+        1,
+        0
     )
-    merged['reply_success'] = np.where(cond, 1, 0)
 
-    # If ANY inbound matched for that orig_index, success_flag=1
-    success_df = merged.groupby('orig_index')['reply_success'].max().reset_index(name='success_flag')
-    df_first = df_first.merge(success_df, on='orig_index', how='left')
+    # Group by original message index to find if any reply exists
+    success_df = merged.groupby(merged.index)['reply_success'].max().reset_index(name='success_flag')
+    df_first_sorted = df_first_sorted.merge(success_df, left_index=True, right_on='index', how='left')
 
     # Replace NaN in 'success_flag' with 0 (no reply)
-    df_first['success_flag'] = df_first['success_flag'].fillna(0)
+    df_first_sorted['success_flag'] = df_first_sorted['success_flag'].fillna(0)
 
     # Summarize by agent, day, hour
-    df_first['day'] = df_first['day'].astype(str)
-    df_first['hour'] = df_first['hour'].astype(str)
-
-    group_text = df_first.groupby(['userId','day','hour']).agg(
+    group_text = df_first_sorted.groupby(['userId','day','hour']).agg(
         first_messages=('is_first_message','sum'),
         successful=('success_flag','sum')
     ).reset_index()
@@ -195,6 +203,12 @@ def run_openphone_tab():
     # Convert 'createdAtPT' to datetime and handle errors
     openphone_data['createdAtPT'] = pd.to_datetime(openphone_data['createdAtPT'], errors='coerce')
     openphone_data = openphone_data.dropna(subset=['createdAtPT'])  # Remove rows with invalid 'createdAtPT'
+
+    # Handle 'VIP Plan Amount (Opportunity)' column: Convert to numeric, coercing errors
+    if 'VIP Plan Amount (Opportunity)' in openphone_data.columns:
+        openphone_data['VIP Plan Amount (Opportunity)'] = pd.to_numeric(
+            openphone_data['VIP Plan Amount (Opportunity)'], errors='coerce'
+        )
 
     # Localize to PT and convert to ET without 'errors' and 'nonexistent' parameters
     try:
@@ -322,13 +336,13 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 4. SPLIT: CALLS VS. MESSAGES
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    calls = openphone_data[openphone_data['type'] == 'call']
-    messages = openphone_data[openphone_data['type'] == 'message']
+    calls = openphone_data[openphone_data['type'] == 'call'].copy()
+    messages = openphone_data[openphone_data['type'] == 'message'].copy()
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 5. BOOKING / CONVERSION
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    bookings = openphone_data[openphone_data['status'] == 'booked']
+    bookings = openphone_data[openphone_data['status'] == 'booked'].copy()
     total_bookings = len(bookings)
 
     call_conversion_rate = (
@@ -386,8 +400,8 @@ def run_openphone_tab():
         value=30
     )
 
-    outbound_calls = calls[calls['direction'] == 'outgoing']
-    successful_outbound_calls = outbound_calls[outbound_calls['duration'] >= min_success_duration]
+    outbound_calls = calls[calls['direction'] == 'outgoing'].copy()
+    successful_outbound_calls = outbound_calls[outbound_calls['duration'] >= min_success_duration].copy()
 
     success_rate = (
         len(successful_outbound_calls) / len(outbound_calls) * 100
@@ -436,7 +450,7 @@ def run_openphone_tab():
     st.subheader("Call Duration Analysis")
     if 'duration' in calls.columns and not calls['duration'].isnull().all() and not calls.empty:
         mean_dur = calls['duration'].mean()
-        long_calls = calls[calls['duration'] >= mean_dur]
+        long_calls = calls[calls['duration'] >= mean_dur].copy()
         if not long_calls.empty:
             long_calls['hour'] = pd.Categorical(long_calls['hour'], categories=hour_order, ordered=True)
             lc_df = long_calls.groupby('hour').size().reset_index(name='count')
@@ -446,12 +460,8 @@ def run_openphone_tab():
         # Heatmap: day vs. hour (Avg Duration)
         dur_data = calls.groupby(['day','hour'])['duration'].mean().reset_index()
         if not dur_data.empty:
-            pivot_dur = dur_data.pivot(index='day', columns='hour', values='duration')
-            pivot_dur.index = pivot_dur.index.astype(str)
-            pivot_dur.columns = pivot_dur.columns.astype(str)
-            actual_days = [d for d in day_order if d in pivot_dur.index]
-            actual_hours = [h for h in hour_order if h in pivot_dur.columns]
-            pivot_dur = pivot_dur.reindex(index=actual_days, columns=actual_hours).fillna(0)
+            pivot_dur = dur_data.pivot(index='day', columns='hour', values='duration').fillna(0)
+            pivot_dur = pivot_dur.reindex(index=day_order, columns=hour_order, fill_value=0)
 
             fig = px.imshow(
                 pivot_dur,
@@ -468,7 +478,7 @@ def run_openphone_tab():
     st.subheader("Incoming Messages by Hour")
     if not messages.empty:
         messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
-        inc_msgs = messages[messages['direction'] == 'incoming']
+        inc_msgs = messages[messages['direction'] == 'incoming'].copy()
         inc_counts = inc_msgs.groupby('hour').size().reset_index(name='count')
         fig = px.bar(inc_counts, x='hour', y='count', title="Incoming Msgs by Hour (12 AM -> 11 PM)")
         st.plotly_chart(fig)
@@ -476,12 +486,8 @@ def run_openphone_tab():
         # Heatmap: day vs. hour
         msg_df = messages.groupby(['day','hour']).size().reset_index(name='count')
         if not msg_df.empty:
-            pivot_msg = msg_df.pivot(index='day', columns='hour', values='count')
-            pivot_msg.index = pivot_msg.index.astype(str)
-            pivot_msg.columns = pivot_msg.columns.astype(str)
-            actual_days = [d for d in day_order if d in pivot_msg.index]
-            actual_hours = [h for h in hour_order if h in pivot_msg.columns]
-            pivot_msg = pivot_msg.reindex(index=actual_days, columns=actual_hours).fillna(0)
+            pivot_msg = msg_df.pivot(index='day', columns='hour', values='count').fillna(0)
+            pivot_msg = pivot_msg.reindex(index=day_order, columns=hour_order, fill_value=0)
 
             fig = px.imshow(
                 pivot_msg,
@@ -543,12 +549,8 @@ def run_openphone_tab():
     if not calls.empty:
         vol_df = calls.groupby(['day','hour']).size().reset_index(name='count')
         if not vol_df.empty:
-            pivot_vol = vol_df.pivot(index='day', columns='hour', values='count')
-            pivot_vol.index = pivot_vol.index.astype(str)
-            pivot_vol.columns = pivot_vol.columns.astype(str)
-            actual_days = [d for d in day_order if d in pivot_vol.index]
-            actual_hours = [h for h in hour_order if h in pivot_vol.columns]
-            pivot_vol = pivot_vol.reindex(index=actual_days, columns=actual_hours).fillna(0)
+            pivot_vol = vol_df.pivot(index='day', columns='hour', values='count').fillna(0)
+            pivot_vol = pivot_vol.reindex(index=day_order, columns=hour_order, fill_value=0)
 
             fig = px.imshow(
                 pivot_vol,
@@ -565,12 +567,8 @@ def run_openphone_tab():
     st.subheader("Successful Outbound Calls Heatmap")
     if not successful_outbound_calls.empty:
         so_df = successful_outbound_calls.groupby(['day','hour']).size().reset_index(name='count')
-        pivot_so = so_df.pivot(index='day', columns='hour', values='count')
-        pivot_so.index = pivot_so.index.astype(str)
-        pivot_so.columns = pivot_so.columns.astype(str)
-        actual_days = [d for d in day_order if d in pivot_so.index]
-        actual_hours = [h for h in hour_order if h in pivot_so.columns]
-        pivot_so = pivot_so.reindex(index=actual_days, columns=actual_hours).fillna(0)
+        pivot_so = so_df.pivot(index='day', columns='hour', values='count').fillna(0)
+        pivot_so = pivot_so.reindex(index=day_order, columns=hour_order, fill_value=0)
 
         fig = px.imshow(
             pivot_so,
@@ -584,17 +582,13 @@ def run_openphone_tab():
         df_agent_so = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
         for agent in selected_agents:
             agent_short = agent_map.get(agent, agent)
-            adf = df_agent_so[df_agent_so['userId'] == agent]
+            adf = df_agent_so[df_agent_so['userId'] == agent].copy()
             if adf.empty:
                 st.write(f"No successful outbound calls for: {agent_short}")
                 continue
 
-            pivot_a = adf.pivot(index='day', columns='hour', values='count')
-            pivot_a.index = pivot_a.index.astype(str)
-            pivot_a.columns = pivot_a.columns.astype(str)
-            a_days = [d for d in day_order if d in pivot_a.index]
-            a_hours = [h for h in hour_order if h in pivot_a.columns]
-            pivot_a = pivot_a.reindex(index=a_days, columns=a_hours).fillna(0)
+            pivot_a = adf.pivot(index='day', columns='hour', values='count').fillna(0)
+            pivot_a = pivot_a.reindex(index=day_order, columns=hour_order, fill_value=0)
 
             fig = px.imshow(
                 pivot_a,
@@ -619,17 +613,13 @@ def run_openphone_tab():
 
         for agent in selected_agents:
             agent_short = agent_map.get(agent, agent)
-            agent_df = merged[merged['userId'] == agent]
+            agent_df = merged[merged['userId'] == agent].copy()
             if agent_df.empty:
                 st.write(f"No outbound calls for agent: {agent_short}")
                 continue
 
-            pivot_srate = agent_df.pivot(index='day', columns='hour', values='success_rate')
-            pivot_srate.index = pivot_srate.index.astype(str)
-            pivot_srate.columns = pivot_srate.columns.astype(str)
-            a_days = [d for d in day_order if d in pivot_srate.index]
-            a_hours = [h for h in hour_order if h in pivot_srate.columns]
-            pivot_srate = pivot_srate.reindex(index=a_days, columns=a_hours).fillna(0)
+            pivot_srate = agent_df.pivot(index='day', columns='hour', values='success_rate').fillna(0)
+            pivot_srate = pivot_srate.reindex(index=day_order, columns=hour_order, fill_value=0)
 
             fig = px.imshow(
                 pivot_srate,
@@ -661,13 +651,13 @@ def run_openphone_tab():
             merged_df = pd.merge(outb_df, succ_df, on=['day','hour'], how='outer').fillna(0)
             merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
 
-            pivot_rate     = merged_df.pivot(index='day', columns='hour', values='success_rate')
-            pivot_outbound = merged_df.pivot(index='day', columns='hour', values='outbound_count')
-            pivot_success  = merged_df.pivot(index='day', columns='hour', values='success_count')
+            pivot_rate     = merged_df.pivot(index='day', columns='hour', values='success_rate').fillna(0)
+            pivot_outbound = merged_df.pivot(index='day', columns='hour', values='outbound_count').fillna(0)
+            pivot_success  = merged_df.pivot(index='day', columns='hour', values='success_count').fillna(0)
 
-            pivot_rate     = pivot_rate.reindex(index=day_order, columns=hour_order).fillna(0)
-            pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order).fillna(0)
-            pivot_success  = pivot_success.reindex(index=day_order, columns=hour_order).fillna(0)
+            pivot_rate     = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_success  = pivot_success.reindex(index=day_order, columns=hour_order, fill_value=0)
 
             fig_combined = px.imshow(
                 pivot_rate,
@@ -748,7 +738,7 @@ def run_openphone_tab():
         st.plotly_chart(fig, use_container_width=True)
 
         st.write("Detailed Summary:")
-        summary_table = summary[['agent_name', 'successful_calls', 'total_calls', 'success_rate']]
+        summary_table = summary[['agent_name', 'successful_calls', 'total_calls', 'success_rate']].copy()
         summary_table.columns = ['Agent', 'Successful Calls', 'Total Calls', 'Success Rate (%)']
         st.table(summary_table)
     else:
