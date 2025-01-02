@@ -715,17 +715,91 @@ def run_openphone_tab():
         st.warning("Comparison not shown. Need 2+ agents selected and some calls present.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # CALLING #20: TEXT SUCCESS RATE HEATMAP
+    # 20. SMS FOLLOW-UP CALL EFFECTIVENESS
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("SMS Follow-up Call Effectiveness")
+
+    # Slider for time window between SMS and Call
+    time_window_hours = st.slider(
+        "Time between initial SMS and follow-up Call (hours)",
+        min_value=1,
+        max_value=24,
+        value=24,
+        step=1
+    )
+
     if not messages.empty:
-        st.subheader("Run #20: Text Success Rate Heatmam - Initial outbound message received a response within 24 hours ") 
-        # If phoneNumber doesn't exist, #20 won't work
-        if 'phoneNumber' not in messages.columns:
-            st.warning("No 'phoneNumber' column found in messages. #20 requires it to group texts by recipient.")
-        else:
-            run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map)
+        # Define outgoing SMS
+        sms_df = messages[
+            (messages['direction'] == 'outgoing') &
+            (messages['type'] == 'message')
+        ].copy()
+
+        # Define successful outgoing calls
+        successful_calls_df = openphone_data[
+            (openphone_data['direction'] == 'outgoing') &
+            (openphone_data['type'] == 'call') &
+            (openphone_data['status'] == 'completed') &
+            (openphone_data['duration'] > 0)
+        ].copy()
+
+        # Sort DataFrames
+        sms_df = sms_df.sort_values(['userId', 'phoneNumber', 'createdAtET'])
+        successful_calls_df = successful_calls_df.sort_values(['userId', 'phoneNumber', 'createdAtET'])
+
+        # Rename columns for merge_asof
+        sms_df = sms_df.rename(columns={'createdAtET': 'sms_time'})
+        successful_calls_df = successful_calls_df.rename(columns={'createdAtET': 'call_time'})
+
+        # Perform merge_asof to find the first call after SMS within the time window
+        merged_calls = pd.merge_asof(
+            sms_df,
+            successful_calls_df,
+            left_on='sms_time',
+            right_on='call_time',
+            by=['userId', 'phoneNumber'],
+            direction='forward',
+            tolerance=pd.Timedelta(hours=time_window_hours)
+        )
+
+        # Calculate time difference
+        merged_calls['time_diff_hours'] = (merged_calls['call_time'] - merged_calls['sms_time']).dt.total_seconds() / 3600
+
+        # Drop rows where no call was found within the time window
+        merged_calls = merged_calls.dropna(subset=['call_time'])
+
+        # Only keep calls that occurred after SMS
+        merged_calls = merged_calls[merged_calls['time_diff_hours'] >= 0]
+
+        # Now, each row represents an SMS followed by a successful Call within the time window
+        # Count total interactions
+        total_interactions = len(merged_calls)
+
+        # Count interactions per agent
+        interactions_per_agent = merged_calls.groupby('userId').size().reset_index(name='interactions')
+        interactions_per_agent['Agent'] = interactions_per_agent['userId'].map(agent_map)
+
+        # Display statistics
+        st.markdown(f"**Total SMS Follow-up Call Interactions within {time_window_hours} hours:** {total_interactions}")
+        st.subheader(f"Interactions per Agent within {time_window_hours} hours")
+        st.dataframe(interactions_per_agent[['Agent', 'interactions']])
+
+        # Optional: Success Rate per Agent (if needed)
+        # Here, since we only count successful calls, it's equivalent to the interaction count
+        # If you have a different definition, adjust accordingly
+
     else:
-        st.warning("No text messages to analyze for #20.")
+        st.warning("No text messages available to analyze SMS Follow-up Call Effectiveness.")
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 21. SMS SUCCESS RATE HEATMAP
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    st.subheader("Run #20: Text Success Rate Heatmap - Initial outbound message received a response within 24 hours") 
+    # If phoneNumber doesn't exist, #20 won't work
+    if 'phoneNumber' not in messages.columns:
+        st.warning("No 'phoneNumber' column found in messages. #20 requires it to group texts by recipient.")
+    else:
+        run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map)
 
     st.success("Enhanced Dashboard Complete!")
 
