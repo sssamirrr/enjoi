@@ -729,6 +729,185 @@ def run_openphone_tab():
 
     st.success("Enhanced Dashboard Complete!")
 
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 21. TEXT→CALL FOLLOW-UP HEATMAP & SUMMARY
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    def run_text_call_followup_heatmap(messages, calls,
+                                       day_order, hour_order,
+                                       agent_map=None,
+                                       default_time_window=8):
+        """
+        # TEXT→CALL FOLLOW-UP HEATMAP
+    
+        1) Identify outbound calls that occur within `time_window_hours` after 
+           an outbound SMS to the same phoneNumber by the same user.
+        2) Generate a day-hour heatmap (via Plotly) to visualize how often 
+           agents perform a follow-up call after texts.
+        3) Display a summary table of these text→call interactions per agent, 
+           with relevant metrics.
+        """
+    
+        st.subheader("21) Text→Call Follow-Up Heatmap & Metrics")
+    
+        # Quick checks
+        if messages.empty or calls.empty:
+            st.warning("No messages or calls found. Cannot compute text→call follow-up.")
+            return
+    
+        # 1) Slider for time window
+        time_window_hours = st.slider(
+            "Time Window (hours) for Call Follow-Up After Text",
+            min_value=1, max_value=72, value=default_time_window, step=1
+        )
+    
+        # 2) Filter to outbound messages & outbound calls
+        msgs_out = messages[messages['direction'] == 'outgoing'].copy()
+        calls_out = calls[calls['direction'] == 'outgoing'].copy()
+        if msgs_out.empty or calls_out.empty:
+            st.warning("No outbound messages or outbound calls. Cannot compute follow-ups.")
+            return
+    
+        # Create convenience columns
+        msgs_out['text_time'] = msgs_out['createdAtET']
+        calls_out['call_time'] = calls_out['createdAtET']
+    
+        # Sort by user, phoneNumber, time
+        msgs_out.sort_values(by=['userId','phoneNumber','text_time'], inplace=True)
+        calls_out.sort_values(by=['userId','phoneNumber','call_time'], inplace=True)
+    
+        # For each text, define the call deadline
+        msgs_out['call_deadline'] = msgs_out['text_time'] + pd.Timedelta(hours=time_window_hours)
+    
+        # Merge on userId & phoneNumber
+        merged = msgs_out.merge(
+            calls_out[['userId','phoneNumber','call_time']],
+            on=['userId','phoneNumber'],
+            how='left'
+        )
+    
+        # Condition: call_time in (text_time, text_time + time_window)
+        cond = (
+            (merged['call_time'] > merged['text_time']) &
+            (merged['call_time'] <= merged['call_deadline'])
+        )
+        merged['call_followup'] = np.where(cond, 1, 0)
+    
+        # Each text only needs to know if ANY call matched => groupby text index
+        merged = merged.reset_index(drop=False).rename(columns={'index':'text_index'})
+        success_df = merged.groupby('text_index')['call_followup'].max().reset_index(name='followup_flag')
+    
+        # Attach followup_flag back to msgs_out
+        msgs_out = msgs_out.reset_index(drop=False).rename(columns={'index':'orig_text_idx'})
+        msgs_out = msgs_out.merge(
+            success_df, left_on='orig_text_idx', right_on='text_index', how='left'
+        ).drop(columns=['text_index'])
+    
+        # Create day/hour from text_time
+        msgs_out['text_day']  = msgs_out['text_time'].dt.strftime('%A')
+        msgs_out['text_hour'] = msgs_out['text_time'].dt.strftime('%I %p')
+    
+        group_df = msgs_out.groupby(['userId','text_day','text_hour']).agg(
+            total_outbound_texts=('orig_text_idx','count'),
+            had_followup_call=('followup_flag','sum')
+        ).reset_index()
+    
+        group_df['followup_rate'] = (
+            group_df['had_followup_call'] / group_df['total_outbound_texts'] * 100
+        ).fillna(0)
+    
+        # If no agent_map was passed in, default to full userId
+        if agent_map is None:
+            agent_map = {}
+    
+        def get_agent_short(u):
+            return agent_map.get(u, u)
+    
+        all_agents = group_df['userId'].unique()
+        if not len(all_agents):
+            st.warning("No agent data found in text->call follow-up grouping.")
+            return
+    
+        # HEATMAPS per agent
+        for agent_id in all_agents:
+            adf = group_df[group_df['userId'] == agent_id].copy()
+            if adf.empty:
+                continue
+    
+            pivot_rate = adf.pivot(index='text_day', columns='text_hour', values='followup_rate').fillna(0)
+            pivot_txts = adf.pivot(index='text_day', columns='text_hour', values='total_outbound_texts').fillna(0)
+            pivot_succ = adf.pivot(index='text_day', columns='text_hour', values='had_followup_call').fillna(0)
+    
+            # Reindex based on day_order/hour_order
+            pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_txts = pivot_txts.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_succ = pivot_succ.reindex(index=day_order, columns=hour_order, fill_value=0)
+    
+            agent_short = get_agent_short(agent_id)
+            fig = px.imshow(
+                pivot_rate,
+                color_continuous_scale='Greens',
+                range_color=[0,100],
+                labels=dict(x="Hour of Text", y="Day of Text", color="Follow-Up Rate (%)"),
+                title=f"Text→Call Follow-Up Rate - {agent_short} (within {time_window_hours} hrs)"
+            )
+    
+            # Build custom hover text
+            hover_text = []
+            for d in day_order:
+                row_data = []
+                for h in hour_order:
+                    rate_val = pivot_rate.loc[d, h]
+                    txts_val = pivot_txts.loc[d, h]
+                    succ_val = pivot_succ.loc[d, h]
+                    row_data.append(
+                        f"Day: {d}<br>Hour: {h}<br>"
+                        f"Follow-Up Rate: {rate_val:.1f}%<br>"
+                        f"Outbound Texts: {int(txts_val)}<br>"
+                        f"Got Follow-Up Calls: {int(succ_val)}"
+                    )
+                hover_text.append(row_data)
+    
+            fig.update_traces(
+                customdata=hover_text,
+                hovertemplate="%{customdata}<extra></extra>"
+            )
+            fig.update_xaxes(side="top")
+            fig.update_layout(height=400, margin=dict(l=50, r=50, t=50, b=50))
+    
+            st.plotly_chart(fig, use_container_width=True)
+    
+        # SUMMARY TABLE
+        sum_df = group_df.groupby('userId').agg(
+            total_texts=('total_outbound_texts','sum'),
+            total_followups=('had_followup_call','sum')
+        ).reset_index()
+        sum_df['followup_rate'] = (sum_df['total_followups'] / sum_df['total_texts'] * 100).round(1).fillna(0)
+        sum_df['Agent'] = sum_df['userId'].map(get_agent_short)
+    
+        st.subheader("Text→Call Follow-Up Summary by Agent")
+        st.dataframe(sum_df[['Agent', 'userId', 'total_texts', 'total_followups', 'followup_rate']])
+    
+    # Then inside your main run_openphone_tab(), you might place:
+    def run_openphone_tab():
+        ...
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 21. TEXT→CALL FOLLOW-UP HEATMAP & SUMMARY
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    if not messages.empty and not calls.empty:
+        run_text_call_followup_heatmap(
+            messages=messages,
+            calls=calls,
+            day_order=day_order,
+            hour_order=hour_order,
+            agent_map=agent_map,
+            default_time_window=8  # or whatever default you want
+        )
+    else:
+        st.warning("Cannot perform text→call follow-up; no messages or calls.")
+
+
+
 # Optionally, define a main() if you prefer:
 # def main():
 #     run_openphone_tab()
