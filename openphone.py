@@ -9,50 +9,34 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     """
     # 20. TEXT SUCCESS RATE HEATMAP BY DAY & HOUR
 
-    messages: DataFrame of text messages with columns:
-       - userId (str) => agent email
-       - direction (str) => 'incoming' or 'outgoing'
-       - createdAtET (datetime64[ns, tz]) => timestamp in Eastern Time
-       - phoneNumber (str) => unique phone number for the message recipient
-       - type (str) => 'message' to differentiate from calls
-
-    day_order: list of days in desired order, e.g.:
-        ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-
-    hour_order: list of 12-hour clock strings, e.g.:
-        ["12 AM","01 AM","02 AM","03 AM","04 AM","05 AM","06 AM","07 AM",
-         "08 AM","09 AM","10 AM","11 AM","12 PM","01 PM","02 PM","03 PM",
-         "04 PM","05 PM","06 PM","07 PM","08 PM","09 PM","10 PM","11 PM"]
-
-    agent_map: dict (optional), mapping full emails to short agent names
-        e.g. {"john@enjoiresorts.com": "john", ...}
-        If None, the function uses the raw userId.
-
-    Steps in this code:
-       1) Identifies 'first outbound messages' each day by userId + phoneNumber
-       2) Checks for any incoming reply from the same phoneNumber within 24 hrs
-       3) Computes success rate per (agent, day, hour)
-       4) Renders a heatmap for each agent, coloring by success rate
-       5) Tooltip shows day, hour, success rate, # first messages, # successful
+    Parameters:
+    - messages: DataFrame containing text messages with required columns.
+    - day_order: List specifying the order of days.
+    - hour_order: List specifying the order of hours.
+    - agent_map: Optional dictionary mapping full emails to short agent names.
     """
-
-    # Make a copy to avoid modifying the original df
+    # Make a copy to avoid modifying the original DataFrame
     messages = messages.copy()
 
-    # Create 'day' & 'hour' columns if not present
+    # Ensure 'createdAtET' exists
+    if 'createdAtET' not in messages.columns:
+        st.error("The 'createdAtET' column is missing from the messages data.")
+        return
+
+    # Create 'day' & 'hour' columns
     messages['day'] = messages['createdAtET'].dt.strftime('%A')
     messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
 
-    # Separate outgoing vs. incoming
+    # Separate outgoing vs. incoming messages
     msgs_out = messages[messages['direction'] == 'outgoing'].copy()
-    msgs_in  = messages[messages['direction'] == 'incoming'].copy()
+    msgs_in = messages[messages['direction'] == 'incoming'].copy()
 
-    # Sort outgoing by userId, phoneNumber, day, createdAtET
-    msgs_out = msgs_out.sort_values(by=['userId','phoneNumber','day','createdAtET'])
+    # Sort outgoing messages by userId, phoneNumber, day, and createdAtET
+    msgs_out = msgs_out.sort_values(by=['userId', 'phoneNumber', 'day', 'createdAtET'])
 
     # Mark only the FIRST outbound text per (agent, phoneNumber, day)
     msgs_out.loc[:, 'is_first_message'] = (
-        msgs_out.groupby(['userId','phoneNumber','day'])['createdAtET']
+        msgs_out.groupby(['userId', 'phoneNumber', 'day'])['createdAtET']
         .rank(method='first')
         .eq(1)
         .astype(int)
@@ -61,12 +45,11 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     df_first = msgs_out[msgs_out['is_first_message'] == 1].copy()
     df_first.loc[:, 'window_end'] = df_first['createdAtET'] + pd.Timedelta(hours=24)
 
-    # Merge each first outbound with potential inbound replies (same phoneNumber)
-    # Ensure both DataFrames are sorted by 'userId', 'phoneNumber', and 'sms_time'
-    msgs_in_sorted = msgs_in.sort_values(by=['userId','phoneNumber','createdAtET'])
-    df_first_sorted = df_first.sort_values(by=['userId','phoneNumber','createdAtET'])
+    # Sort both DataFrames before merge_asof
+    msgs_in_sorted = msgs_in.sort_values(by=['userId', 'phoneNumber', 'createdAtET'])
+    df_first_sorted = df_first.sort_values(by=['userId', 'phoneNumber', 'createdAtET'])
 
-    # Perform merge_asof
+    # Perform merge_asof to find the first incoming message after the outbound message within 24 hours
     merged = pd.merge_asof(
         df_first_sorted,
         msgs_in_sorted,
@@ -93,9 +76,9 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     df_first_sorted['success_flag'] = df_first_sorted['success_flag'].fillna(0)
 
     # Summarize by agent, day, hour
-    group_text = df_first_sorted.groupby(['userId','day','hour']).agg(
-        first_messages=('is_first_message','sum'),
-        successful=('success_flag','sum')
+    group_text = df_first_sorted.groupby(['userId', 'day', 'hour']).agg(
+        first_messages=('is_first_message', 'sum'),
+        successful=('success_flag', 'sum')
     ).reset_index()
 
     group_text['success_rate'] = (
@@ -121,20 +104,20 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
         if agent_df.empty:
             continue
 
-        pivot_rate  = agent_df.pivot(index='day', columns='hour', values='success_rate').fillna(0)
+        pivot_rate = agent_df.pivot(index='day', columns='hour', values='success_rate').fillna(0)
         pivot_first = agent_df.pivot(index='day', columns='hour', values='first_messages').fillna(0)
-        pivot_succ  = agent_df.pivot(index='day', columns='hour', values='successful').fillna(0)
+        pivot_succ = agent_df.pivot(index='day', columns='hour', values='successful').fillna(0)
 
-        pivot_rate  = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
+        pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
         pivot_first = pivot_first.reindex(index=day_order, columns=hour_order, fill_value=0)
-        pivot_succ  = pivot_succ.reindex(index=day_order, columns=hour_order, fill_value=0)
+        pivot_succ = pivot_succ.reindex(index=day_order, columns=hour_order, fill_value=0)
 
         agent_title = f"{get_agent_short(agent_id)} ({agent_id})"
 
         fig = px.imshow(
             pivot_rate,
             color_continuous_scale='Blues',
-            range_color=[0,100],
+            range_color=[0, 100],
             labels=dict(x="Hour", y="Day", color="Rate (%)"),
             title=f"Agent: {agent_title} - Text Success Rate"
         )
@@ -144,7 +127,7 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
         for d in day_order:
             row_text = []
             for h in hour_order:
-                r_val   = pivot_rate.loc[d, h]
+                r_val = pivot_rate.loc[d, h]
                 f_count = pivot_first.loc[d, h]
                 s_count = pivot_succ.loc[d, h]
                 txt = (
@@ -167,8 +150,8 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
 
     # Overall Summary Table
     sum_agent = group_text.groupby('userId').agg(
-        total_first=('first_messages','sum'),
-        total_success=('successful','sum')
+        total_first=('first_messages', 'sum'),
+        total_success=('successful', 'sum')
     ).reset_index()
     sum_agent['success_rate'] = (sum_agent['total_success'] / sum_agent['total_first'] * 100).round(1).fillna(0)
     sum_agent['Agent'] = sum_agent['userId'].map(get_agent_short)
@@ -369,11 +352,11 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 7. DEFINE day AND hour (STRING) + day_order & hour_order
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     hour_order = [
-        "12 AM","01 AM","02 AM","03 AM","04 AM","05 AM","06 AM","07 AM",
-        "08 AM","09 AM","10 AM","11 AM","12 PM","01 PM","02 PM","03 PM",
-        "04 PM","05 PM","06 PM","07 PM","08 PM","09 PM","10 PM","11 PM"
+        "12 AM", "01 AM", "02 AM", "03 AM", "04 AM", "05 AM", "06 AM", "07 AM",
+        "08 AM", "09 AM", "10 AM", "11 AM", "12 PM", "01 PM", "02 PM", "03 PM",
+        "04 PM", "05 PM", "06 PM", "07 PM", "08 PM", "09 PM", "10 PM", "11 PM"
     ]
 
     if not calls.empty:
@@ -423,7 +406,7 @@ def run_openphone_tab():
     st.subheader("Key Metrics")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric("Total Bookings", total_bookings)
+        st.metric("Total Bookings", int(total_bookings))
     with c2:
         st.metric("Call Conv. Rate", f"{call_conversion_rate:.2f}%")
     with c3:
@@ -437,12 +420,12 @@ def run_openphone_tab():
     st.subheader("Hourly Trends (12 AM -> 11 PM)")
     if not calls.empty:
         calls['hour'] = pd.Categorical(calls['hour'], categories=hour_order, ordered=True)
-        hourly_stats = calls.groupby(['hour','direction']).size().reset_index(name='count')
+        hourly_stats = calls.groupby(['hour', 'direction']).size().reset_index(name='count')
         fig = px.bar(hourly_stats, x='hour', y='count', color='direction',
                      barmode='group', title="Calls by Hour")
         st.plotly_chart(fig)
     else:
-        st.warning("No calls found in range/filters.")
+        st.warning("No calls found in the selected date range and agents.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 11. CALL DURATION ANALYSIS
@@ -458,7 +441,7 @@ def run_openphone_tab():
             st.plotly_chart(fig)
 
         # Heatmap: day vs. hour (Avg Duration)
-        dur_data = calls.groupby(['day','hour'])['duration'].mean().reset_index()
+        dur_data = calls.groupby(['day', 'hour'])['duration'].mean().reset_index()
         if not dur_data.empty:
             pivot_dur = dur_data.pivot(index='day', columns='hour', values='duration').fillna(0)
             pivot_dur = pivot_dur.reindex(index=day_order, columns=hour_order, fill_value=0)
@@ -470,7 +453,7 @@ def run_openphone_tab():
             )
             st.plotly_chart(fig)
     else:
-        st.warning("No 'duration' data or no calls in filters.")
+        st.warning("No 'duration' data or no calls available for analysis.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 12. INCOMING MESSAGE ANALYSIS
@@ -480,11 +463,11 @@ def run_openphone_tab():
         messages['hour'] = pd.Categorical(messages['hour'], categories=hour_order, ordered=True)
         inc_msgs = messages[messages['direction'] == 'incoming'].copy()
         inc_counts = inc_msgs.groupby('hour').size().reset_index(name='count')
-        fig = px.bar(inc_counts, x='hour', y='count', title="Incoming Msgs by Hour (12 AM -> 11 PM)")
+        fig = px.bar(inc_counts, x='hour', y='count', title="Incoming Messages by Hour (12 AM -> 11 PM)")
         st.plotly_chart(fig)
 
         # Heatmap: day vs. hour
-        msg_df = messages.groupby(['day','hour']).size().reset_index(name='count')
+        msg_df = messages.groupby(['day', 'hour']).size().reset_index(name='count')
         if not msg_df.empty:
             pivot_msg = msg_df.pivot(index='day', columns='hour', values='count').fillna(0)
             pivot_msg = pivot_msg.reindex(index=day_order, columns=hour_order, fill_value=0)
@@ -496,7 +479,7 @@ def run_openphone_tab():
             )
             st.plotly_chart(fig)
     else:
-        st.warning("No messages found in range/filters.")
+        st.warning("No incoming messages found in the selected date range and agents.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 13. AGENT PERFORMANCE (CALLS & BOOKINGS)
@@ -506,13 +489,13 @@ def run_openphone_tab():
         fig = px.bar(
             agent_performance,
             x='Agent',
-            y=['total_calls','total_bookings'],
+            y=['total_calls', 'total_bookings'],
             title="Agent Performance",
             barmode='group'
         )
         st.plotly_chart(fig)
         st.dataframe(agent_performance.rename(columns={
-            'Agent': 'Agent (short)',
+            'Agent': 'Agent (Short)',
             'total_calls': 'Total Calls',
             'total_bookings': 'Total Bookings',
             'booking_rate': 'Booking Rate (%)'
@@ -528,26 +511,26 @@ def run_openphone_tab():
         fig = px.bar(
             agent_success_rate,
             x='Agent',
-            y=['total_outbound_calls','successful_calls'],
+            y=['total_outbound_calls', 'successful_calls'],
             title="Outbound Success Rate",
             barmode='group'
         )
         st.plotly_chart(fig)
         st.dataframe(agent_success_rate.rename(columns={
-            'Agent': 'Agent (short)',
+            'Agent': 'Agent (Short)',
             'total_outbound_calls': 'Total Outbound Calls',
             'successful_calls': 'Successful Calls',
             'success_rate': 'Success Rate (%)'
         }))
     else:
-        st.warning("No outbound success data.")
+        st.warning("No outbound success data available.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 15. CALL VOLUME HEATMAP
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Call Volume Heatmap")
     if not calls.empty:
-        vol_df = calls.groupby(['day','hour']).size().reset_index(name='count')
+        vol_df = calls.groupby(['day', 'hour']).size().reset_index(name='count')
         if not vol_df.empty:
             pivot_vol = vol_df.pivot(index='day', columns='hour', values='count').fillna(0)
             pivot_vol = pivot_vol.reindex(index=day_order, columns=hour_order, fill_value=0)
@@ -559,14 +542,14 @@ def run_openphone_tab():
             )
             st.plotly_chart(fig)
     else:
-        st.warning("No calls to show volume heatmap.")
+        st.warning("No calls available to display volume heatmap.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 16. SUCCESSFUL OUTBOUND CALLS HEATMAP
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Successful Outbound Calls Heatmap")
     if not successful_outbound_calls.empty:
-        so_df = successful_outbound_calls.groupby(['day','hour']).size().reset_index(name='count')
+        so_df = successful_outbound_calls.groupby(['day', 'hour']).size().reset_index(name='count')
         pivot_so = so_df.pivot(index='day', columns='hour', values='count').fillna(0)
         pivot_so = pivot_so.reindex(index=day_order, columns=hour_order, fill_value=0)
 
@@ -579,7 +562,7 @@ def run_openphone_tab():
         st.plotly_chart(fig)
 
         st.subheader("Compare Agents: Successful Outbound Calls (Day vs. Hour)")
-        df_agent_so = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='count')
+        df_agent_so = successful_outbound_calls.groupby(['userId', 'day', 'hour']).size().reset_index(name='count')
         for agent in selected_agents:
             agent_short = agent_map.get(agent, agent)
             adf = df_agent_so[df_agent_so['userId'] == agent].copy()
@@ -605,10 +588,10 @@ def run_openphone_tab():
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     st.subheader("Agent Success Rate Heatmap by Day & Hour")
     if not outbound_calls.empty:
-        group_outbound = outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='outbound_count')
-        group_success = successful_outbound_calls.groupby(['userId','day','hour']).size().reset_index(name='success_count')
+        group_outbound = outbound_calls.groupby(['userId', 'day', 'hour']).size().reset_index(name='outbound_count')
+        group_success = successful_outbound_calls.groupby(['userId', 'day', 'hour']).size().reset_index(name='success_count')
 
-        merged = pd.merge(group_outbound, group_success, on=['userId','day','hour'], how='outer').fillna(0)
+        merged = pd.merge(group_outbound, group_success, on=['userId', 'day', 'hour'], how='outer').fillna(0)
         merged['success_rate'] = (merged['success_count'] / merged['outbound_count']) * 100
 
         for agent in selected_agents:
@@ -631,7 +614,7 @@ def run_openphone_tab():
             fig.update_layout(coloraxis=dict(cmin=0, cmax=100))
             st.plotly_chart(fig)
     else:
-        st.warning("No outbound calls for success rate heatmap.")
+        st.warning("No outbound calls available to display success rate heatmap.")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 18. AGENT-BY-AGENT HEATMAPS: Success Rate & Outbound Calls
@@ -644,20 +627,20 @@ def run_openphone_tab():
             st.markdown(f"### {agent_name}")
 
             agent_outbound = outbound_calls[outbound_calls['userId'] == agent_id].copy()
-            agent_success  = successful_outbound_calls[successful_outbound_calls['userId'] == agent_id].copy()
+            agent_success = successful_outbound_calls[successful_outbound_calls['userId'] == agent_id].copy()
 
-            outb_df = agent_outbound.groupby(['day','hour']).size().reset_index(name='outbound_count')
-            succ_df = agent_success.groupby(['day','hour']).size().reset_index(name='success_count')
-            merged_df = pd.merge(outb_df, succ_df, on=['day','hour'], how='outer').fillna(0)
+            outb_df = agent_outbound.groupby(['day', 'hour']).size().reset_index(name='outbound_count')
+            succ_df = agent_success.groupby(['day', 'hour']).size().reset_index(name='success_count')
+            merged_df = pd.merge(outb_df, succ_df, on=['day', 'hour'], how='outer').fillna(0)
             merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
 
-            pivot_rate     = merged_df.pivot(index='day', columns='hour', values='success_rate').fillna(0)
+            pivot_rate = merged_df.pivot(index='day', columns='hour', values='success_rate').fillna(0)
             pivot_outbound = merged_df.pivot(index='day', columns='hour', values='outbound_count').fillna(0)
-            pivot_success  = merged_df.pivot(index='day', columns='hour', values='success_count').fillna(0)
+            pivot_success = merged_df.pivot(index='day', columns='hour', values='success_count').fillna(0)
 
-            pivot_rate     = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
             pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order, fill_value=0)
-            pivot_success  = pivot_success.reindex(index=day_order, columns=hour_order, fill_value=0)
+            pivot_success = pivot_success.reindex(index=day_order, columns=hour_order, fill_value=0)
 
             fig_combined = px.imshow(
                 pivot_rate,
@@ -679,8 +662,8 @@ def run_openphone_tab():
             ]
 
             fig_combined.update_traces(
-                hovertemplate="%{customdata}<extra></extra>",
-                customdata=hover_text
+                customdata=hover_text,
+                hovertemplate="%{customdata}<extra></extra>"
             )
             fig_combined.update_xaxes(side="top")
             fig_combined.update_layout(height=300, margin=dict(l=50, r=50, t=50, b=20))
