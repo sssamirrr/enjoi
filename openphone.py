@@ -39,6 +39,9 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     # Make a copy to avoid modifying the original df
     messages = messages.copy()
 
+    # Drop rows with missing 'createdAtET' as they are essential for analysis
+    messages = messages.dropna(subset=['createdAtET'])
+
     # Create 'day' & 'hour' columns if not present
     messages['day'] = messages['createdAtET'].dt.strftime('%A')
     messages['hour'] = messages['createdAtET'].dt.strftime('%I %p')
@@ -46,6 +49,10 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     # Separate outgoing vs. incoming
     msgs_out = messages[messages['direction'] == 'outgoing'].copy()
     msgs_in  = messages[messages['direction'] == 'incoming'].copy()
+
+    if msgs_out.empty:
+        st.warning("No outgoing messages found for Text Success Rate Heatmap.")
+        return
 
     # Sort outgoing by time
     msgs_out.sort_values(by=['userId','phoneNumber','day','createdAtET'], inplace=True)
@@ -62,7 +69,7 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     df_first['window_end'] = df_first['createdAtET'] + pd.Timedelta(hours=24)
 
     # Merge each first outbound with potential inbound replies (same phoneNumber)
-    df_first = df_first.reset_index(drop=False).rename(columns={'index':'orig_index'})
+    df_first = df_first.reset_index(drop=True).rename(columns={'index':'orig_index'})
     merged = df_first.merge(
         msgs_in[['phoneNumber','createdAtET','direction']],
         on='phoneNumber', how='left', suffixes=('_out','_in')
@@ -77,6 +84,9 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     # If ANY inbound matched for that orig_index, success_flag=1
     success_df = merged.groupby('orig_index')['reply_success'].max().reset_index(name='success_flag')
     df_first = df_first.merge(success_df, on='orig_index', how='left')
+
+    # Replace NaN in 'success_flag' with 0 (no reply)
+    df_first['success_flag'] = df_first['success_flag'].fillna(0)
 
     # Summarize by agent, day, hour
     df_first['day'] = df_first['day'].astype(str)
@@ -275,6 +285,7 @@ def run_openphone_tab():
     )
 
     # Split multiple phone numbers into separate rows
+    openphone_data['phoneNumber'] = openphone_data['phoneNumber'].astype(str)  # Ensure all are strings
     openphone_data['phoneNumber'] = openphone_data['phoneNumber'].str.split(',')
     openphone_data = openphone_data.explode('phoneNumber')
     openphone_data['phoneNumber'] = openphone_data['phoneNumber'].str.strip()
@@ -586,241 +597,4 @@ def run_openphone_tab():
         merged['success_rate'] = (merged['success_count'] / merged['outbound_count']) * 100
 
         for agent in selected_agents:
-            agent_short = agent_map.get(agent, agent)
-            agent_df = merged[merged['userId'] == agent]
-            if agent_df.empty:
-                st.write(f"No outbound calls for agent: {agent_short}")
-                continue
-
-            pivot_srate = agent_df.pivot(index='day', columns='hour', values='success_rate')
-            pivot_srate.index = pivot_srate.index.astype(str)
-            pivot_srate.columns = pivot_srate.columns.astype(str)
-            a_days = [d for d in day_order if d in pivot_srate.index]
-            a_hours = [h for h in hour_order if h in pivot_srate.columns]
-            pivot_srate = pivot_srate.reindex(index=a_days, columns=a_hours).fillna(0)
-
-            fig = px.imshow(
-                pivot_srate,
-                color_continuous_scale='Blues',
-                labels=dict(x="Hour (AM/PM)", y="Day", color="Success Rate (%)"),
-                title=f"Success Rate Heatmap - {agent_short}",
-            )
-            fig.update_xaxes(side="top")
-            fig.update_layout(coloraxis=dict(cmin=0, cmax=100))
-            st.plotly_chart(fig)
-    else:
-        st.warning("No outbound calls for success rate heatmap.")
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 18. AGENT-BY-AGENT HEATMAPS: Success Rate & Outbound Calls
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Agent-by-Agent Heatmaps: Success Rate & Outbound Calls (Combined)")
-
-    if len(selected_agents) >= 1 and not successful_outbound_calls.empty and not outbound_calls.empty:
-        for agent_id in selected_agents:
-            agent_name = agent_map.get(agent_id, agent_id)
-            st.markdown(f"### {agent_name}")
-
-            agent_outbound = outbound_calls[outbound_calls['userId'] == agent_id].copy()
-            agent_success  = successful_outbound_calls[successful_outbound_calls['userId'] == agent_id].copy()
-
-            outb_df = agent_outbound.groupby(['day','hour']).size().reset_index(name='outbound_count')
-            succ_df = agent_success.groupby(['day','hour']).size().reset_index(name='success_count')
-            merged_df = pd.merge(outb_df, succ_df, on=['day','hour'], how='outer').fillna(0)
-            merged_df['success_rate'] = (merged_df['success_count'] / merged_df['outbound_count']) * 100
-
-            pivot_rate     = merged_df.pivot(index='day', columns='hour', values='success_rate')
-            pivot_outbound = merged_df.pivot(index='day', columns='hour', values='outbound_count')
-            pivot_success  = merged_df.pivot(index='day', columns='hour', values='success_count')
-
-            pivot_rate     = pivot_rate.reindex(index=day_order, columns=hour_order).fillna(0)
-            pivot_outbound = pivot_outbound.reindex(index=day_order, columns=hour_order).fillna(0)
-            pivot_success  = pivot_success.reindex(index=day_order, columns=hour_order).fillna(0)
-
-            fig_combined = px.imshow(
-                pivot_rate,
-                color_continuous_scale='Blues',
-                range_color=[0, 100],
-                labels=dict(x="Hour", y="Day", color="Success Rate (%)"),
-                title="Success Rate (Color) + Calls Tooltip"
-            )
-
-            hover_text = [
-                [
-                    f"Hour: {hour}<br>Day: {day}"
-                    f"<br>Success Rate: {pivot_rate.loc[day, hour]:.1f}%"
-                    f"<br>Successful: {int(float(pivot_success.loc[day, hour]))}"
-                    f"<br>Total: {int(float(pivot_outbound.loc[day, hour]))}"
-                    for hour in pivot_rate.columns
-                ]
-                for day in pivot_rate.index
-            ]
-
-            fig_combined.update_traces(
-                hovertemplate="%{customdata}<extra></extra>",
-                customdata=hover_text
-            )
-            fig_combined.update_xaxes(side="top")
-            fig_combined.update_layout(height=300, margin=dict(l=50, r=50, t=50, b=20))
-
-            st.plotly_chart(fig_combined, use_container_width=True)
-
-        summary_df = pd.DataFrame({
-            'Total': outbound_calls.groupby('userId').size(),
-            'Success': successful_outbound_calls.groupby('userId').size()
-        }).fillna(0)
-        summary_df['Rate %'] = (summary_df['Success'] / summary_df['Total'] * 100).round(1)
-        summary_df['Agent'] = summary_df.index.map(agent_map)
-        st.table(summary_df[['Agent', 'Success', 'Total', 'Rate %']])
-    else:
-        st.warning("No outbound calls or no agents selected.")
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 19. AGENT-COLUMNS (Compare Agents Side-by-Side)
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Compare Agents Side-by-Side: Successful vs Total Calls")
-
-    if len(selected_agents) >= 2 and not successful_outbound_calls.empty and not outbound_calls.empty:
-        success_totals = successful_outbound_calls.groupby('userId').size().reset_index(name='successful_calls')
-        total_calls_df = outbound_calls.groupby('userId').size().reset_index(name='total_calls')
-
-        summary = pd.merge(success_totals, total_calls_df, on='userId', how='outer').fillna(0)
-        summary['agent_name'] = summary['userId'].map(agent_map)
-        summary['success_rate'] = (summary['successful_calls'] / summary['total_calls'] * 100).round(2)
-
-        fig = px.bar(
-            summary,
-            x=['successful_calls', 'total_calls'],
-            y='agent_name',
-            orientation='h',
-            barmode='group',
-            title="Successful vs Total Calls by Agent",
-            labels={
-                'value': 'Number of Calls',
-                'agent_name': 'Agent',
-                'variable': 'Call Type'
-            },
-            color_discrete_map={
-                'successful_calls': 'green',
-                'total_calls': 'blue'
-            },
-            text_auto=True
-        )
-
-        fig.update_layout(
-            showlegend=True,
-            legend_title_text='Call Type',
-            yaxis={'categoryorder': 'total ascending'}
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.write("Detailed Summary:")
-        summary_table = summary[['agent_name', 'successful_calls', 'total_calls', 'success_rate']]
-        summary_table.columns = ['Agent', 'Successful Calls', 'Total Calls', 'Success Rate (%)']
-        st.table(summary_table)
-    else:
-        st.warning("Comparison not shown. Need 2+ agents selected and some calls present.")
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 20. SMS FOLLOW-UP CALL EFFECTIVENESS
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("SMS Follow-up Call Effectiveness")
-
-    # Slider for time window between SMS and Call
-    time_window_hours = st.slider(
-        "Time between initial SMS and follow-up Call (hours)",
-        min_value=1,
-        max_value=24,
-        value=24,
-        step=1
-    )
-
-    if not messages.empty:
-        # Define outgoing SMS
-        sms_df = messages[
-            (messages['direction'] == 'outgoing') &
-            (messages['type'] == 'message')
-        ].copy()
-
-        # Define successful outgoing calls
-        successful_calls_df = openphone_data[
-            (openphone_data['direction'] == 'outgoing') &
-            (openphone_data['type'] == 'call') &
-            (openphone_data['status'] == 'completed') &
-            (openphone_data['duration'] > 0)
-        ].copy()
-
-        if sms_df.empty or successful_calls_df.empty:
-            st.warning("Not enough data to analyze SMS Follow-up Call Effectiveness.")
-        else:
-            # Sort DataFrames
-            sms_df = sms_df.sort_values(['userId', 'phoneNumber', 'sms_time'])
-            successful_calls_df = successful_calls_df.sort_values(['userId', 'phoneNumber', 'call_time'])
-
-            # Rename columns for merge_asof
-            sms_df = sms_df.rename(columns={'createdAtET': 'sms_time'})
-            successful_calls_df = successful_calls_df.rename(columns={'createdAtET': 'call_time'})
-
-            # Ensure 'sms_time' and 'call_time' are datetime
-            sms_df['sms_time'] = pd.to_datetime(sms_df['sms_time'])
-            successful_calls_df['call_time'] = pd.to_datetime(successful_calls_df['call_time'])
-
-            # Perform merge_asof to find the first call after SMS within the time window
-            merged_calls = pd.merge_asof(
-                sms_df,
-                successful_calls_df,
-                left_on='sms_time',
-                right_on='call_time',
-                by=['userId', 'phoneNumber'],
-                direction='forward',
-                tolerance=pd.Timedelta(hours=time_window_hours)
-            )
-
-            # Calculate time difference
-            merged_calls['time_diff_hours'] = (merged_calls['call_time'] - merged_calls['sms_time']).dt.total_seconds() / 3600
-
-            # Drop rows where no call was found within the time window
-            merged_calls = merged_calls.dropna(subset=['call_time'])
-
-            # Only keep calls that occurred after SMS
-            merged_calls = merged_calls[merged_calls['time_diff_hours'] >= 0]
-
-            # Now, each row represents an SMS followed by a successful Call within the time window
-            # Count total interactions
-            total_interactions = len(merged_calls)
-
-            # Count interactions per agent
-            interactions_per_agent = merged_calls.groupby('userId').size().reset_index(name='interactions')
-            interactions_per_agent['Agent'] = interactions_per_agent['userId'].map(agent_map)
-
-            # Display statistics
-            st.markdown(f"**Total SMS Follow-up Call Interactions within {time_window_hours} hours:** {total_interactions}")
-            st.subheader(f"Interactions per Agent within {time_window_hours} hours")
-            st.dataframe(interactions_per_agent[['Agent', 'interactions']])
-
-            # Optional: Success Rate per Agent (if needed)
-            # Here, since we only count successful calls, it's equivalent to the interaction count
-            # If you have a different definition, adjust accordingly
-
-    else:
-        st.warning("No text messages available to analyze SMS Follow-up Call Effectiveness.")
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # CALLING #20: TEXT SUCCESS RATE HEATMAP
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    st.subheader("Run #20: Text Success Rate Heatmap - Initial outbound message received a response within 24 hours") 
-    # If phoneNumber doesn't exist, #20 won't work
-    if 'phoneNumber' not in messages.columns:
-        st.warning("No 'phoneNumber' column found in messages. #20 requires it to group texts by recipient.")
-    else:
-        run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map)
-
-    st.success("Enhanced Dashboard Complete!")
-
-# Optionally, define a main() if you prefer:
-# def main():
-#     run_openphone_tab()
-#
-# if __name__ == "__main__":
-#     main()
+            agent_short = agent_
