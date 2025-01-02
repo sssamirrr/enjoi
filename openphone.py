@@ -732,40 +732,63 @@ def run_openphone_tab():
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # 21. TEXT→CALL FOLLOW-UP HEATMAP & SUMMARY
+   # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 21. TEXT→CALL FOLLOW-UP HEATMAP & SUMMARY (With Min Call Duration)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     def run_text_call_followup_heatmap(messages, calls,
                                        day_order, hour_order,
                                        agent_map=None,
-                                       default_time_window=8):
+                                       default_time_window=8,
+                                       default_min_duration=30):
         """
-        # TEXT→CALL FOLLOW-UP HEATMAP
-    
+        # TEXT→CALL FOLLOW-UP HEATMAP (Updated)
+        
         1) Identify outbound calls that occur within `time_window_hours` after 
            an outbound SMS to the same phoneNumber by the same user.
-        2) Generate a day-hour heatmap (via Plotly) to visualize how often 
-           agents perform a follow-up call after texts.
-        3) Display a summary table of these text→call interactions per agent, 
-           with relevant metrics.
+        2) Only treat a call as "successful" if it meets the min call duration.
+        3) Generate a day-hour heatmap to visualize how often agents successfully 
+           follow up calls after texts (time-window + min duration).
+        4) Display a summary table of these text→call interactions per agent.
         """
     
-        st.subheader("21) Text→Call Follow-Up Heatmap & Metrics")
+        st.subheader("21) Text→Call Follow-Up Heatmap & Metrics (with Min Call Duration)")
     
         # Quick checks
         if messages.empty or calls.empty:
             st.warning("No messages or calls found. Cannot compute text→call follow-up.")
             return
     
-        # 1) Slider for time window
+        # 1) Sliders for time window & min call duration
         time_window_hours = st.slider(
             "Time Window (hours) for Call Follow-Up After Text",
             min_value=1, max_value=72, value=default_time_window, step=1
         )
     
-        # 2) Filter to outbound messages & outbound calls
+        # Ask for a minimum call duration to consider the follow-up "successful"
+        # Adjust max_value as needed (e.g. 600 for 10 min).
+        max_possible_duration = int(calls['duration'].max()) if 'duration' in calls.columns else 300
+        min_success_duration = st.slider(
+            "Min Call Duration (seconds) for a 'Successful' Follow-Up Call",
+            min_value=0,
+            max_value=max_possible_duration if max_possible_duration > 0 else 600,
+            value=default_min_duration,
+            step=5
+        )
+    
+        # 2) Filter to outbound messages & outbound calls that meet min duration
         msgs_out = messages[messages['direction'] == 'outgoing'].copy()
-        calls_out = calls[calls['direction'] == 'outgoing'].copy()
+        # If 'duration' column doesn't exist, calls_out will be all outgoing calls
+        if 'duration' in calls.columns:
+            calls_out = calls[
+                (calls['direction'] == 'outgoing') &
+                (calls['duration'] >= min_success_duration)
+            ].copy()
+        else:
+            # if no duration column, fallback to all outbound
+            calls_out = calls[calls['direction'] == 'outgoing'].copy()
+    
         if msgs_out.empty or calls_out.empty:
-            st.warning("No outbound messages or outbound calls. Cannot compute follow-ups.")
+            st.warning("No outbound messages or no outbound calls (meeting min duration). Cannot compute follow-ups.")
             return
     
         # Create convenience columns
@@ -779,14 +802,14 @@ def run_openphone_tab():
         # For each text, define the call deadline
         msgs_out['call_deadline'] = msgs_out['text_time'] + pd.Timedelta(hours=time_window_hours)
     
-        # Merge on userId & phoneNumber
+        # Merge on (userId + phoneNumber)
         merged = msgs_out.merge(
             calls_out[['userId','phoneNumber','call_time']],
             on=['userId','phoneNumber'],
             how='left'
         )
     
-        # Condition: call_time in (text_time, text_time + time_window)
+        # Condition: call_time in [text_time, text_time + time_window_hours]
         cond = (
             (merged['call_time'] > merged['text_time']) &
             (merged['call_time'] <= merged['call_deadline'])
@@ -816,7 +839,7 @@ def run_openphone_tab():
             group_df['had_followup_call'] / group_df['total_outbound_texts'] * 100
         ).fillna(0)
     
-        # If no agent_map was passed in, default to full userId
+        # If no agent_map was passed in, default to userId
         if agent_map is None:
             agent_map = {}
     
@@ -824,11 +847,11 @@ def run_openphone_tab():
             return agent_map.get(u, u)
     
         all_agents = group_df['userId'].unique()
-        if not len(all_agents):
+        if len(all_agents) == 0:
             st.warning("No agent data found in text->call follow-up grouping.")
             return
     
-        # HEATMAPS per agent
+        # Build heatmaps per agent
         for agent_id in all_agents:
             adf = group_df[group_df['userId'] == agent_id].copy()
             if adf.empty:
@@ -838,7 +861,7 @@ def run_openphone_tab():
             pivot_txts = adf.pivot(index='text_day', columns='text_hour', values='total_outbound_texts').fillna(0)
             pivot_succ = adf.pivot(index='text_day', columns='text_hour', values='had_followup_call').fillna(0)
     
-            # Reindex based on day_order/hour_order
+            # Reindex by day_order/hour_order
             pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
             pivot_txts = pivot_txts.reindex(index=day_order, columns=hour_order, fill_value=0)
             pivot_succ = pivot_succ.reindex(index=day_order, columns=hour_order, fill_value=0)
@@ -849,10 +872,13 @@ def run_openphone_tab():
                 color_continuous_scale='Greens',
                 range_color=[0,100],
                 labels=dict(x="Hour of Text", y="Day of Text", color="Follow-Up Rate (%)"),
-                title=f"Text→Call Follow-Up Rate - {agent_short} (within {time_window_hours} hrs)"
+                title=(
+                    f"Text→Call Follow-Up Rate - {agent_short} "
+                    f"(within {time_window_hours} hrs, min {min_success_duration}s)"
+                )
             )
     
-            # Build custom hover text
+            # Custom hover text
             hover_text = []
             for d in day_order:
                 row_data = []
@@ -877,7 +903,7 @@ def run_openphone_tab():
     
             st.plotly_chart(fig, use_container_width=True)
     
-        # SUMMARY TABLE
+        # Summary Table
         sum_df = group_df.groupby('userId').agg(
             total_texts=('total_outbound_texts','sum'),
             total_followups=('had_followup_call','sum')
@@ -887,24 +913,6 @@ def run_openphone_tab():
     
         st.subheader("Text→Call Follow-Up Summary by Agent")
         st.dataframe(sum_df[['Agent', 'userId', 'total_texts', 'total_followups', 'followup_rate']])
-    
-    # Then inside your main run_openphone_tab(), you might place:
-    def run_openphone_tab():
-        ...
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 21. TEXT→CALL FOLLOW-UP HEATMAP & SUMMARY
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    if not messages.empty and not calls.empty:
-        run_text_call_followup_heatmap(
-            messages=messages,
-            calls=calls,
-            day_order=day_order,
-            hour_order=hour_order,
-            agent_map=agent_map,
-            default_time_window=8  # or whatever default you want
-        )
-    else:
-        st.warning("Cannot perform text→call follow-up; no messages or calls.")
 
 
 
