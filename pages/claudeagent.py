@@ -10,15 +10,14 @@ st.set_page_config(page_title="OpenPhone History", layout="wide")
 # Your OpenPhone API Key
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
-def rate_limited_request(url, headers, json=None, params=None, request_type='get'):
+def rate_limited_request(url, headers, params=None):
     """Make an API request while respecting rate limits"""
     if params is None:
         params = {}
     time.sleep(1 / 5)  # Rate limit to 5 requests per second
     try:
-        if request_type.lower() == 'get':
-            resp = requests.get(url, headers=headers, params=params, json=json)
-        if resp and resp.status_code == 200:
+        resp = requests.get(url, headers=headers, params=params)
+        if resp.status_code == 200:
             return resp.json()
         else:
             st.warning(f"API Error: {resp.status_code}")
@@ -26,6 +25,16 @@ def rate_limited_request(url, headers, json=None, params=None, request_type='get
     except Exception as e:
         st.warning(f"Exception: {str(e)}")
     return None
+
+def get_workspace_contacts():
+    """Fetch all contacts from the workspace"""
+    url = "https://api.openphone.com/v1/workspaces/contacts"
+    headers = {
+        "Authorization": OPENPHONE_API_KEY,
+        "Content-Type": "application/json"
+    }
+    data = rate_limited_request(url, headers)
+    return data.get("data", []) if data else []
 
 def get_phone_numbers():
     """Fetch all phone numbers from OpenPhone account"""
@@ -50,41 +59,39 @@ def get_phone_numbers():
 
 def fetch_calls(phone_number_id):
     """Fetch calls for a specific phone number"""
-    if not phone_number_id or not phone_number_id.startswith("PN"):
-        return []
-
-    url = "https://api.openphone.com/v1/calls/search"
+    url = "https://api.openphone.com/v1/workspaces/calls"
     headers = {
         "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
     }
-    json_data = {
+    params = {
         "phoneNumberId": phone_number_id,
-        "participants": [],
         "maxResults": 100
     }
-    
-    resp = rate_limited_request(url, headers, json=json_data)
+    resp = rate_limited_request(url, headers, params=params)
     return resp.get("data", []) if resp else []
 
 def fetch_messages(phone_number_id):
     """Fetch messages for a specific phone number"""
-    if not phone_number_id or not phone_number_id.startswith("PN"):
-        return []
-
-    url = "https://api.openphone.com/v1/messages/search"
+    url = "https://api.openphone.com/v1/workspaces/messages"
     headers = {
         "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
     }
-    json_data = {
+    params = {
         "phoneNumberId": phone_number_id,
-        "participants": [],
         "maxResults": 100
     }
-    
-    resp = rate_limited_request(url, headers, json=json_data)
+    resp = rate_limited_request(url, headers, params=params)
     return resp.get("data", []) if resp else []
+
+def get_contact_name(phone_number, contacts):
+    """Look up contact name from phone number"""
+    for contact in contacts:
+        for number in contact.get("phoneNumbers", []):
+            if number.get("phoneNumber") == phone_number:
+                return f"{contact.get('firstName', '')} {contact.get('lastName', '')}".strip()
+    return phone_number
 
 def format_phone_number(phone):
     """Format phone number for better display"""
@@ -97,6 +104,9 @@ def main():
 
     # Get phone_number_id from query params if it exists
     phone_number_id = st.query_params.get("phoneNumberId", None)
+
+    # Fetch contacts once to use for both calls and messages
+    contacts = get_workspace_contacts()
 
     if phone_number_id:
         # Detail View
@@ -120,8 +130,8 @@ def main():
                         "Direction": c.get("direction", "").title(),
                         "Duration (sec)": c.get("duration", 0),
                         "Status": c.get("status", "").title(),
-                        "From": format_phone_number(c.get("from")),
-                        "To": format_phone_number(c.get("to")),
+                        "From": get_contact_name(c.get("from"), contacts),
+                        "To": get_contact_name(c.get("to"), contacts),
                         "Recording": "Yes" if c.get("recordingUrl") else "No"
                     }
                     for c in calls_data
@@ -148,8 +158,8 @@ def main():
                         "Date": datetime.fromtimestamp(m.get("createdAt", 0)).strftime('%Y-%m-%d %H:%M:%S'),
                         "Direction": m.get("direction", "").title(),
                         "Content": m.get("content", ""),
-                        "From": format_phone_number(m.get("from", {}).get("phoneNumber", "")),
-                        "To": format_phone_number(", ".join(t.get("phoneNumber", "") for t in m.get("to", [])))
+                        "From": get_contact_name(m.get("from", {}).get("phoneNumber", ""), contacts),
+                        "To": ", ".join([get_contact_name(t.get("phoneNumber", ""), contacts) for t in m.get("to", [])])
                     }
                     for m in messages_data
                 ])
