@@ -10,14 +10,14 @@ st.set_page_config(page_title="OpenPhone History", layout="wide")
 # Your OpenPhone API Key
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
-def rate_limited_request(url, headers, params=None, request_type='get'):
+def rate_limited_request(url, headers, json=None, params=None, request_type='get'):
     """Make an API request while respecting rate limits"""
     if params is None:
         params = {}
     time.sleep(1 / 5)  # Rate limit to 5 requests per second
     try:
         if request_type.lower() == 'get':
-            resp = requests.get(url, headers=headers, params=params)
+            resp = requests.get(url, headers=headers, params=params, json=json)
         if resp and resp.status_code == 200:
             return resp.json()
         else:
@@ -53,17 +53,18 @@ def fetch_calls(phone_number_id):
     if not phone_number_id or not phone_number_id.startswith("PN"):
         return []
 
-    url = "https://api.openphone.com/v1/calls"
+    url = "https://api.openphone.com/v1/calls/search"
     headers = {
         "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
     }
-    params = {
+    json_data = {
         "phoneNumberId": phone_number_id,
+        "participants": [],
         "maxResults": 100
     }
     
-    resp = rate_limited_request(url, headers, params)
+    resp = rate_limited_request(url, headers, json=json_data)
     return resp.get("data", []) if resp else []
 
 def fetch_messages(phone_number_id):
@@ -71,17 +72,18 @@ def fetch_messages(phone_number_id):
     if not phone_number_id or not phone_number_id.startswith("PN"):
         return []
 
-    url = "https://api.openphone.com/v1/messages"
+    url = "https://api.openphone.com/v1/messages/search"
     headers = {
         "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
     }
-    params = {
+    json_data = {
         "phoneNumberId": phone_number_id,
+        "participants": [],
         "maxResults": 100
     }
     
-    resp = rate_limited_request(url, headers, params)
+    resp = rate_limited_request(url, headers, json=json_data)
     return resp.get("data", []) if resp else []
 
 def format_phone_number(phone):
