@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # 1) OpenPhone API Key     #
 ############################
 # NOTE: As requested, using the API key "as is" (no 'Bearer ' prefix).
-OPENPHONE_API_KEY = "YOUR_API_KEY_HERE"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
 def get_headers():
     """
