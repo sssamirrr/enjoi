@@ -2,40 +2,46 @@ import streamlit as st
 import pandas as pd
 from urllib.parse import urlencode
 
-# Import your existing helper functions and  key from communication.py
+# Import existing helpers from communication.py
+# Make sure communication.py is in the same folder or in your PYTHONPATH
 from communication import (
-    OPENPHONE__KEY,
-    rate_limited_request,
-    get_all_phone_number_ids,
+    OPENPHONE_API_KEY,
+    rate_limited_request
 )
 
-BASE_URL = "https://.openphone.com/v1"
-
-def get_phone_numbers_and_users(headers):
+########################
+# 1) Fetch All Agents  #
+########################
+def get_phone_numbers_and_agents():
     """
-    Retrieves phone numbers and the associated user/agent data.
+    Retrieves phone numbers from OpenPhone and their associated user/agent data.
     Returns a list of dicts like:
     [
       {
         'phoneNumberId': 'pn_id',
         'phoneNumber': '+1...',
-        'userName': 'Agent A'
+        'userName': 'Agent Name'
       },
       ...
     ]
     """
-    phone_numbers_url = f"{BASE_URL}/phone-numbers"
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    url = "https://api.openphone.com/v1/phone-numbers"
+    # NOTE: No "Bearer " prefix here
+    headers = {
+        "Authorization": OPENPHONE_API_KEY,
+        "Content-Type": "application/json"
+    }
+    response_data = rate_limited_request(url, headers, {}, request_type='get')
     results = []
     if response_data and "data" in response_data:
         for pn in response_data["data"]:
-            # Each phone number object can have `users` - usually 1 for a single owner
+            # Each phone number may have a 'users' list
             user_info = pn.get("users", [])
             if user_info:
                 user_name = user_info[0].get("name", "Unknown Agent")
             else:
                 user_name = "Unknown Agent"
-            
+
             results.append({
                 "phoneNumberId": pn.get("id"),
                 "phoneNumber": pn.get("phoneNumber"),
@@ -43,61 +49,73 @@ def get_phone_numbers_and_users(headers):
             })
     return results
 
-def get_agent_details(phone_number_id, headers):
+##################################
+# 2) Fetch Calls & Messages (100) #
+##################################
+def get_agent_history(phone_number_id):
     """
     Fetch the last 100 calls and last 100 messages for a given phoneNumberId.
-    Returns (calls_df, messages_df) dataframes or empty if no data.
+    Returns (calls_df, messages_df) as pandas DataFrames.
     """
-    calls_url = f"{BASE_URL}/calls"
-    messages_url = f"{BASE_URL}/messages"
+    # NOTE: No "Bearer " prefix
+    headers = {
+        "Authorization": OPENPHONE_API_KEY,
+        "Content-Type": "application/json"
+    }
 
-    # --- Fetch calls ---
+    # Endpoints:
+    calls_url = "https://api.openphone.com/v1/calls"
+    messages_url = "https://api.openphone.com/v1/messages"
+
+    # ------------------------------------------
+    # Fetch up to 100 calls via pagination
+    # ------------------------------------------
     calls_data = []
+    calls_fetched = 0
     next_page = None
-    retrieved = 0
     while True:
         params = {
             "phoneNumberId": phone_number_id,
-            "maxResults": 50,
+            "maxResults": 50,  # fetch 50 at a time
         }
         if next_page:
             params["pageToken"] = next_page
-        response = rate_limited_request(calls_url, headers, params)
-        if not response or "data" not in response:
+
+        resp_json = rate_limited_request(calls_url, headers, params, request_type='get')
+        if not resp_json or "data" not in resp_json:
             break
 
-        data_chunk = response["data"]
-        calls_data.extend(data_chunk)
-        retrieved += len(data_chunk)
-        next_page = response.get("nextPageToken")
+        chunk = resp_json["data"]
+        calls_data.extend(chunk)
+        calls_fetched += len(chunk)
+        next_page = resp_json.get("nextPageToken")
 
-        # Stop if we've retrieved >= 100
-        if not next_page or retrieved >= 100:
+        # Stop once we have 100 or no more data
+        if not next_page or calls_fetched >= 100:
             break
 
-    # Convert calls to a dataframe
+    # Convert calls to DataFrame
     if calls_data:
-        calls_list = []
+        call_rows = []
         for c in calls_data:
-            # Some calls have 'transcript' or 'recordingUrl'
-            # Not all calls will have a transcript, so handle safely
-            call_transcript = c.get("transcript", "")
-            calls_list.append({
+            call_rows.append({
                 "Created At": c.get("createdAt", ""),
                 "Direction": c.get("direction", ""),
                 "Duration (sec)": c.get("duration", 0),
                 "Status": c.get("status", ""),
-                "Transcript": call_transcript,
-                "Recording URL": c.get("recordingUrl", "")
+                "Transcript": c.get("transcript", ""),       # could be empty
+                "Recording URL": c.get("recordingUrl", ""),  # could be empty
             })
-        calls_df = pd.DataFrame(calls_list)
+        calls_df = pd.DataFrame(call_rows)
     else:
         calls_df = pd.DataFrame()
 
-    # --- Fetch messages ---
+    # ------------------------------------------
+    # Fetch up to 100 messages via pagination
+    # ------------------------------------------
     messages_data = []
+    msgs_fetched = 0
     next_page = None
-    retrieved = 0
     while True:
         params = {
             "phoneNumberId": phone_number_id,
@@ -105,90 +123,91 @@ def get_agent_details(phone_number_id, headers):
         }
         if next_page:
             params["pageToken"] = next_page
-        response = rate_limited_request(messages_url, headers, params)
-        if not response or "data" not in response:
+
+        resp_json = rate_limited_request(messages_url, headers, params, request_type='get')
+        if not resp_json or "data" not in resp_json:
             break
 
-        data_chunk = response["data"]
-        messages_data.extend(data_chunk)
-        retrieved += len(data_chunk)
-        next_page = response.get("nextPageToken")
+        chunk = resp_json["data"]
+        messages_data.extend(chunk)
+        msgs_fetched += len(chunk)
+        next_page = resp_json.get("nextPageToken")
 
-        # Stop if we've retrieved >= 100
-        if not next_page or retrieved >= 100:
+        # Stop once we have 100 or no more data
+        if not next_page or msgs_fetched >= 100:
             break
 
-    # Convert messages to a dataframe
+    # Convert messages to DataFrame
     if messages_data:
-        messages_list = []
+        msg_rows = []
         for m in messages_data:
-            messages_list.append({
+            msg_rows.append({
                 "Created At": m.get("createdAt", ""),
                 "Direction": m.get("direction", ""),
                 "Message Content": m.get("content", ""),
                 "From": m.get("from", {}).get("phoneNumber", ""),
-                "To": ", ".join([t.get("phoneNumber", "") for t in m.get("to", [])]),
+                "To": ", ".join(t.get("phoneNumber", "") for t in m.get("to", [])),
             })
-        messages_df = pd.DataFrame(messages_list)
+        messages_df = pd.DataFrame(msg_rows)
     else:
         messages_df = pd.DataFrame()
 
     return calls_df, messages_df
 
-
+########################
+# 3) Streamlit App     #
+########################
 def main():
     st.title("Agent History")
 
-    # We check if there's a query parameter specifying phoneNumberId
-    query_params = st.experimental_get_query_params()
+    # Use the new st.query_params
+    query_params = st.query_params
     phone_number_id = query_params.get("phoneNumberId", [None])[0]
 
-    headers = {"Authorization": {OPENPHONE__KEY}"}
-
     if phone_number_id:
-        # --- Detail page for a specific agent ---
-        st.header("Agent Call & Message History")
+        # ===== Detail Page =====
+        st.subheader("Last 100 Calls & Messages")
 
-        calls_df, messages_df = get_agent_details(phone_number_id, headers)
+        calls_df, messages_df = get_agent_history(phone_number_id)
 
-        st.subheader("Last 100 Calls")
+        st.markdown("### Calls (Up to 100)")
         if not calls_df.empty:
             st.dataframe(calls_df)
         else:
-            st.info("No calls found for this agent.")
+            st.info("No calls found for this phoneNumberId.")
 
-        st.subheader("Last 100 Messages")
+        st.markdown("### Messages (Up to 100)")
         if not messages_df.empty:
             st.dataframe(messages_df)
         else:
-            st.info("No messages found for this agent.")
+            st.info("No messages found for this phoneNumberId.")
 
         st.markdown("[Back to Agents List](?phoneNumberId=)")
+
     else:
-        # --- Main page: Show list of agents ---
-        st.header("All Agents")
+        # ===== Main Page (List of Agents) =====
+        st.header("All Agents (Phone Numbers) in OpenPhone")
 
-        agent_list = get_phone_numbers_and_users(headers)
-
-        if not agent_list:
-            st.info("No phone numbers (agents) found in your OpenPhone account.")
+        agents = get_phone_numbers_and_agents()
+        if not agents:
+            st.warning("No phone numbers (agents) found in your OpenPhone account.")
             return
 
-        # Create a table of agent info with a column for 'Details' link
+        # Create a small table with clickable "View History" links
         table_data = []
-        for agent in agent_list:
-            phone_number_id = agent["phoneNumberId"]
-            link_params = {"phoneNumberId": phone_number_id}
-            detail_link = f"[View History]({urlencode(link_params)})"
+        for agent in agents:
+            pid = agent["phoneNumberId"]
+            link_params = {"phoneNumberId": pid}
+            view_link = f"[View History]({urlencode(link_params)})"
             table_data.append({
                 "Agent Name": agent["userName"],
                 "Phone Number": agent["phoneNumber"],
-                "Details": detail_link
+                "Details": view_link
             })
 
         df = pd.DataFrame(table_data)
-        # Use unsafe_allow_html to allow Markdown links
-        st.table(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
