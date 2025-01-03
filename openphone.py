@@ -5,6 +5,7 @@ import pytz
 from datetime import datetime
 import numpy as np
 
+
 def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=None):
     """
     # 20. TEXT SUCCESS RATE HEATMAP BY DAY & HOUR
@@ -25,8 +26,8 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
          "04 PM","05 PM","06 PM","07 PM","08 PM","09 PM","10 PM","11 PM"]
 
     agent_map: dict (optional), mapping full emails to short agent names
-        e.g. {"john@enjoiresorts.com": "john", ...}
-        If None, the function uses the raw userId.
+               e.g. {"john@enjoiresorts.com": "john", ...}
+               If None, the function uses the raw userId.
 
     Steps in this code:
        1) Identifies 'first outbound messages' each day by userId + phoneNumber
@@ -165,6 +166,115 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
     st.subheader("Texting Summary by Agent")
     st.dataframe(sum_agent[['Agent', 'userId', 'total_first', 'total_success', 'success_rate']])
 
+
+def run_call_duration_preceded_by_text(messages, calls, default_time_window=8):
+    """
+    # 22. CALL DURATION COMPARISON: WITH vs. WITHOUT A PRECEDING TEXT
+         (Only for phoneNumbers whose FIRST CONTACT was an Outbound Text)
+
+    Steps:
+      1) Identify userId+phoneNumber pairs whose earliest contact is an OUTBOUND TEXT.
+      2) Filter calls to only those pairs from step 1.
+      3) For each call, check if there's an outbound text in [call_time - X hrs, call_time).
+      4) Compare average call duration for "preceded by text" vs. "not preceded".
+    """
+
+    st.subheader("22) Compare Call Durations (Only Where 1st Contact Was an Outbound Text)")
+
+    if messages.empty or calls.empty:
+        st.warning("No messages or calls to analyze for #22.")
+        return
+
+    time_window_hours = st.slider(
+        "Time Window (hours) for a Preceding Outbound Text",
+        min_value=1, max_value=72, value=default_time_window, step=1,
+        key="text_preceding_slider_22"  # key to ensure uniqueness in Streamlit
+    )
+
+    # We need a 'duration' column in calls
+    if 'duration' not in calls.columns:
+        st.warning("No 'duration' column found in calls. Cannot measure durations for #22.")
+        return
+
+    # Combine messages+calls to find the earliest event for each userId+phoneNumber
+    combined = pd.concat([
+        messages[['userId','phoneNumber','createdAtET','direction','type']],
+        calls[['userId','phoneNumber','createdAtET','direction','type']]
+    ], ignore_index=True)
+    combined.sort_values(by=['userId','phoneNumber','createdAtET'], inplace=True)
+    combined['earliest_time'] = combined.groupby(['userId','phoneNumber'])['createdAtET'].transform('min')
+    combined['is_earliest_event'] = (combined['createdAtET'] == combined['earliest_time'])
+
+    # Only keep userId+phoneNumber pairs whose earliest event is an outbound text
+    earliest_df = combined[combined['is_earliest_event']]
+    valid_pairs = earliest_df[
+        (earliest_df['type'] == 'message') &
+        (earliest_df['direction'] == 'outgoing')
+    ][['userId','phoneNumber']].drop_duplicates()
+
+    # Filter calls to these valid pairs
+    calls_out = calls.copy()
+    calls_out = calls_out.merge(valid_pairs, on=['userId','phoneNumber'], how='inner')
+    calls_out = calls_out[(calls_out['direction'] == 'outgoing') & (calls_out['duration'] >= 0)].copy()
+    if calls_out.empty:
+        st.warning("No outbound calls found where the phoneNumber's first contact was an outbound text (#22).")
+        return
+
+    # For each call, see if there's an outbound text in [call_time - X hrs, call_time)
+    calls_out['call_time'] = calls_out['createdAtET']
+    msgs_out = messages[
+        (messages['direction'] == 'outgoing') &
+        (messages['type'] == 'message')
+    ].copy()
+    msgs_out = msgs_out.merge(valid_pairs, on=['userId','phoneNumber'], how='inner')
+    msgs_out['text_time'] = msgs_out['createdAtET']
+
+    msgs_out.sort_values(by=['userId','phoneNumber','text_time'], inplace=True)
+    calls_out.sort_values(by=['userId','phoneNumber','call_time'], inplace=True)
+    calls_out['min_text_time'] = calls_out['call_time'] - pd.Timedelta(hours=time_window_hours)
+
+    merged = calls_out.merge(
+        msgs_out[['userId','phoneNumber','text_time']],
+        on=['userId','phoneNumber'],
+        how='left'
+    )
+
+    cond = (merged['text_time'] >= merged['min_text_time']) & (merged['text_time'] < merged['call_time'])
+    merged['text_preceded'] = np.where(cond, 1, 0)
+
+    merged = merged.reset_index(drop=False).rename(columns={'index':'call_index'})
+    preceded_df = merged.groupby('call_index')['text_preceded'].max().reset_index(name='call_preceded_flag')
+
+    calls_out = calls_out.reset_index(drop=False).rename(columns={'index':'orig_call_idx'})
+    calls_out = calls_out.merge(
+        preceded_df, left_on='orig_call_idx', right_on='call_index', how='left'
+    ).drop(columns=['call_index'])
+
+    calls_out['call_preceded_flag'] = calls_out['call_preceded_flag'].fillna(0).astype(int)
+
+    # Compare average durations
+    comp_df = calls_out.groupby('call_preceded_flag')['duration'].mean().reset_index()
+    comp_df['call_preceded_flag'] = comp_df['call_preceded_flag'].map({0: 'No preceding text', 1: 'Preceded by text'})
+    comp_df.rename(columns={'duration': 'avg_duration'}, inplace=True)
+
+    # Bar chart
+    fig = px.bar(
+        comp_df,
+        x='call_preceded_flag',
+        y='avg_duration',
+        color='call_preceded_flag',
+        labels=dict(call_preceded_flag="Preceding Text?", avg_duration="Avg Duration (sec)"),
+        title=(
+            "Avg Call Duration: Calls w/o vs. w/ Preceding Text"
+            "<br><sup>(Only phoneNumbers whose FIRST contact was Outbound Text)</sup>"
+        )
+    )
+    fig.update_layout(showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.table(comp_df)
+
+
 def run_openphone_tab():
     st.header("Enhanced OpenPhone Operations Dashboard")
 
@@ -265,8 +375,7 @@ def run_openphone_tab():
 
     # ----------------------------------------------------------------------
     # CREATE A "phoneNumber" COLUMN FOR #20 (TEXT SUCCESS RATE)
-    # For outgoing => use the 'to' column
-    # For incoming => use the 'from' column
+    # For outgoing => use 'to'; for incoming => use 'from'
     # ----------------------------------------------------------------------
     openphone_data['phoneNumber'] = np.where(
         openphone_data['direction'] == 'incoming',
@@ -308,7 +417,7 @@ def run_openphone_tab():
     agent_performance['Agent'] = agent_performance['userId'].map(agent_map)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 7. DEFINE day AND hour (STRING) + day_order & hour_order
+    # 7. DEFINE day AND hour + day_order & hour_order
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     hour_order = [
@@ -718,8 +827,7 @@ def run_openphone_tab():
     # CALLING #20: TEXT SUCCESS RATE HEATMAP
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     if not messages.empty:
-        st.subheader("Run #20: Text Success Rate Heatmam - Initial outbound message received a response within 24 hours ") 
-        # If phoneNumber doesn't exist, #20 won't work
+        st.subheader("Run #20: Text Success Rate Heatmap - (Check if initial outbound message got an incoming reply within 24 hours)")
         if 'phoneNumber' not in messages.columns:
             st.warning("No 'phoneNumber' column found in messages. #20 requires it to group texts by recipient.")
         else:
@@ -727,193 +835,15 @@ def run_openphone_tab():
     else:
         st.warning("No text messages to analyze for #20.")
 
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 22. CALL DURATION COMPARISON: WITH vs. WITHOUT A PRECEDING TEXT
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    if not messages.empty and not calls.empty:
+        run_call_duration_preceded_by_text(messages, calls, default_time_window=8)
+    else:
+        st.warning("No messages or calls to compare call durations.")
+
     st.success("Enhanced Dashboard Complete!")
-
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 21. TEXT→CALL FOLLOW-UP HEATMAP & SUMMARY
-   # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # 21. TEXT→CALL FOLLOW-UP HEATMAP & SUMMARY (With Min Call Duration)
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    def run_text_call_followup_heatmap(messages, calls,
-                                       day_order, hour_order,
-                                       agent_map=None,
-                                       default_time_window=8,
-                                       default_min_duration=30):
-        """
-        # TEXT→CALL FOLLOW-UP HEATMAP (Updated)
-        
-        1) Identify outbound calls that occur within `time_window_hours` after 
-           an outbound SMS to the same phoneNumber by the same user.
-        2) Only treat a call as "successful" if it meets the min call duration.
-        3) Generate a day-hour heatmap to visualize how often agents successfully 
-           follow up calls after texts (time-window + min duration).
-        4) Display a summary table of these text→call interactions per agent.
-        """
-    
-        st.subheader("21) Text→Call Follow-Up Heatmap & Metrics (with Min Call Duration)")
-    
-        # Quick checks
-        if messages.empty or calls.empty:
-            st.warning("No messages or calls found. Cannot compute text→call follow-up.")
-            return
-    
-        # 1) Sliders for time window & min call duration
-        time_window_hours = st.slider(
-            "Time Window (hours) for Call Follow-Up After Text",
-            min_value=1, max_value=72, value=default_time_window, step=1
-        )
-    
-        # Ask for a minimum call duration to consider the follow-up "successful"
-        # Adjust max_value as needed (e.g. 600 for 10 min).
-        max_possible_duration = int(calls['duration'].max()) if 'duration' in calls.columns else 300
-        min_success_duration = st.slider(
-            "Min Call Duration (seconds) for a 'Successful' Follow-Up Call",
-            min_value=0,
-            max_value=max_possible_duration if max_possible_duration > 0 else 600,
-            value=default_min_duration,
-            step=5
-        )
-    
-        # 2) Filter to outbound messages & outbound calls that meet min duration
-        msgs_out = messages[messages['direction'] == 'outgoing'].copy()
-        # If 'duration' column doesn't exist, calls_out will be all outgoing calls
-        if 'duration' in calls.columns:
-            calls_out = calls[
-                (calls['direction'] == 'outgoing') &
-                (calls['duration'] >= min_success_duration)
-            ].copy()
-        else:
-            # if no duration column, fallback to all outbound
-            calls_out = calls[calls['direction'] == 'outgoing'].copy()
-    
-        if msgs_out.empty or calls_out.empty:
-            st.warning("No outbound messages or no outbound calls (meeting min duration). Cannot compute follow-ups.")
-            return
-    
-        # Create convenience columns
-        msgs_out['text_time'] = msgs_out['createdAtET']
-        calls_out['call_time'] = calls_out['createdAtET']
-    
-        # Sort by user, phoneNumber, time
-        msgs_out.sort_values(by=['userId','phoneNumber','text_time'], inplace=True)
-        calls_out.sort_values(by=['userId','phoneNumber','call_time'], inplace=True)
-    
-        # For each text, define the call deadline
-        msgs_out['call_deadline'] = msgs_out['text_time'] + pd.Timedelta(hours=time_window_hours)
-    
-        # Merge on (userId + phoneNumber)
-        merged = msgs_out.merge(
-            calls_out[['userId','phoneNumber','call_time']],
-            on=['userId','phoneNumber'],
-            how='left'
-        )
-    
-        # Condition: call_time in [text_time, text_time + time_window_hours]
-        cond = (
-            (merged['call_time'] > merged['text_time']) &
-            (merged['call_time'] <= merged['call_deadline'])
-        )
-        merged['call_followup'] = np.where(cond, 1, 0)
-    
-        # Each text only needs to know if ANY call matched => groupby text index
-        merged = merged.reset_index(drop=False).rename(columns={'index':'text_index'})
-        success_df = merged.groupby('text_index')['call_followup'].max().reset_index(name='followup_flag')
-    
-        # Attach followup_flag back to msgs_out
-        msgs_out = msgs_out.reset_index(drop=False).rename(columns={'index':'orig_text_idx'})
-        msgs_out = msgs_out.merge(
-            success_df, left_on='orig_text_idx', right_on='text_index', how='left'
-        ).drop(columns=['text_index'])
-    
-        # Create day/hour from text_time
-        msgs_out['text_day']  = msgs_out['text_time'].dt.strftime('%A')
-        msgs_out['text_hour'] = msgs_out['text_time'].dt.strftime('%I %p')
-    
-        group_df = msgs_out.groupby(['userId','text_day','text_hour']).agg(
-            total_outbound_texts=('orig_text_idx','count'),
-            had_followup_call=('followup_flag','sum')
-        ).reset_index()
-    
-        group_df['followup_rate'] = (
-            group_df['had_followup_call'] / group_df['total_outbound_texts'] * 100
-        ).fillna(0)
-    
-        # If no agent_map was passed in, default to userId
-        if agent_map is None:
-            agent_map = {}
-    
-        def get_agent_short(u):
-            return agent_map.get(u, u)
-    
-        all_agents = group_df['userId'].unique()
-        if len(all_agents) == 0:
-            st.warning("No agent data found in text->call follow-up grouping.")
-            return
-    
-        # Build heatmaps per agent
-        for agent_id in all_agents:
-            adf = group_df[group_df['userId'] == agent_id].copy()
-            if adf.empty:
-                continue
-    
-            pivot_rate = adf.pivot(index='text_day', columns='text_hour', values='followup_rate').fillna(0)
-            pivot_txts = adf.pivot(index='text_day', columns='text_hour', values='total_outbound_texts').fillna(0)
-            pivot_succ = adf.pivot(index='text_day', columns='text_hour', values='had_followup_call').fillna(0)
-    
-            # Reindex by day_order/hour_order
-            pivot_rate = pivot_rate.reindex(index=day_order, columns=hour_order, fill_value=0)
-            pivot_txts = pivot_txts.reindex(index=day_order, columns=hour_order, fill_value=0)
-            pivot_succ = pivot_succ.reindex(index=day_order, columns=hour_order, fill_value=0)
-    
-            agent_short = get_agent_short(agent_id)
-            fig = px.imshow(
-                pivot_rate,
-                color_continuous_scale='Greens',
-                range_color=[0,100],
-                labels=dict(x="Hour of Text", y="Day of Text", color="Follow-Up Rate (%)"),
-                title=(
-                    f"Text→Call Follow-Up Rate - {agent_short} "
-                    f"(within {time_window_hours} hrs, min {min_success_duration}s)"
-                )
-            )
-    
-            # Custom hover text
-            hover_text = []
-            for d in day_order:
-                row_data = []
-                for h in hour_order:
-                    rate_val = pivot_rate.loc[d, h]
-                    txts_val = pivot_txts.loc[d, h]
-                    succ_val = pivot_succ.loc[d, h]
-                    row_data.append(
-                        f"Day: {d}<br>Hour: {h}<br>"
-                        f"Follow-Up Rate: {rate_val:.1f}%<br>"
-                        f"Outbound Texts: {int(txts_val)}<br>"
-                        f"Got Follow-Up Calls: {int(succ_val)}"
-                    )
-                hover_text.append(row_data)
-    
-            fig.update_traces(
-                customdata=hover_text,
-                hovertemplate="%{customdata}<extra></extra>"
-            )
-            fig.update_xaxes(side="top")
-            fig.update_layout(height=400, margin=dict(l=50, r=50, t=50, b=50))
-    
-            st.plotly_chart(fig, use_container_width=True)
-    
-        # Summary Table
-        sum_df = group_df.groupby('userId').agg(
-            total_texts=('total_outbound_texts','sum'),
-            total_followups=('had_followup_call','sum')
-        ).reset_index()
-        sum_df['followup_rate'] = (sum_df['total_followups'] / sum_df['total_texts'] * 100).round(1).fillna(0)
-        sum_df['Agent'] = sum_df['userId'].map(get_agent_short)
-    
-        st.subheader("Text→Call Follow-Up Summary by Agent")
-        st.dataframe(sum_df[['Agent', 'userId', 'total_texts', 'total_followups', 'followup_rate']])
-
 
 
 # Optionally, define a main() if you prefer:
