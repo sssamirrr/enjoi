@@ -5,28 +5,27 @@ import requests
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
 
-# --------------------
-# 1) Setup and Helpers
-# --------------------
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+############################
+# 1) OpenPhone API Key     #
+############################
+# NOTE: As requested, using the API key "as is" (no 'Bearer ' prefix).
+OPENPHONE_API_KEY = "YOUR_API_KEY_HERE"
 
 def get_headers():
     """
-    Returns the headers used for all OpenPhone API requests.
-    Note: NO 'Bearer ' prefix, as requested.
+    Returns the headers for all OpenPhone API requests.
     """
     return {
-        "Authorization": OPENPHONE_API_KEY,
+        "Authorization": OPENPHONE_API_KEY,  # No 'Bearer' prefix
         "Content-Type": "application/json"
     }
 
 def rate_limited_request(url, headers, params=None):
     """
-    Makes a GET request, sleeping ~1/5 second to respect ~5 req/sec.
+    Makes a GET request, sleeping ~0.2 seconds to respect ~5 req/sec.
+    Accepts `params` as a list of tuples or a dict.
     """
-    if params is None:
-        params = {}
-    time.sleep(0.2)
+    time.sleep(0.2)  # simple rate limit
     try:
         resp = requests.get(url, headers=headers, params=params)
         if resp.status_code == 200:
@@ -38,47 +37,48 @@ def rate_limited_request(url, headers, params=None):
         st.warning(f"Exception: {e}")
     return None
 
-# ---------------------------
-# 2) Fetch Phone Numbers List
-# ---------------------------
 def get_phone_numbers():
+    """
+    Fetch phone numbers from OpenPhone.
+    """
     url = "https://api.openphone.com/v1/phone-numbers"
     data = rate_limited_request(url, get_headers())
     if not data or "data" not in data:
         return []
     results = []
     for pn in data["data"]:
-        pid = pn.get("id","")
-        pnum = pn.get("phoneNumber","No Number")
+        pid = pn.get("id", "")
+        pnum = pn.get("phoneNumber", "No Number")
         results.append({"id": pid, "phoneNumber": pnum})
     return results
 
-# ---------------------------------------
-# 3) Fetch Calls with Date Range (3 mos)
-# ---------------------------------------
 def fetch_calls(phone_number_id, start_date, end_date, max_calls=500):
     """
-    Fetch calls for phoneNumberId within [start_date, end_date].
-    Passing participants=[] to 'trick' the API if it's required.
-    Limit to max_calls if needed.
+    Fetch calls for phoneNumberId between start_date and end_date.
+    Instead of passing 'participants': [], we attach `participants[]` = ''
+    in the query string (list of tuples) to work around 'required property' errors.
     """
-    calls_url = "https://api.openphone.com/v1/calls"
+    url = "https://api.openphone.com/v1/calls"
     all_calls = []
     next_page = None
 
     while True:
-        params = {
-            "phoneNumberId": phone_number_id,
-            "createdAfter": start_date.isoformat(),  # e.g. 2023-09-01T00:00:00Z
-            "createdBefore": end_date.isoformat(),
-            "maxResults": 50,
-            # Empty array to satisfy any 'participants' requirement
-            "participants": []
-        }
-        if next_page:
-            params["pageToken"] = next_page
+        # We'll build `params` as a list of tuples. The server sometimes
+        # expects participants[] in the query string as array syntax:
+        base_params = [
+            ("phoneNumberId", phone_number_id),
+            ("createdAfter", start_date.isoformat()),
+            ("createdBefore", end_date.isoformat()),
+            ("maxResults", "50")
+        ]
+        # Trick: pass an empty participants[] array
+        # This often satisfies the "Expected array" requirement
+        base_params.append(("participants[]", ""))
 
-        data = rate_limited_request(calls_url, get_headers(), params)
+        if next_page:
+            base_params.append(("pageToken", next_page))
+
+        data = rate_limited_request(url, get_headers(), params=base_params)
         if not data or "data" not in data:
             break
 
@@ -91,32 +91,29 @@ def fetch_calls(phone_number_id, start_date, end_date, max_calls=500):
 
     return all_calls[:max_calls]
 
-# -----------------------------------------------
-# 4) Fetch Messages with Date Range (3 months)
-# -----------------------------------------------
 def fetch_messages(phone_number_id, start_date, end_date, max_msgs=500):
     """
-    Fetch messages for phoneNumberId within [start_date, end_date].
-    Also passing participants=[] to 'trick' the API if needed.
-    Limit to max_msgs if needed.
+    Fetch messages for phoneNumberId between start_date and end_date.
+    We also append participants[] as empty in the query string for consistency.
     """
-    msgs_url = "https://api.openphone.com/v1/messages"
+    url = "https://api.openphone.com/v1/messages"
     all_msgs = []
     next_page = None
 
     while True:
-        params = {
-            "phoneNumberId": phone_number_id,
-            "createdAfter": start_date.isoformat(),
-            "createdBefore": end_date.isoformat(),
-            "maxResults": 50,
-            # Empty array for any 'participants' requirement
-            "participants": []
-        }
-        if next_page:
-            params["pageToken"] = next_page
+        base_params = [
+            ("phoneNumberId", phone_number_id),
+            ("createdAfter", start_date.isoformat()),
+            ("createdBefore", end_date.isoformat()),
+            ("maxResults", "50")
+        ]
+        # Trick: pass an empty participants[] array
+        base_params.append(("participants[]", ""))
 
-        data = rate_limited_request(msgs_url, get_headers(), params)
+        if next_page:
+            base_params.append(("pageToken", next_page))
+
+        data = rate_limited_request(url, get_headers(), params=base_params)
         if not data or "data" not in data:
             break
 
@@ -129,15 +126,13 @@ def fetch_messages(phone_number_id, start_date, end_date, max_msgs=500):
 
     return all_msgs[:max_msgs]
 
-# -------------------------
-# 5) Extract Contact Numbers
-# -------------------------
+# -------------- Contact Extraction --------------
 def get_contact_numbers_from_call(call_record):
     """
     Return a set of phone numbers from a call record.
     """
     contacts = set()
-    # Try participants first
+    # Check 'participants' if present
     participants = call_record.get("participants", [])
     if participants:
         for p in participants:
@@ -175,7 +170,7 @@ def get_contact_numbers_from_message(msg_record):
     Return a set of phone numbers from a message record.
     """
     contacts = set()
-    # Try participants first
+    # Check 'participants' if present
     participants = msg_record.get("participants", [])
     if participants:
         for p in participants:
@@ -208,13 +203,10 @@ def get_contact_numbers_from_message(msg_record):
                 contacts.add(to_list)
     return contacts
 
-# --------------------------------
-# 6) Transcripts & Message Details
-# --------------------------------
+# -------------- Transcripts & Messages --------------
 def fetch_call_transcript(call_id):
     """
-    GET /v1/calls/{callId}/transcription
-    (Requires Business plan to see transcripts)
+    GET /v1/calls/{callId}/transcription (Business plan).
     """
     url = f"https://api.openphone.com/v1/calls/{call_id}/transcription"
     data = rate_limited_request(url, get_headers())
@@ -224,8 +216,7 @@ def fetch_call_transcript(call_id):
 
 def fetch_full_message(message_id):
     """
-    GET /v1/messages/{messageId}
-    to retrieve full message content if needed.
+    GET /v1/messages/{messageId} to get full message content if needed.
     """
     url = f"https://api.openphone.com/v1/messages/{message_id}"
     data = rate_limited_request(url, get_headers())
@@ -233,11 +224,9 @@ def fetch_full_message(message_id):
         return None
     return data["data"]
 
-# ---------------
-# 7) Streamlit UI
-# ---------------
+# -------------- Streamlit UI --------------
 def main():
-    st.set_page_config(page_title="OpenPhone - Last 100 Contacts (3 Months)", layout="wide")
+    st.set_page_config(page_title="OpenPhone - Last 3 Months Calls & Messages", layout="wide")
     st.title("OpenPhone: Calls & Messages for Last 3 Months")
 
     # Step A: Let user pick from their available phone numbers
@@ -246,19 +235,22 @@ def main():
         st.error("No phone numbers found or invalid API Key.")
         return
 
-    # Let user choose phone number from dropdown
-    phone_num_map = {pn["phoneNumber"]: pn["id"] for pn in phone_nums if pn["id"]}
-    choice = st.selectbox("Select a Phone Number:", list(phone_num_map.keys()))
-    phone_number_id = phone_num_map[choice]
+    phone_map = {pn["phoneNumber"]: pn["id"] for pn in phone_nums if pn["id"]}
+    if not phone_map:
+        st.error("No valid phone number IDs found.")
+        return
 
-    # Step B: Define date range for last 3 months
+    choice = st.selectbox("Select a Phone Number:", list(phone_map.keys()))
+    phone_number_id = phone_map[choice]
+
+    # Step B: Date range for the last 3 months
     end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=90)  # ~3 months
+    start_date = end_date - timedelta(days=90)
 
-    # Step C: Fetch calls & messages (with spinner)
     st.info("Fetching calls and messages from the past 3 months…")
     with st.spinner("Loading calls..."):
         calls = fetch_calls(phone_number_id, start_date, end_date, max_calls=500)
+
     with st.spinner("Loading messages..."):
         msgs = fetch_messages(phone_number_id, start_date, end_date, max_msgs=500)
 
@@ -284,31 +276,27 @@ def main():
     unique_contacts = list(contact_set)[:100]
     st.write(f"Found {len(unique_contacts)} unique contacts (limited to 100).")
 
-    # Step E: For each contact, show relevant calls & messages
-    # Expanders so the page isn't too large
+    # Step E: Display calls/messages per contact
     for contact_number in unique_contacts:
         with st.expander(f"Contact: {contact_number}"):
             # Filter calls for this contact
             contact_calls = []
             for call in calls:
-                these_numbers = get_contact_numbers_from_call(call)
-                if contact_number in these_numbers:
+                if contact_number in get_contact_numbers_from_call(call):
                     contact_calls.append(call)
 
-            # Display calls + transcripts
             call_rows = []
             for ccall in contact_calls:
                 cid = ccall.get("id", "")
                 direction = ccall.get("direction", "")
                 created_at = ccall.get("createdAt", "")
-                # Attempt transcript fetch
+                # Fetch transcript if any
                 transcript_data = fetch_call_transcript(cid)
-                transcript_text = ""
                 if transcript_data and "dialogue" in transcript_data:
                     lines = []
                     for seg in transcript_data["dialogue"]:
-                        speaker = seg.get("identifier","?")
-                        content = seg.get("content","")
+                        speaker = seg.get("identifier", "?")
+                        content = seg.get("content", "")
                         lines.append(f"{speaker}: {content}")
                     transcript_text = "\n".join(lines)
                 elif transcript_data and "summary" in transcript_data:
@@ -329,10 +317,9 @@ def main():
 
             # Filter messages for this contact
             contact_msgs = []
-            for msg in msgs:
-                these_numbers = get_contact_numbers_from_message(msg)
-                if contact_number in these_numbers:
-                    contact_msgs.append(msg)
+            for mm in msgs:
+                if contact_number in get_contact_numbers_from_message(mm):
+                    contact_msgs.append(mm)
 
             msg_rows = []
             for mm in contact_msgs:
@@ -342,9 +329,9 @@ def main():
                 # Optionally fetch full message
                 full_m = fetch_full_message(mid)
                 if full_m:
-                    body = full_m.get("content","") or full_m.get("body","")
+                    body = full_m.get("content", "") or full_m.get("body", "")
                 else:
-                    body = mm.get("content","") or mm.get("body","")
+                    body = mm.get("content", "") or mm.get("body", "")
 
                 msg_rows.append({
                     "Message ID": mid,
