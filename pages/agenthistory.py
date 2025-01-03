@@ -8,11 +8,11 @@ from datetime import datetime, timedelta
 # --------------------
 # 1) Setup and Helpers
 # --------------------
-OPENPHONE_API_KEY = "YOUR_API_KEY_HERE"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
-def get_headers():
+def get_headers(): 
     return {
-        "Authorization": f"Bearer {OPENPHONE_API_KEY}",
+        "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
     }
 
