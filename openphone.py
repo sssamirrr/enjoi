@@ -153,80 +153,67 @@ def run_text_success_rate_heatmap(messages, day_order, hour_order, agent_map=Non
 ###############################################################################
 # 22) Compare Call Durations: Now "Per-Agent" Preceding Text Logic
 ###############################################################################
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+
 def run_call_duration_preceded_by_text(messages, calls, default_time_window=8):
     """
-    # 22. CALL DURATION COMPARISON: WITH vs. WITHOUT A PRECEDING TEXT, PER AGENT
-
-    For each agent's outgoing call, we check whether that *same agent* sent an
-    outbound text to the same phone number in [call_time - X hours, call_time).
-    Then we compare average call duration for "preceded by text" vs "not preceded",
-    both overall and per-agent.
+    Per-agent preceded-by-text logic:
+      - Each call is only preceded if the *same userId* has an outgoing text
+        on the same phoneNumber within X hours.
+      - We do NOT filter out messages from other agents.
     """
+    st.subheader("Compare Call Durations (Per-Agent Preceding Text)")
 
-    import numpy as np
-    import pandas as pd
-    import plotly.express as px
-    import streamlit as st
-
-    st.subheader("22) Compare Call Durations (Per-Agent Preceding Text Logic)")
-
-    # If no data, bail out
     if messages.empty or calls.empty:
-        st.warning("No messages or calls to analyze for #22.")
+        st.warning("No messages or calls to analyze.")
         return
 
-    # Ask user how many hours count as "preceded by text"
     time_window_hours = st.slider(
         "Time Window (hours) for a Preceding Outbound Text (#22)",
         min_value=1, max_value=72, value=default_time_window, step=1
     )
 
-    # We need a 'duration' column in calls
+    # Must have a 'duration' column for calls
     if 'duration' not in calls.columns:
-        st.warning("No 'duration' column found in calls. Cannot measure durations for #22.")
+        st.warning("No 'duration' column in calls. Cannot analyze.")
         return
 
-    # -------------------------------------------------------------------------
-    # 1) Keep only outbound calls with non-negative duration
-    #    (No more filtering by "earliest contact was an outbound text")
-    # -------------------------------------------------------------------------
+    # Filter calls: Only outgoing calls with a valid duration
     calls_out = calls[
         (calls['direction'] == 'outgoing') &
         (calls['duration'] >= 0)
     ].copy()
-
     if calls_out.empty:
-        st.warning("No outbound calls found (#22).")
+        st.warning("No outbound calls left after filtering.")
         return
 
-    # -------------------------------------------------------------------------
-    # 2) For each call, check if that SAME agent (userId) sent a text
-    #    to the same phoneNumber in [call_time - X hours, call_time)
-    # -------------------------------------------------------------------------
-    calls_out['call_time'] = calls_out['createdAtET']
+    calls_out['call_time'] = pd.to_datetime(calls_out['createdAtET'], errors='coerce')
 
-    # All outgoing texts from *any* agent
+    # All outgoing texts from ANY agent (but we won't filter by agent)
     msgs_out = messages[
         (messages['direction'] == 'outgoing') &
         (messages['type'] == 'message')
     ].copy()
-    msgs_out['text_time'] = msgs_out['createdAtET']
+    msgs_out['text_time'] = pd.to_datetime(msgs_out['createdAtET'], errors='coerce')
 
-    # Sort them so merges/groupbys are predictable
+    # Sort
     msgs_out.sort_values(by=['userId','phoneNumber','text_time'], inplace=True)
     calls_out.sort_values(by=['userId','phoneNumber','call_time'], inplace=True)
 
-    # Calculate the earliest text time that still "counts"
+    # The earliest text time that can precede the call
     calls_out['min_text_time'] = calls_out['call_time'] - pd.Timedelta(hours=time_window_hours)
 
-    # Merge calls with possible preceding texts from the SAME agent/phoneNumber
+    # Merge on (userId, phoneNumber)
     merged = calls_out.merge(
         msgs_out[['userId','phoneNumber','text_time']],
         on=['userId','phoneNumber'],
         how='left'
     )
 
-    # Condition: text_time in [call_time - X hrs, call_time)
+    # Is the text in [call_time - X, call_time)?
     cond = (
         (merged['text_time'] >= merged['min_text_time']) &
         (merged['text_time'] < merged['call_time'])
@@ -237,95 +224,105 @@ def run_call_duration_preceded_by_text(messages, calls, default_time_window=8):
     merged = merged.reset_index(drop=False).rename(columns={'index':'call_index'})
     preceded_df = merged.groupby('call_index')['text_preceded'].max().reset_index(name='call_preceded_flag')
 
-    # Attach it back to calls_out
+    # Attach flag back to calls_out
     calls_out = calls_out.reset_index(drop=False).rename(columns={'index':'orig_call_idx'})
     calls_out = calls_out.merge(preceded_df, left_on='orig_call_idx', right_on='call_index', how='left')
-    calls_out.drop(columns=['call_index'], inplace=True)
     calls_out['call_preceded_flag'] = calls_out['call_preceded_flag'].fillna(0).astype(int)
 
-    # -------------------------------------------------------------------------
-    # 3a) Overall (Combined) Comparison
-    # -------------------------------------------------------------------------
+    # Overall comparison
     comp_df = calls_out.groupby('call_preceded_flag')['duration'].mean().reset_index()
-    # Map 0->'No preceding text', 1->'Preceded by text'
     comp_df['call_preceded_flag'] = comp_df['call_preceded_flag'].map({
         0: 'No preceding text',
         1: 'Preceded by text'
     })
     comp_df.rename(columns={'duration': 'avg_duration'}, inplace=True)
 
-    st.markdown("#### Overall: Combined (All Selected Agents)")
+    st.write("### Overall: Combined")
     fig = px.bar(
         comp_df,
         x='call_preceded_flag',
         y='avg_duration',
         color='call_preceded_flag',
-        labels=dict(call_preceded_flag="Preceding Text?", avg_duration="Avg Duration (sec)"),
-        title="Avg Call Duration: (Combined) w/o vs. w/ Preceding Text (#22)"
+        title="Avg Call Duration: w/o vs. w/ Preceding Text (ALL Selected Agents)",
+        labels=dict(call_preceded_flag="Preceded by Text?", avg_duration="Avg Duration (s)")
     )
     fig.update_layout(showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
     st.table(comp_df)
 
-    # -------------------------------------------------------------------------
-    # 3b) Per-Agent Comparison
-    # -------------------------------------------------------------------------
-    st.markdown("#### Per-Agent: Compare Preceded vs. Not Preceded (#22)")
+    # Per-agent comparison
+    st.write("### Per-Agent Comparison")
     agent_df = calls_out.groupby(['userId','call_preceded_flag'])['duration'].mean().reset_index()
     agent_df.rename(columns={'duration': 'avg_duration'}, inplace=True)
-
-    # Map 0->No preceding text, 1->Preceded by text
     agent_df['call_preceded_flag'] = agent_df['call_preceded_flag'].map({
         0: 'No preceding text',
         1: 'Preceded by text'
     })
 
-    fig_per_agent = px.bar(
+    fig2 = px.bar(
         agent_df,
         x='avg_duration',
         y='userId',
         color='call_preceded_flag',
         orientation='h',
         barmode='group',
-        labels=dict(
-            userId="Agent (userId)",
-            avg_duration="Avg Duration (sec)",
-            call_preceded_flag="Preceding Text?"
-        ),
-        title="Call Duration by Agent: w/o vs. w/ Preceding Text"
+        title="Call Duration by Agent: w/o vs. w/ Preceding Text",
+        labels=dict(userId='Agent', avg_duration='Avg Duration (s)', call_preceded_flag='Preceded?')
     )
-    fig_per_agent.update_layout(legend_title_text="Preceding Text?")
-    st.plotly_chart(fig_per_agent, use_container_width=True)
-
+    st.plotly_chart(fig2, use_container_width=True)
     st.dataframe(agent_df)
 
-    # -------------------------------------------------------------------------
-    # OPTIONAL: Force any missing (agent, preceded_flag) combos to show as 0
-    # -------------------------------------------------------------------------
-    # If you'd like to ensure that each agent always shows both categories
-    # (even if no calls exist), you can "unstack + fill" or build a full grid:
-    #
+    # If you want to "force" zero bars for missing combos, do the pivot/merge trick:
     # import itertools
     # all_agents = calls_out['userId'].unique()
     # all_flags = [0, 1]
-    # combos = pd.DataFrame(
-    #     itertools.product(all_agents, all_flags),
-    #     columns=['userId','call_preceded_flag']
-    # )
-    #
-    # grouped = (
-    #     calls_out
-    #     .groupby(['userId','call_preceded_flag'])['duration']
-    #     .mean()
-    #     .reset_index(name='avg_duration')
-    # )
-    #
-    # forced_df = combos.merge(grouped, on=['userId','call_preceded_flag'], how='left')
-    # forced_df['avg_duration'] = forced_df['avg_duration'].fillna(0)
-    # # Then map 0/1 to the text label, same as above, and build your bar chart.
+    # combos = pd.DataFrame(itertools.product(all_agents, all_flags),
+    #                       columns=['userId','call_preceded_flag'])
+    # grouped = calls_out.groupby(['userId','call_preceded_flag'])['duration'].mean().reset_index(name='avg_duration')
+    # forced = combos.merge(grouped, on=['userId','call_preceded_flag'], how='left').fillna(0)
+    # ... then build your chart from "forced" so each agent always has 2 bars.
+
+def run_dashboard(openphone_data):
+    st.title("My Demo Dashboard")
+
+    # 1) Let user pick date range
+    openphone_data['createdAtET'] = pd.to_datetime(openphone_data['createdAtET'], errors='coerce')
+    min_date = openphone_data['createdAtET'].min().date()
+    max_date = openphone_data['createdAtET'].max().date()
+
+    start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
+    end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
+
+    if start_date > end_date:
+        st.error("Invalid date range.")
+        return
+
+    openphone_data = openphone_data[
+        (openphone_data['createdAtET'].dt.date >= start_date) &
+        (openphone_data['createdAtET'].dt.date <= end_date)
+    ]
+
+    # 2) Let user pick agents, but note we won't filter messages by agent
+    #    We'll only filter calls. That ensures each agent sees their texts unaffected by others.
+    all_agents = openphone_data['userId'].dropna().unique()
+    selected_agents = st.multiselect("Select Agents", all_agents, default=all_agents)
+
+    # "All messages" in date range (not filtered by agent)
+    messages_all = openphone_data[openphone_data['type'] == 'message'].copy()
+
+    # "Selected calls" for only the chosen agents
+    calls_all = openphone_data[openphone_data['type'] == 'call'].copy()
+    calls_selected = calls_all[calls_all['userId'].isin(selected_agents)].copy()
+
+    # 3) Run preceded-by-text analysis on calls_selected, but keep messages_all
+    run_call_duration_preceded_by_text(messages_all, calls_selected)
 
 
-
+# If you're using Streamlit directly:
+# if __name__ == "__main__":
+#     # Load your data however you like
+#     # openphone_data = pd.read_csv(...)
+#     run_dashboard(openphone_data)
 
 
 ###############################################################################
