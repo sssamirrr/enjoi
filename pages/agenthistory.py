@@ -143,7 +143,7 @@ def main():
     query_params = st.experimental_get_query_params()
     phone_number_id = query_params.get("phoneNumberId", [None])[0]
 
-    headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}"}
+    headers = {"Authorization": {OPENPHONE_API_KEY}"}
 
     if phone_number_id:
         # --- Detail page for a specific agent ---
