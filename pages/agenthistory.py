@@ -70,7 +70,7 @@ def get_phone_numbers():
 def fetch_calls(phone_number_id, max_records=100):
     """
     Fetch up to max_records calls for phoneNumberId.
-    No 'participants' param. Debug prints each chunk + each record.
+    Include empty participants array as required by API.
     """
     if not phone_number_id or not phone_number_id.startswith("PN"):
         return []
@@ -83,7 +83,8 @@ def fetch_calls(phone_number_id, max_records=100):
     while True:
         params = {
             "phoneNumberId": phone_number_id,
-            "maxResults": 50
+            "maxResults": 50,
+            "participants": []  # Add this line to include required empty participants array
         }
         if next_page:
             params["pageToken"] = next_page
@@ -110,7 +111,7 @@ def fetch_calls(phone_number_id, max_records=100):
 def fetch_messages(phone_number_id, max_records=100):
     """
     Fetch up to max_records messages for phoneNumberId.
-    No 'participants' param. Debug prints each chunk + record.
+    Include empty participants array as required by API.
     """
     if not phone_number_id or not phone_number_id.startswith("PN"):
         return []
@@ -123,7 +124,8 @@ def fetch_messages(phone_number_id, max_records=100):
     while True:
         params = {
             "phoneNumberId": phone_number_id,
-            "maxResults": 50
+            "maxResults": 50,
+            "participants": []  # Add this line to include required empty participants array
         }
         if next_page:
             params["pageToken"] = next_page
@@ -146,7 +148,6 @@ def fetch_messages(phone_number_id, max_records=100):
             break
 
     return all_msgs
-
 ##############################
 # 5) Gather Contact Numbers  #
 ##############################
