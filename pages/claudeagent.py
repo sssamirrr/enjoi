@@ -28,7 +28,7 @@ def rate_limited_request(url, headers, params=None):
 
 def get_workspace_contacts():
     """Fetch all contacts from the workspace"""
-    url = "https://api.openphone.com/v1/workspaces/contacts"
+    url = "https://api.openphone.com/v1/contacts"
     headers = {
         "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
@@ -59,7 +59,7 @@ def get_phone_numbers():
 
 def fetch_calls(phone_number_id):
     """Fetch calls for a specific phone number"""
-    url = "https://api.openphone.com/v1/workspaces/calls"
+    url = "https://api.openphone.com/v1/calls"
     headers = {
         "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
@@ -73,7 +73,7 @@ def fetch_calls(phone_number_id):
 
 def fetch_messages(phone_number_id):
     """Fetch messages for a specific phone number"""
-    url = "https://api.openphone.com/v1/workspaces/messages"
+    url = "https://api.openphone.com/v1/messages"
     headers = {
         "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
