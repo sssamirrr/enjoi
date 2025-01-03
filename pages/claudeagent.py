@@ -41,7 +41,7 @@ def get_phone_numbers():
     """
     url = "https://api.openphone.com/v1/phone-numbers"
     headers = {
-        "Authorization": OPENPHONE_API_KEY,
+        "Authorization": f"{OPENPHONE_API_KEY}",  # Removed 'Bearer'
         "Content-Type": "application/json"
     }
 
@@ -65,7 +65,7 @@ def get_agent_history(phone_number_id):
     """
     try:
         headers = {
-            "Authorization": OPENPHONE_API_KEY,
+            "Authorization": f"{OPENPHONE_API_KEY}",  # Removed 'Bearer'
             "Content-Type": "application/json"
         }
 
