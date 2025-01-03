@@ -6,9 +6,7 @@ import requests
 ##############################
 # 1) OpenPhone API Key       #
 ##############################
-# NOTE: If you need 'Bearer ', add it manually:
-# OPENPHONE_API_KEY = "Bearer YOUR_REAL_KEY"
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"  # No 'Bearer '
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
 ##############################
 # 2) Rate-Limited Request    #
@@ -41,11 +39,10 @@ def rate_limited_request(url, headers, params=None, request_type='get'):
 def get_phone_numbers():
     """
     Fetch phoneNumberId, phoneNumber for all lines in your OpenPhone account.
-    Returns a list of dicts with { "phoneNumberId": "PN...", "phoneNumber": "+1..." }.
     """
     url = "https://api.openphone.com/v1/phone-numbers"
     headers = {
-        "Authorization": OPENPHONE_API_KEY,  # no 'Bearer ' prefix
+        "Authorization": OPENPHONE_API_KEY,
         "Content-Type": "application/json"
     }
     data = rate_limited_request(url, headers, {})
@@ -54,7 +51,7 @@ def get_phone_numbers():
 
     results = []
     for item in data["data"]:
-        pid = item.get("id")                # e.g. "PNsyKJnJnG"
+        pid = item.get("id")
         pnum = item.get("phoneNumber") or "No Phone#"
         results.append({
             "phoneNumberId": pid,
@@ -68,10 +65,8 @@ def get_phone_numbers():
 def fetch_calls(phone_number_id, max_contacts=100):
     """
     Fetch up to max_contacts calls for a given phoneNumberId.
-    No 'participants' param to avoid 400 errors.
     """
     if not phone_number_id or not phone_number_id.startswith("PN"):
-        # If invalid, return empty
         return []
 
     calls_url = "https://api.openphone.com/v1/calls"
@@ -104,7 +99,6 @@ def fetch_calls(phone_number_id, max_contacts=100):
 def fetch_messages(phone_number_id, max_contacts=100):
     """
     Fetch up to max_contacts messages for a given phoneNumberId.
-    No 'participants' param to avoid 400 errors.
     """
     if not phone_number_id or not phone_number_id.startswith("PN"):
         return []
@@ -138,19 +132,18 @@ def fetch_messages(phone_number_id, max_contacts=100):
 
 def get_agent_history(phone_number_id):
     """
-    Returns (calls_df, messages_df):
-     - Last 100 calls for that phoneNumberId (with transcripts if available)
-     - Last 100 messages (with full text content)
+    Returns (calls_df, messages_df) with last 100 of each
     """
     calls_data = fetch_calls(phone_number_id, 100)
     if calls_data:
         calls_df = pd.DataFrame([
             {
-                "Created At": c.get("createdAt", ""),
+                "Created At": pd.to_datetime(c.get("createdAt", ""), unit='s'),
                 "Direction": c.get("direction", ""),
                 "Duration (sec)": c.get("duration", 0),
                 "Status": c.get("status", ""),
-                "Transcript": c.get("transcript", ""),
+                "From": c.get("from", ""),
+                "To": c.get("to", ""),
                 "Recording URL": c.get("recordingUrl", "")
             }
             for c in calls_data
@@ -162,7 +155,7 @@ def get_agent_history(phone_number_id):
     if messages_data:
         messages_df = pd.DataFrame([
             {
-                "Created At": m.get("createdAt", ""),
+                "Created At": pd.to_datetime(m.get("createdAt", ""), unit='s'),
                 "Direction": m.get("direction", ""),
                 "Message Content": m.get("content", ""),
                 "From": m.get("from", {}).get("phoneNumber", ""),
@@ -176,61 +169,63 @@ def get_agent_history(phone_number_id):
     return calls_df, messages_df
 
 ##############################
-# 5) Single-Page Streamlit   #
+# 5) Main Streamlit App      #
 ##############################
 def main():
-    st.set_page_config(page_title="OpenPhone Fix", layout="wide")
+    st.set_page_config(page_title="OpenPhone History", layout="wide")
     st.title("OpenPhone: List & Last 100 Contacts")
 
-    # 1) Check if we have phoneNumberId in query params
-    phone_number_id = st.query_params.get("phoneNumberId", [None])[0]
+    # Get phone_number_id from query params if it exists
+    params = st.experimental_get_query_params()
+    phone_number_id = params.get("phoneNumberId", [None])[0]
 
     if phone_number_id:
-        # --- Detail View ---
+        # Detail View
         st.subheader(f"Detail for phoneNumberId = {phone_number_id}")
-        # Double-check if it starts with "PN"
+        
+        # Validate phoneNumberId format
         if not phone_number_id.startswith("PN"):
             st.error("Invalid phoneNumberId. Must match '^PN(.*)'.")
             st.markdown("[Back to Main](?)")
             return
 
-        with st.spinner("Fetching calls & messages..."):
+        # Fetch and display history
+        with st.spinner("Fetching history..."):
             calls_df, messages_df = get_agent_history(phone_number_id)
 
-        st.markdown("### Last 100 Calls")
-        if calls_df.empty:
-            st.info("No calls found or invalid ID.")
-        else:
-            st.dataframe(calls_df)
+            st.markdown("### Last 100 Calls")
+            if not calls_df.empty:
+                st.dataframe(calls_df)
+            else:
+                st.info("No calls found.")
 
-        st.markdown("### Last 100 Messages")
-        if messages_df.empty:
-            st.info("No messages found or invalid ID.")
-        else:
-            st.dataframe(messages_df)
+            st.markdown("### Last 100 Messages")
+            if not messages_df.empty:
+                st.dataframe(messages_df)
+            else:
+                st.info("No messages found.")
 
         st.markdown("[Back to Main](?)")
 
     else:
-        # --- Main Page: List All Phone Numbers ---
-        st.header("All Phone Numbers in OpenPhone")
-
+        # Main List View
+        st.header("All Phone Numbers")
+        
         phone_nums = get_phone_numbers()
         if not phone_nums:
-            st.warning("No phone numbers found. Possibly no lines assigned or API issue.")
+            st.warning("No phone numbers found.")
             return
 
-        # Build a table with a clickable link
+        # Create table with links
         table_data = []
         for pn in phone_nums:
             pid = pn["phoneNumberId"]
             pnum = pn["phoneNumber"]
             if pid and pid.startswith("PN"):
-                # Relative link "?phoneNumberId=PNxxx"
                 link = f'<a href="?phoneNumberId={pid}" target="_self">View History</a>'
             else:
-                link = "No valid ID"
-
+                link = "Invalid ID"
+            
             table_data.append({
                 "Phone Number": pnum,
                 "Details": link
