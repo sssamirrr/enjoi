@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 ############################
 # 1) OpenPhone API Key     #
 ############################
-OPENPHONE_API_KEY = "Bearer j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
 ############################
 # 2) Rate-limited request  #
