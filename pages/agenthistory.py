@@ -68,6 +68,10 @@ def get_agent_history(phone_number_id):
             "Content-Type": "application/json"
         }
 
+        # First, get the phone number details
+        phone_numbers = get_phone_numbers()
+        agent_phone = next((pn["phoneNumber"] for pn in phone_numbers if pn["phoneNumberId"] == phone_number_id), "Unknown")
+
         # -- Calls --
         calls_url = "https://api.openphone.com/v1/calls"
         calls_data = []
@@ -94,6 +98,7 @@ def get_agent_history(phone_number_id):
 
         if calls_data:
             calls_df = pd.DataFrame([{
+                "Agent Phone": agent_phone,
                 "Created At": c.get("createdAt", ""),
                 "Direction": c.get("direction", ""),
                 "Duration (sec)": c.get("duration", 0),
@@ -129,6 +134,7 @@ def get_agent_history(phone_number_id):
 
         if messages_data:
             messages_df = pd.DataFrame([{
+                "Agent Phone": agent_phone,
                 "Created At": m.get("createdAt", ""),
                 "Direction": m.get("direction", ""),
                 "Message Content": m.get("content", ""),
@@ -163,7 +169,11 @@ def main():
     if st.session_state.phone_number_id:
         # ----- Detail View -----
         phone_id = st.session_state.phone_number_id
-        st.subheader(f"History for Phone Number ID: {phone_id}")
+        
+        # Get the phone number for display
+        phone_numbers = get_phone_numbers()
+        agent_phone = next((pn["phoneNumber"] for pn in phone_numbers if pn["phoneNumberId"] == phone_id), "Unknown")
+        st.subheader(f"History for {agent_phone}")
         
         # Add a back button at the top
         if st.button("← Back to Main List"):
