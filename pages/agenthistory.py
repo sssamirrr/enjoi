@@ -7,15 +7,14 @@ from urllib.parse import urlencode
 ############################
 # 1) OpenPhone API Key     #
 ############################
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"  # Or "Bearer YOUR_KEY"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"  # or "Bearer j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
 ############################
 # 2) Rate-limited requests #
 ############################
 def rate_limited_request(url, headers, params=None, request_type='get'):
     """
-    A helper that respects ~5 requests/second. 
-    Adjust if you need to post or handle transcripts differently.
+    A helper that respects ~5 requests/second.
     """
     if params is None:
         params = {}
@@ -35,35 +34,41 @@ def rate_limited_request(url, headers, params=None, request_type='get'):
         st.warning(f"Exception: {e}")
     return None
 
-##############################
-# 3) Basic OpenPhone Helpers #
-##############################
 def get_headers():
     return {
-        "Authorization": OPENPHONE_API_KEY,  # e.g., "Bearer <KEY>"
+        "Authorization": OPENPHONE_API_KEY,  # e.g., "Bearer <API_KEY>"
         "Content-Type": "application/json"
     }
 
+##############################
+# 3) Fetch Phone Numbers     #
+##############################
 def get_phone_numbers():
     """
-    Step 1: Lists all phone numbers in your OpenPhone workspace.
+    Fetch all phone numbers in your workspace.
     """
     url = "https://api.openphone.com/v1/phone-numbers"
     data = rate_limited_request(url, get_headers())
     if not data or "data" not in data:
         return []
+
     results = []
     for pn in data["data"]:
-        results.append({
-            "id": pn.get("id"),             # e.g. "PNabcd1234"
-            "phoneNumber": pn.get("phoneNumber", "No Number")
-        })
+        pid = pn.get("id", "")
+        pnum = pn.get("phoneNumber", "No Number")
+        results.append({"id": pid, "phoneNumber": pnum})
     return results
 
+##############################
+# 4) Fetch Calls & Messages  #
+##############################
 def fetch_calls(phone_number_id, max_records=100):
     """
-    Step 2 (part A): Fetch up to 'max_records' calls for a given phoneNumberId.
+    Fetch up to max_records calls for phoneNumberId, without using participants.
     """
+    if not phone_number_id or not phone_number_id.startswith("PN"):
+        return []
+
     calls_url = "https://api.openphone.com/v1/calls"
     all_calls = []
     fetched = 0
@@ -71,7 +76,7 @@ def fetch_calls(phone_number_id, max_records=100):
 
     while True:
         params = {
-            "phoneNumberId": phone_number_id,
+            "phoneNumberId": phone_number_id,  # No participants param
             "maxResults": 50
         }
         if next_token:
@@ -84,6 +89,7 @@ def fetch_calls(phone_number_id, max_records=100):
         chunk = data["data"]
         all_calls.extend(chunk)
         fetched += len(chunk)
+
         next_token = data.get("nextPageToken")
         if not next_token or fetched >= max_records:
             break
@@ -92,8 +98,11 @@ def fetch_calls(phone_number_id, max_records=100):
 
 def fetch_messages(phone_number_id, max_records=100):
     """
-    Step 2 (part B): Fetch up to 'max_records' messages for that phoneNumberId.
+    Fetch up to max_records messages for phoneNumberId, without using participants.
     """
+    if not phone_number_id or not phone_number_id.startswith("PN"):
+        return []
+
     msgs_url = "https://api.openphone.com/v1/messages"
     all_msgs = []
     fetched = 0
@@ -101,7 +110,7 @@ def fetch_messages(phone_number_id, max_records=100):
 
     while True:
         params = {
-            "phoneNumberId": phone_number_id,
+            "phoneNumberId": phone_number_id,  # No participants param
             "maxResults": 50
         }
         if next_token:
@@ -114,26 +123,29 @@ def fetch_messages(phone_number_id, max_records=100):
         chunk = data["data"]
         all_msgs.extend(chunk)
         fetched += len(chunk)
+
         next_token = data.get("nextPageToken")
         if not next_token or fetched >= max_records:
             break
 
     return all_msgs
 
+##############################
+# 5) Fetch Full Details      #
+##############################
 def fetch_call_transcript(call_id):
     """
-    Step 3: Retrieve the full call transcript for a specific call ID.
-    GET /v1/call-transcripts/{id}
+    GET /v1/call-transcripts/{callId} to get the full dialogue.
     """
     url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
     data = rate_limited_request(url, get_headers())
     if not data or "data" not in data:
         return None
-    return data["data"]  # Might have 'dialogue', 'status', etc.
+    return data["data"]
 
 def fetch_full_message(message_id):
     """
-    Step 4: Retrieve the full message content using GET /v1/messages/{messageId}.
+    GET /v1/messages/{messageId} to get full content.
     """
     url = f"https://api.openphone.com/v1/messages/{message_id}"
     data = rate_limited_request(url, get_headers())
@@ -142,73 +154,64 @@ def fetch_full_message(message_id):
     return data["data"]
 
 ##############################
-# 4) Our Multi-Level App     #
+# 6) Multi-Level Streamlit   #
 ##############################
 def main():
+    st.set_page_config(page_title="OpenPhone Multi-Level", layout="wide")
     st.title("OpenPhone Multi-Level Logs & Transcripts")
 
-    query_params = st.experimental_get_query_params()
+    # Use st.query_params instead of st.experimental_get_query_params
+    query_params = st.query_params
     phone_number_id = query_params.get("phoneNumberId", [None])[0]
     contact_number = query_params.get("contactNumber", [None])[0]
 
     if phone_number_id and contact_number:
-        # -------------------
-        # LEVEL 2: Show Full Transcripts & Full Messages for This Contact
-        # -------------------
-        st.subheader(f"Call Transcripts & Message Bodies\n\nLine ID = {phone_number_id}\nContact = {contact_number}")
+        # =====================
+        # LEVEL 2: Transcripts + Full Messages for This Contact
+        # =====================
+        st.subheader(f"Line: {phone_number_id}, Contact: {contact_number}")
+        with st.spinner("Loading last 100 calls/messages..."):
+            all_calls = fetch_calls(phone_number_id)
+            all_msgs = fetch_messages(phone_number_id)
 
-        # Fetch calls & messages again
-        with st.spinner("Loading calls & messages..."):
-            all_calls = fetch_calls(phone_number_id, max_records=100)
-            all_msgs = fetch_messages(phone_number_id, max_records=100)
-
-        # Filter calls relevant to 'contact_number'
-        # We'll see if 'participants' includes contact_number
+        # Filter calls that involve contact_number
         relevant_calls = []
         for c in all_calls:
             participants = c.get("participants", [])
-            # If contact_number is in any participant phoneNumber
+            # If any participant has phoneNumber == contact_number
             if any(contact_number == p.get("phoneNumber") for p in participants):
                 relevant_calls.append(c)
 
-        st.markdown("### Calls with Full Transcripts")
+        st.markdown("### Calls with Transcripts")
         if not relevant_calls:
             st.info(f"No calls found with {contact_number}.")
         else:
             call_rows = []
             for call in relevant_calls:
                 call_id = call.get("id", "")
-                # Attempt to fetch transcripts
                 transcript_data = fetch_call_transcript(call_id)
                 if transcript_data and "dialogue" in transcript_data:
-                    # Flatten the transcript into a string
-                    # Alternatively, store as JSON or list
-                    dialogue_str = "\n".join([
-                        f"{seg.get('identifier', 'Unknown')} > {seg.get('content', '')}"
+                    # Flatten dialogue
+                    dialogue_str = "\n".join(
+                        f"{seg.get('identifier','?')} > {seg.get('content','')}"
                         for seg in transcript_data["dialogue"]
-                    ])
+                    )
                 else:
                     dialogue_str = "No transcript or in progress."
 
                 call_rows.append({
                     "Call ID": call_id,
-                    "Created At": call.get("createdAt", ""),
-                    "Direction": call.get("direction", ""),
+                    "Created At": call.get("createdAt",""),
+                    "Direction": call.get("direction",""),
                     "Transcript": dialogue_str
                 })
-
-            if call_rows:
-                df_calls = pd.DataFrame(call_rows)
-                st.dataframe(df_calls)
+            df_calls = pd.DataFrame(call_rows)
+            st.dataframe(df_calls)
 
         st.markdown("### Messages with Full Content")
-        # Filter messages relevant to 'contact_number'
         relevant_msgs = []
         for m in all_msgs:
             participants = m.get("participants", [])
-            # If contact_number is in participants
-            # or from == contact_number, or to
-            # But typically 'participants' includes both from & to
             if any(contact_number == p.get("phoneNumber") for p in participants):
                 relevant_msgs.append(m)
 
@@ -218,16 +221,17 @@ def main():
             msg_rows = []
             for msg in relevant_msgs:
                 msg_id = msg.get("id", "")
-                full_msg = fetch_full_message(msg_id)  # Step 4
-                if full_msg:
-                    # full_msg might have "body", "createdAt", etc.
-                    body = full_msg.get("content", "") or full_msg.get("body", "")
-                    direction = full_msg.get("direction", "")
-                    created_at = full_msg.get("createdAt", "")
+                # fetch full content
+                full_data = fetch_full_message(msg_id)
+                if full_data:
+                    body = full_data.get("content","") or full_data.get("body","")
+                    direction = full_data.get("direction","")
+                    created_at = full_data.get("createdAt","")
                 else:
-                    body = "No content found"
-                    direction = msg.get("direction", "")
-                    created_at = msg.get("createdAt", "")
+                    # fallback from partial data
+                    body = msg.get("content","")
+                    direction = msg.get("direction","")
+                    created_at = msg.get("createdAt","")
 
                 msg_rows.append({
                     "Message ID": msg_id,
@@ -235,42 +239,34 @@ def main():
                     "Direction": direction,
                     "Full Content": body
                 })
-
             df_msgs = pd.DataFrame(msg_rows)
             st.dataframe(df_msgs)
 
-        # Link back
+        # Link back to contact list
         back_params = {"phoneNumberId": phone_number_id}
         st.markdown(f"[Back to Unique Contacts](?{urlencode(back_params)})")
 
     elif phone_number_id and not contact_number:
-        # -------------------
-        # LEVEL 1: Show Unique Contacted Numbers for This phoneNumberId
-        # -------------------
-        st.subheader(f"Unique Contacts for PhoneNumberId: {phone_number_id}")
+        # =====================
+        # LEVEL 1: Unique Contacts for phoneNumberId
+        # =====================
+        st.subheader(f"Unique Contacts for {phone_number_id}")
+        with st.spinner("Loading last 100 calls & messages..."):
+            all_calls = fetch_calls(phone_number_id)
+            all_msgs = fetch_messages(phone_number_id)
 
-        with st.spinner("Loading calls & messages..."):
-            all_calls = fetch_calls(phone_number_id, max_records=100)
-            all_msgs = fetch_messages(phone_number_id, max_records=100)
-
-        # We gather a set of "contact numbers" from participants
-        # that are not the line's own phone number (optional).
-        # We'll do a naive approach: just gather from calls & messages
+        # Collect participant phoneNumbers
         contacts_set = set()
 
-        # For calls:
         for c in all_calls:
-            participants = c.get("participants", [])
-            for p in participants:
-                pn = p.get("phoneNumber")
+            for p in c.get("participants", []):
+                pn = p.get("phoneNumber", None)
                 if pn:
                     contacts_set.add(pn)
 
-        # For messages:
         for m in all_msgs:
-            participants = m.get("participants", [])
-            for p in participants:
-                pn = p.get("phoneNumber")
+            for p in m.get("participants", []):
+                pn = p.get("phoneNumber", None)
                 if pn:
                     contacts_set.add(pn)
 
@@ -279,58 +275,47 @@ def main():
             st.markdown("[Back to Main](?)")
             return
 
-        # Build a table of contacts with a link to see transcripts/messages
-        table_rows = []
-        for contact_pn in contacts_set:
-            # We skip if the contact is the same as the line's phone number (optional)
-            # Or we can keep it, if you want to see "self" calls/messages.
-            link_params = {
-                "phoneNumberId": phone_number_id,
-                "contactNumber": contact_pn
-            }
+        rows = []
+        for cn in contacts_set:
+            link_params = {"phoneNumberId": phone_number_id, "contactNumber": cn}
             link_html = f'<a href="?{urlencode(link_params)}" target="_self">View Full Logs</a>'
-            table_rows.append({
-                "Contact Phone": contact_pn,
+            rows.append({
+                "Contact Phone": cn,
                 "Details": link_html
             })
-
-        df_contacts = pd.DataFrame(table_rows)
+        df_contacts = pd.DataFrame(rows)
         st.markdown(df_contacts.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-        # Link back
         st.markdown("[Back to Main](?)")
 
     else:
-        # -------------------
-        # LEVEL 0: Show All Phone Numbers
-        # -------------------
+        # =====================
+        # LEVEL 0: All Phone Numbers
+        # =====================
         st.header("All OpenPhone Numbers in Your Workspace")
 
         with st.spinner("Loading phone numbers..."):
             phone_nums = get_phone_numbers()
 
         if not phone_nums:
-            st.warning("No phone numbers found in your workspace or invalid API Key.")
+            st.warning("No phone numbers found, or invalid API Key.")
             return
 
         table_rows = []
         for pn in phone_nums:
             pid = pn["id"]
-            pnum = pn["phoneNumber"]
+            num = pn["phoneNumber"]
             if pid and pid.startswith("PN"):
-                link_params = {"phoneNumberId": pid}
-                link_html = f'<a href="?{urlencode(link_params)}" target="_self">Show Contacts</a>'
+                link_html = f'<a href="?{urlencode({"phoneNumberId": pid})}" target="_self">Show Contacts</a>'
             else:
                 link_html = "Invalid or no ID"
+
             table_rows.append({
-                "Phone Number": pnum,
+                "Phone Number": num,
                 "Details": link_html
             })
-
-        df = pd.DataFrame(table_rows)
-        st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-
+        df_main = pd.DataFrame(table_rows)
+        st.markdown(df_main.to_html(escape=False, index=False), unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="OpenPhone Multi-Step", layout="wide")
     main()
