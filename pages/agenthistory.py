@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import requests
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode
 
 ################################
 # 0) Configure your base URL   #
@@ -12,8 +12,6 @@ BASE_URL = "https://ldmcbiowzbdeqvmabvudyy.streamlit.app"
 ################################
 # 1) OpenPhone API Helpers     #
 ################################
-
-# Your OpenPhone API key WITHOUT "Bearer "
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
 def rate_limited_request(url, headers, params, request_type='get'):
@@ -39,7 +37,7 @@ def get_phone_numbers():
     Fetch phoneNumberId and phoneNumber for all numbers in your OpenPhone account.
     """
     url = "https://api.openphone.com/v1/phone-numbers"
-    headers = {"Authorization": OPENPHONE_API_KEY, "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}", "Content-Type": "application/json"}
 
     data = rate_limited_request(url, headers, {}, 'get')
     if not data or "data" not in data:
@@ -61,7 +59,7 @@ def get_agent_history(phone_number_id):
     Returns (calls_df, messages_df) DataFrames.
     """
     try:
-        headers = {"Authorization": OPENPHONE_API_KEY, "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {OPENPHONE_API_KEY}", "Content-Type": "application/json"}
 
         # -- Calls --
         calls_url = "https://api.openphone.com/v1/calls"
@@ -145,51 +143,53 @@ def get_agent_history(phone_number_id):
 def main():
     st.title("OpenPhone History Viewer")
 
-    # Get query parameters directly from st.query_params
+    # Get query parameters
     phone_number_id = st.query_params.get("phoneNumberId")
 
     if phone_number_id:
         # ----- Detail View -----
         st.subheader(f"History for Phone Number ID: {phone_number_id}")
         
-        # Debug output
-        st.write(f"Fetching history for phone number ID: {phone_number_id}")
-        
         calls_df, messages_df = get_agent_history(phone_number_id)
 
+        # Calls Section
         st.markdown("### Last 100 Calls")
         if calls_df.empty:
             st.info("No calls found.")
         else:
-            st.dataframe(calls_df)
+            st.dataframe(calls_df, use_container_width=True)
 
+        # Messages Section
         st.markdown("### Last 100 Messages")
         if messages_df.empty:
             st.info("No messages found.")
         else:
-            st.dataframe(messages_df)
+            st.dataframe(messages_df, use_container_width=True)
 
         # Back button
-        st.markdown(f"[← Back to Main List]({BASE_URL})")
+        st.markdown("---")
+        st.markdown(f"[← Back to Phone Numbers List]({BASE_URL})")
 
     else:
         # ----- Main List of PhoneNumbers -----
-        st.header("Available Phone Numbers")
+        st.header("Phone Numbers")
 
         phone_numbers = get_phone_numbers()
         if not phone_numbers:
             st.warning("No phone numbers found in OpenPhone.")
             return
 
-        # Create a cleaner table with links
+        # Display phone numbers in a cleaner format
+        st.markdown("---")
         for phone in phone_numbers:
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.write(phone["phoneNumber"])
+                st.write(f"📱 {phone['phoneNumber']}")
             with col2:
                 link_params = {"phoneNumberId": phone["phoneNumberId"]}
                 full_url = f"{BASE_URL}?{urlencode(link_params)}"
                 st.markdown(f"[View History]({full_url})")
+            st.markdown("---")
 
 if __name__ == "__main__":
     main()
