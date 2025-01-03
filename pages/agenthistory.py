@@ -2,12 +2,11 @@ import streamlit as st
 import pandas as pd
 import time
 import requests
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 ################################
 # 0) Configure your base URL   #
 ################################
-# Replace this with your actual .streamlit.app URL (without a trailing slash).
 BASE_URL = "https://ldmcbiowzbdeqvmabvudyy.streamlit.app"
 
 ################################
@@ -29,8 +28,8 @@ def rate_limited_request(url, headers, params, request_type='get'):
         if resp and resp.status_code == 200:
             return resp.json()
         else:
-            st.warning(f"API Error: {resp.status_code}")
-            st.warning(f"Response: {resp.text}")
+            st.warning(f"API Error: {resp.status_code if resp else 'No response'}")
+            st.warning(f"Response: {resp.text if resp else 'No response'}")
     except Exception as e:
         st.warning(f"Exception during request: {str(e)}")
     return None
@@ -61,94 +60,101 @@ def get_agent_history(phone_number_id):
     Fetch the last 100 calls and last 100 messages for a given phoneNumberId.
     Returns (calls_df, messages_df) DataFrames.
     """
-    headers = {"Authorization": OPENPHONE_API_KEY, "Content-Type": "application/json"}
+    try:
+        headers = {"Authorization": OPENPHONE_API_KEY, "Content-Type": "application/json"}
 
-    # -- Calls --
-    calls_url = "https://api.openphone.com/v1/calls"
-    calls_data = []
-    fetched = 0
-    next_token = None
-    while True:
-        params = {
-            "phoneNumberId": phone_number_id,
-            "maxResults": 50
-        }
-        if next_token:
-            params["pageToken"] = next_token
+        # -- Calls --
+        calls_url = "https://api.openphone.com/v1/calls"
+        calls_data = []
+        fetched = 0
+        next_token = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "maxResults": 50
+            }
+            if next_token:
+                params["pageToken"] = next_token
 
-        resp = rate_limited_request(calls_url, headers, params, 'get')
-        if not resp or "data" not in resp:
-            break
+            resp = rate_limited_request(calls_url, headers, params, 'get')
+            if not resp or "data" not in resp:
+                break
 
-        chunk = resp["data"]
-        calls_data.extend(chunk)
-        fetched += len(chunk)
-        next_token = resp.get("nextPageToken")
-        if not next_token or fetched >= 100:
-            break
+            chunk = resp["data"]
+            calls_data.extend(chunk)
+            fetched += len(chunk)
+            next_token = resp.get("nextPageToken")
+            if not next_token or fetched >= 100:
+                break
 
-    if calls_data:
-        calls_df = pd.DataFrame([{
-            "Created At": c.get("createdAt", ""),
-            "Direction": c.get("direction", ""),
-            "Duration (sec)": c.get("duration", 0),
-            "Status": c.get("status", ""),
-            "Transcript": c.get("transcript", ""),
-            "Recording URL": c.get("recordingUrl", ""),
-        } for c in calls_data])
-    else:
-        calls_df = pd.DataFrame()
+        if calls_data:
+            calls_df = pd.DataFrame([{
+                "Created At": c.get("createdAt", ""),
+                "Direction": c.get("direction", ""),
+                "Duration (sec)": c.get("duration", 0),
+                "Status": c.get("status", ""),
+                "Transcript": c.get("transcript", ""),
+                "Recording URL": c.get("recordingUrl", ""),
+            } for c in calls_data])
+        else:
+            calls_df = pd.DataFrame()
 
-    # -- Messages --
-    messages_url = "https://api.openphone.com/v1/messages"
-    messages_data = []
-    fetched = 0
-    next_token = None
-    while True:
-        params = {
-            "phoneNumberId": phone_number_id,
-            "maxResults": 50
-        }
-        if next_token:
-            params["pageToken"] = next_token
+        # -- Messages --
+        messages_url = "https://api.openphone.com/v1/messages"
+        messages_data = []
+        fetched = 0
+        next_token = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "maxResults": 50
+            }
+            if next_token:
+                params["pageToken"] = next_token
 
-        resp = rate_limited_request(messages_url, headers, params, 'get')
-        if not resp or "data" not in resp:
-            break
-        chunk = resp["data"]
-        messages_data.extend(chunk)
-        fetched += len(chunk)
-        next_token = resp.get("nextPageToken")
-        if not next_token or fetched >= 100:
-            break
+            resp = rate_limited_request(messages_url, headers, params, 'get')
+            if not resp or "data" not in resp:
+                break
+            chunk = resp["data"]
+            messages_data.extend(chunk)
+            fetched += len(chunk)
+            next_token = resp.get("nextPageToken")
+            if not next_token or fetched >= 100:
+                break
 
-    if messages_data:
-        messages_df = pd.DataFrame([{
-            "Created At": m.get("createdAt", ""),
-            "Direction": m.get("direction", ""),
-            "Message Content": m.get("content", ""),
-            "From": m.get("from", {}).get("phoneNumber", ""),
-            "To": ", ".join(t.get("phoneNumber", "") for t in m.get("to", [])),
-        } for m in messages_data])
-    else:
-        messages_df = pd.DataFrame()
+        if messages_data:
+            messages_df = pd.DataFrame([{
+                "Created At": m.get("createdAt", ""),
+                "Direction": m.get("direction", ""),
+                "Message Content": m.get("content", ""),
+                "From": m.get("from", {}).get("phoneNumber", ""),
+                "To": ", ".join(t.get("phoneNumber", "") for t in m.get("to", [])),
+            } for m in messages_data])
+        else:
+            messages_df = pd.DataFrame()
 
-    return calls_df, messages_df
+        return calls_df, messages_df
+    except Exception as e:
+        st.error(f"Error fetching agent history: {str(e)}")
+        return pd.DataFrame(), pd.DataFrame()
 
 ################################
 # 2) Single-Page Streamlit App #
 ################################
 
 def main():
-    st.title("Single Page with Full-URL Links (.streamlit.app)")
+    st.title("OpenPhone History Viewer")
 
-    # Check if we have phoneNumberId in query params
-    phone_number_id = st.query_params.get("phoneNumberId", [None])[0]
+    # Get query parameters directly from st.query_params
+    phone_number_id = st.query_params.get("phoneNumberId")
 
     if phone_number_id:
         # ----- Detail View -----
-        st.subheader(f"Detail View for {phone_number_id}")
-
+        st.subheader(f"History for Phone Number ID: {phone_number_id}")
+        
+        # Debug output
+        st.write(f"Fetching history for phone number ID: {phone_number_id}")
+        
         calls_df, messages_df = get_agent_history(phone_number_id)
 
         st.markdown("### Last 100 Calls")
@@ -163,39 +169,27 @@ def main():
         else:
             st.dataframe(messages_df)
 
-        # Link to reset param -> go back to main list
-        back_url = f"{BASE_URL}"  # no query
-        st.markdown(f"[Back to Main List]({back_url})")
+        # Back button
+        st.markdown(f"[← Back to Main List]({BASE_URL})")
 
     else:
         # ----- Main List of PhoneNumbers -----
-        st.header("All Phone Numbers")
+        st.header("Available Phone Numbers")
 
         phone_numbers = get_phone_numbers()
         if not phone_numbers:
             st.warning("No phone numbers found in OpenPhone.")
             return
 
-        table_rows = []
-        for item in phone_numbers:
-            pid = item["phoneNumberId"]
-            pstr = item["phoneNumber"]
-            if pid:
-                # Build a full URL that sets ?phoneNumberId=pid
-                # target="_blank" => opens in new tab
-                link_params = {"phoneNumberId": pid}
+        # Create a cleaner table with links
+        for phone in phone_numbers:
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(phone["phoneNumber"])
+            with col2:
+                link_params = {"phoneNumberId": phone["phoneNumberId"]}
                 full_url = f"{BASE_URL}?{urlencode(link_params)}"
-                link_html = f'<a href="{full_url}" target="_blank">View History</a>'
-            else:
-                link_html = "No ID"
-
-            table_rows.append({
-                "Phone Number": pstr,
-                "Detail": link_html
-            })
-
-        df = pd.DataFrame(table_rows)
-        st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+                st.markdown(f"[View History]({full_url})")
 
 if __name__ == "__main__":
     main()
