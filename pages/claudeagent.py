@@ -52,88 +52,18 @@ def get_phone_numbers():
     """
     url = "https://api.openphone.com/v1/phone-numbers"
     data = rate_limited_request(url, get_headers())
-    st.write("DEBUG /v1/phone-numbers RAW:", data)  # Debug full response
+    st.write("DEBUG /v1/phone-numbers = get_phone_numbers()
 
-    if not data or "data" not in data:
-        return []
-
-    results = []
-    for pn in data["data"]:
-        pid = pn.get("id","")
-        pnum = pn.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": pnum})
-    return results
-
-##############################
-# 4) Fetch Calls            #
-##############################
-def get_calls():
-    # Fetch calls from /v1/calls
-    url = "https://api.openphone.com/v1/calls"
-    data = rate_limited_request(url, get_headers())
-    st.write("DEBUG /v1/calls RAW:", data)  # Debug full response
-
-    if not data or "data" not in data:
-        return []
-
-    results = []
-    for c in data["data"]:
-        pid = c.get("id","")
-        pnum = c.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": pnum})
-    return results
-
-##############################
-# 5) Fetch Messages         #
-##############################
-def get_messages():
-    # Fetch messages from /v1/messages
-    url = "https://api.openphone.com/v1/messages"
-    data = rate_limited_request(url, get_headers())
-    st.write("DEBUG /v1/messages RAW:", data)  # Debug full response
-
-    if not data or "data" not in data:
-        return []
-
-    results = []
-    for m in data["data"]:
-        pid = m.get("id","")
-        pnum = m.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": pnum})
-    return results
-
-##############################
-# 6) Fetch Contact Numbers  #
-##############################
-def get_contact_numbers_from_call(c):
-    # Fetch contact numbers from call
-    url = f"https://api.openphone.com/v1/calls/{c['id']}/contact-numbers"
-    data = rate_limited_request(url, get_headers())
-    return data.get("data", [])
-
-def get_contact_numbers_from_message(m):
-    # Fetch contact numbers from message
-    url = f"https://api.openphone.com/v1/messages/{m['id']}/contact-numbers"
-    data = rate_limited_request(url, get_headers())
-    return data.get("data", [])
-
-##############################
-# 7) Main Function          #
-##############################
-def main():
-    # Fetch phone numbers
-    phone_nums = get_phone_numbers()
-
-    if not phone_nums:
+    if not data:
         st.warning("No phone numbers found or invalid API Key.")
         return
 
     data_list = []
-    for pn in phone_nums:
+    for pn in data:
         pid = pn["id"]
         num = pn["phoneNumber"]
         if pid and pid.startswith("PN"):
-            link_html = f'<a href="?{urlencode({"phoneNumberId": pid})}" target="_self">Show Contacts</a>'
+            link_html = f'<a href="?{urlencode(pid)}" target="_self">Show Contacts</a>'
         else:
             link_html = "Invalid / No ID"
 
