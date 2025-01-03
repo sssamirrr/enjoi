@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 from urllib.parse import urlencode
 
-# Import your existing helper functions and API key from communication.py
+# Import your existing helper functions and  key from communication.py
 from communication import (
-    OPENPHONE_API_KEY,
+    OPENPHONE__KEY,
     rate_limited_request,
     get_all_phone_number_ids,
 )
 
-BASE_URL = "https://api.openphone.com/v1"
+BASE_URL = "https://.openphone.com/v1"
 
 def get_phone_numbers_and_users(headers):
     """
@@ -143,7 +143,7 @@ def main():
     query_params = st.experimental_get_query_params()
     phone_number_id = query_params.get("phoneNumberId", [None])[0]
 
-    headers = {"Authorization": {OPENPHONE_API_KEY}"}
+    headers = {"Authorization": {OPENPHONE__KEY}"}
 
     if phone_number_id:
         # --- Detail page for a specific agent ---
