@@ -64,82 +64,14 @@ def get_phone_numbers():
         results.append({"id": pid, "phoneNumber": pnum})
     return results
 
-##############################
-# 4) Fetch Calls          #
-##############################
-def get_calls():
-    """
-    Lists all calls from /v1/calls.
-    """
-    url = "https://api.openphone.com/v1/calls"
-    data = rate_limited_request(url, get_headers())
-    st.write("DEBUG /v1/calls RAW:", data)  # Debug full response
+##########################...      msgs = fetch_messages(phone_number_id)
 
-    if not data or "data" not in data:
-        return []
-
-    results = []
-    for c in data["data"]:
-        pid = c.get("id","")
-        pnum = c.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": pnum})
-    return results
-
-##############################
-# 5) Fetch Messages       #
-##############################
-def get_messages():
-    """
-    Lists all messages from /v1/messages.
-    """
-    url = "https://api.openphone.com/v1/messages"
-    data = rate_limited_request(url, get_headers())
-    st.write("DEBUG /v1/messages RAW:", data)  # Debug full response
-
-    if not data or "data" not in data:
-        return []
-
-    results = []
-    for m in data["data"]:
-        pid = m.get("id","")
-        pnum = m.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": pnum})
-    return results
-
-##############################
-# 6) Fetch Contact Numbers #
-##############################
-def get_contact_numbers_from_call(c):
-    """
-    Fetches contact numbers from a call.
-    """
-    url = f"https://api.openphone.com/v1/calls/{c['id']}/participants"
-    data = rate_limited_request(url, get_headers())
-    return [pn["phoneNumber"] for pn in data["data"]]
-
-def get_contact_numbers_from_message(m):
-    """
-    Fetches contact numbers from a message.
-    """
-    url = f"https://api.openphone.com/v1/messages/{m['id']}/participants"
-    data = rate_limited_request(url, get_headers())
-    return [pn["phoneNumber"] for pn in data["data"]]
-
-##############################
-# 7) Main Function       #
-##############################
-def main():
-    phone_number_id = st.text_input("Enter Phone Number ID")
-
-    if phone_number_id:
         contact_set = set()
 
-        calls = get_calls()
         for c in calls:
             cnums = get_contact_numbers_from_call(c)
             contact_set.update(cnums)
 
-        msgs = get_messages()
         for m in msgs:
             mnums = get_contact_numbers_from_message(m)
             contact_set.update(mnums)
@@ -151,7 +83,7 @@ def main():
 
         rows = []
         for cn in contact_set:
-            link_params = {"phoneNumberId": phone_number_id, "contactNumber": cn}
+            link_params = {"phoneNumberId": cn}
             link_html = f'<a href="?{urlencode(link_params)}" target="_self">View Full Logs</a>'
             rows.append({"Contact Phone": cn, "Details": link_html})
 
