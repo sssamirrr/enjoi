@@ -43,7 +43,8 @@ def get_all_calls(phone_number_id):
     while True:
         params = {
             "phoneNumberId": phone_number_id,
-            "maxResults": 100
+            "maxResults": 100,
+            "participants": []  # Empty array to get all calls
         }
         if next_page:
             params["pageToken"] = next_page
@@ -86,9 +87,22 @@ def main():
     if not phone_numbers:
         st.error("No phone numbers found. Please check your API key.")
         return
+    
+    # Debug: Print raw phone numbers data
+    st.write("DEBUG - Phone Numbers Data:", phone_numbers)
         
     # Create dropdown for phone number selection
-    phone_options = {pn.get("phoneNumber", "Unknown"): pn.get("id") for pn in phone_numbers}
+    phone_options = {}
+    for pn in phone_numbers:
+        # Try different possible fields for phone number
+        number = pn.get("phoneNumber") or pn.get("number") or pn.get("e164")
+        if number and pn.get("id"):
+            phone_options[number] = pn["id"]
+    
+    if not phone_options:
+        st.error("No valid phone numbers found in the response.")
+        return
+        
     selected_number = st.selectbox(
         "Select Phone Number",
         options=list(phone_options.keys()),
@@ -110,8 +124,8 @@ def main():
                 created_at = datetime.fromisoformat(call.get("createdAt", "").replace("Z", "+00:00"))
                 
                 # Get from/to numbers
-                from_number = call.get("from", {}).get("phoneNumber", "Unknown")
-                to_numbers = [to.get("phoneNumber", "Unknown") for to in call.get("to", [])]
+                from_number = (call.get("from") or {}).get("phoneNumber", "Unknown")
+                to_numbers = [to.get("phoneNumber", "Unknown") for to in (call.get("to") or [])]
                 to_number = to_numbers[0] if to_numbers else "Unknown"
                 
                 call_data.append({
