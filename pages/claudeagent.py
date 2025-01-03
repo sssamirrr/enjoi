@@ -5,18 +5,9 @@ import requests
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
-############################
-# 1) OpenPhone API Key     #
-############################
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 
-############################
-# 2) Rate-limited request  #
-############################
 def rate_limited_request(url, headers, params=None, request_type='get'):
-    """
-    Makes a GET request with proper parameter formatting.
-    """
     if params is None:
         params = {}
     
@@ -24,7 +15,7 @@ def rate_limited_request(url, headers, params=None, request_type='get'):
     try:
         if request_type.lower() == 'get':
             resp = requests.get(url, headers=headers, params=params)
-            st.write("DEBUG Request URL:", resp.url)  # Debug the final URL
+            st.write("DEBUG Request URL:", resp.url)
         else:
             resp = None
 
@@ -43,20 +34,9 @@ def get_headers():
         "Content-Type": "application/json"
     }
 
-def get_date_range():
+def fetch_all_calls(phone_number_id):
     """
-    Returns date range for the last 3 months in ISO format
-    """
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=90)
-    return start_date.isoformat() + "Z", end_date.isoformat() + "Z"
-
-##############################
-# 3) Fetch Calls            #
-##############################
-def fetch_all_calls(phone_number_id, max_records=1000):
-    """
-    Fetch all calls for a phone number with date filtering
+    Fetch all calls for a phone number
     """
     if not phone_number_id or not phone_number_id.startswith("PN"):
         return []
@@ -65,16 +45,11 @@ def fetch_all_calls(phone_number_id, max_records=1000):
     all_calls = []
     fetched = 0
     next_page = None
-    
-    # Get date range for last 3 months
-    start_date, end_date = get_date_range()
 
     while True:
         params = {
             "phoneNumberId": phone_number_id,
-            "maxResults": 50,
-            "createdAfter": start_date,
-            "createdBefore": end_date
+            "maxResults": 50
         }
             
         if next_page:
@@ -89,16 +64,12 @@ def fetch_all_calls(phone_number_id, max_records=1000):
         fetched += len(chunk)
 
         next_page = data.get("nextPageToken")
-        if not next_page or fetched >= max_records:
+        if not next_page or fetched >= 1000:  # Limit to 1000 calls
             break
 
     return all_calls
 
-##############################
-# 4) Format Call Data        #
-##############################
 def format_duration(seconds):
-    """Convert seconds to readable duration"""
     if not seconds:
         return "N/A"
     minutes = seconds // 60
@@ -106,37 +77,51 @@ def format_duration(seconds):
     return f"{minutes}m {remaining_seconds}s"
 
 def format_phone_number(number):
-    """Format phone number for display"""
     if not number:
         return "Unknown"
-    # Remove any formatting and keep just the numbers
-    clean_number = ''.join(filter(str.isdigit, number))
+    clean_number = ''.join(filter(str.isdigit, str(number)))
     if len(clean_number) == 10:
         return f"({clean_number[:3]}) {clean_number[3:6]}-{clean_number[6:]}"
     elif len(clean_number) == 11:
         return f"+{clean_number[0]} ({clean_number[1:4]}) {clean_number[4:7]}-{clean_number[7:]}"
-    return number
+    return str(number)
 
 def get_call_details(call):
-    """Extract relevant call details"""
+    from_number = "Unknown"
+    to_number = "Unknown"
+    
+    # Handle 'from' field
+    from_data = call.get("from", {})
+    if isinstance(from_data, dict):
+        from_number = from_data.get("phoneNumber", "Unknown")
+    elif isinstance(from_data, str):
+        from_number = from_data
+
+    # Handle 'to' field
+    to_data = call.get("to", [])
+    if isinstance(to_data, list) and to_data:
+        if isinstance(to_data[0], dict):
+            to_number = to_data[0].get("phoneNumber", "Unknown")
+        elif isinstance(to_data[0], str):
+            to_number = to_data[0]
+    elif isinstance(to_data, str):
+        to_number = to_data
+
     return {
-        "Date": pd.to_datetime(call.get("createdAt")).strftime("%Y-%m-%d %H:%M:%S"),
-        "From": format_phone_number(call.get("from", {}).get("phoneNumber", "Unknown")),
-        "To": format_phone_number(call.get("to", [{}])[0].get("phoneNumber", "Unknown")),
+        "Date": pd.to_datetime(call.get("createdAt", "")).strftime("%Y-%m-%d %H:%M:%S"),
+        "From": format_phone_number(from_number),
+        "To": format_phone_number(to_number),
         "Direction": call.get("direction", "Unknown"),
         "Status": call.get("status", "Unknown"),
         "Duration": format_duration(call.get("duration")),
         "Recording": "Yes" if call.get("recording") else "No"
     }
 
-##############################
-# 5) Main App               #
-##############################
 def main():
     st.set_page_config(page_title="OpenPhone Call History", layout="wide")
     st.title("OpenPhone Call History")
 
-    # Get phone numbers first
+    # Get phone numbers
     with st.spinner("Loading phone numbers..."):
         url = "https://api.openphone.com/v1/phone-numbers"
         response = rate_limited_request(url, get_headers())
@@ -144,11 +129,30 @@ def main():
         if not response or "data" not in response:
             st.error("Failed to load phone numbers. Please check your API key.")
             return
+
+        # Debug output
+        st.write("DEBUG: Phone Numbers Response:", response)
             
-        phone_numbers = [(pn["id"], pn["phoneNumber"]) for pn in response["data"]]
+        # Safely extract phone numbers
+        phone_numbers = []
+        for pn in response.get("data", []):
+            phone_id = pn.get("id")
+            phone_num = None
+            
+            # Try different possible fields for phone number
+            if "phoneNumber" in pn:
+                phone_num = pn["phoneNumber"]
+            elif "number" in pn:
+                phone_num = pn["number"]
+            elif "e164" in pn:
+                phone_num = pn["e164"]
+                
+            if phone_id and phone_num:
+                phone_numbers.append((phone_id, phone_num))
 
     # Phone number selector
     if phone_numbers:
+        st.write(f"Found {len(phone_numbers)} phone numbers")
         selected_number = st.selectbox(
             "Select Phone Number",
             options=[pn[1] for pn in phone_numbers],
@@ -190,7 +194,7 @@ def main():
                         key='download-csv'
                     )
                 else:
-                    st.info("No calls found for this number in the last 3 months.")
+                    st.info("No calls found for this number.")
         else:
             st.error("Failed to identify phone number ID.")
     else:
