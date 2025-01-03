@@ -65,13 +65,13 @@ def get_phone_numbers():
     return results
 
 ##############################
-# 4) Fetch Calls & Messages 
+# 4) Fetch Calls          #
 ##############################
-def fetch_calls(phone_number_id):
+def get_calls():
     """
-    Fetches calls for a given phone number.
+    Lists all calls from /v1/calls.
     """
-    url = f"https://api.openphone.com/v1/calls?phoneNumberId={phone_number_id}"
+    url = "https://api.openphone.com/v1/calls"
     data = rate_limited_request(url, get_headers())
     st.write("DEBUG /v1/calls RAW:", data)  # Debug full response
 
@@ -81,15 +81,18 @@ def fetch_calls(phone_number_id):
     results = []
     for c in data["data"]:
         pid = c.get("id","")
-        cnum = c.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": cnum})
+        pnum = c.get("phoneNumber","No Number")
+        results.append({"id": pid, "phoneNumber": pnum})
     return results
 
-def fetch_messages(phone_number_id):
+##############################
+# 5) Fetch Messages       #
+##############################
+def get_messages():
     """
-    Fetches messages for a given phone number.
+    Lists all messages from /v1/messages.
     """
-    url = f"https://api.openphone.com/v1/messages?phoneNumberId={phone_number_id}"
+    url = "https://api.openphone.com/v1/messages"
     data = rate_limited_request(url, get_headers())
     st.write("DEBUG /v1/messages RAW:", data)  # Debug full response
 
@@ -99,105 +102,88 @@ def fetch_messages(phone_number_id):
     results = []
     for m in data["data"]:
         pid = m.get("id","")
-        mnum = m.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": mnum})
+        pnum = m.get("phoneNumber","No Number")
+        results.append({"id": pid, "phoneNumber": pnum})
     return results
 
 ##############################
-# 5) Fetch Contact Numbers 
+# 6) Fetch Contact Numbers #
 ##############################
 def get_contact_numbers_from_call(c):
     """
     Fetches contact numbers from a call.
     """
-    url = f"https://api.openphone.com/v1/call-contacts/{c['id']}"
+    url = f"https://api.openphone.com/v1/calls/{c['id']}/participants"
     data = rate_limited_request(url, get_headers())
-    st.write("DEBUG /v1/call-contacts RAW:", data)  # Debug full response
-
-    if not data or "data" not in data:
-        return []
-
-    results = []
-    for pn in data["data"]:
-        pid = pn.get("id","")
-        pnum = pn.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": pnum})
-    return results
+    return [pn["phoneNumber"] for pn in data["data"]]
 
 def get_contact_numbers_from_message(m):
     """
     Fetches contact numbers from a message.
     """
-    url = f"https://api.openphone.com/v1/message-contacts/{m['id']}"
+    url = f"https://api.openphone.com/v1/messages/{m['id']}/participants"
     data = rate_limited_request(url, get_headers())
-    st.write("DEBUG /v1/message-contacts RAW:", data)  # Debug full response
-
-    if not data or "data" not in data:
-        return []
-
-    results = []
-    for pn in data["data"]:
-        pid = pn.get("id","")
-        pnum = pn.get("phoneNumber","No Number")
-        results.append({"id": pid, "phoneNumber": pnum})
-    return results
+    return [pn["phoneNumber"] for pn in data["data"]]
 
 ##############################
-# 6) Main Function 
+# 7) Main Function       #
 ##############################
 def main():
     phone_number_id = st.text_input("Enter Phone Number ID")
-    calls = fetch_calls(phone_number_id)
-    msgs = fetch_messages(phone_number_id)
 
-    contact_set = set()
+    if phone_number_id:
+        contact_set = set()
 
-    for c in calls:
-        cnums = get_contact_numbers_from_call(c)
-        contact_set.update(cnums)
+        calls = get_calls()
+        for c in calls:
+            cnums = get_contact_numbers_from_call(c)
+            contact_set.update(cnums)
 
-    for m in msgs:
-        mnums = get_contact_numbers_from_message(m)
-        contact_set.update(mnums)
+        msgs = get_messages()
+        for m in msgs:
+            mnums = get_contact_numbers_from_message(m)
+            contact_set.update(mnums)
 
-    if not contact_set:
-        st.info("No contacts found in last 100 calls/messages.")
+        if not contact_set:
+            st.info("No contacts found in last 100 calls/messages.")
+            st.markdown("[Back to Main](?)")
+            return
+
+        rows = []
+        for cn in contact_set:
+            link_params = {"phoneNumberId": phone_number_id, "contactNumber": cn}
+            link_html = f'<a href="?{urlencode(link_params)}" target="_self">View Full Logs</a>'
+            rows.append({"Contact Phone": cn, "Details": link_html})
+
+        st.markdown(pd.DataFrame(rows).to_html(escape=False, index=False), unsafe_allow_html=True)
         st.markdown("[Back to Main](?)")
-        return
 
-    rows = []
-    for cn in contact_set:
-        link_params = {"phoneNumberId": phone_number_id, "contactNumber": cn}
-        link_html = f'<a href="?{urlencode(link_params)}" target="_self">View Full Logs</a>'
-        rows.append({"Contact Phone": cn, "Details": link_html})
+    else:
+        # LEVEL 0: Show all phone numbers
+        st.header("All Phone Numbers in Your Workspace")
 
-    st.markdown(pd.DataFrame(rows).to_html(escape=False, index=False), unsafe_allow_html=True)
-    st.markdown("[Back to Main](?)")
+        with st.spinner("Loading phone numbers..."):
+            phone_nums = get_phone_numbers()
 
-    st.header("All Phone Numbers in Your Workspace")
+        if not phone_nums:
+            st.warning("No phone numbers found or invalid API Key.")
+            return
 
-    with st.spinner("Loading phone numbers..."):
-        phone_nums = get_phone_numbers()
+        data_list = []
+        for pn in phone_nums:
+            pid = pn["id"]
+            num = pn["phoneNumber"]
+            if pid and pid.startswith("PN"):
+                link_html = f'<a href="?{urlencode({"phoneNumberId": pid})}" target="_self">Show Contacts</a>'
+            else:
+                link_html = "Invalid / No ID"
 
-    if not phone_nums:
-        st.warning("No phone numbers found or invalid API Key.")
-        return
+            data_list.append({
+                "Phone Number": num,
+                "Details": link_html
+            })
 
-    data_list = []
-    for pn in phone_nums:
-        pid = pn["id"]
-        num = pn["phoneNumber"]
-        if pid and pid.startswith("PN"):
-            link_html = f'<a href="?{urlencode({"phoneNumberId": pid})}" target="_self">Show Contacts</a>'
-        else:
-            link_html = "Invalid / No ID"
-
-        data_list.append({
-            "Phone Number": num,
-            "Details": link_html
-        })
-
-    st.markdown(pd.DataFrame(data_list).to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.markdown(pd.DataFrame(data_list).to_html(escape=False, index=False), unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
