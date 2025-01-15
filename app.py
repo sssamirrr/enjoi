@@ -16,6 +16,7 @@ import time
 import owner_marketing  # Ensure this module is also free of Streamlit commands
 # Import your new reservations.py
 import reservations
+import homevalue  # or from homevalue import run_home_value_tab
 
 
 
@@ -60,14 +61,15 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-# Define all tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+# Define all s
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Dashboard", 
     "Marketing", 
     "Tour Prediction",
     "Owner Marketing",
     "Overnight Misses",
-    "OpenPhone Stats"
+    "OpenPhone Stats",
+    "Add Home Value"  # <--- New tab
 ])
 
 ############################################
@@ -1180,6 +1182,9 @@ with tab6:
         run_openphone_tab()
     except Exception as e:
         st.error(f"Error in OpenPhone tab: {str(e)}")
+with tab7:
+    homevalue.run_home_value_tab()
+
 ############################################
 # Raw Data Viewer
 ############################################
