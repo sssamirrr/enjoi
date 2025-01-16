@@ -16,10 +16,10 @@ RAPIDAPI_HOST = "zillow-working-api.p.rapidapi.com"
 def run_home_value_tab():
     """
     Streamlit app that:
-      1. Uploads Excel (with Address1, City, Zip Code, [State])
-      2. Builds a full address, e.g. "123 Main St, City, ST 12345"
+      1. Uploads Excel (with Address1, City, Zip Code)
+      2. Builds a full address, e.g. "123 Main St, City, ZIP"
       3. Calls Zillow via http.client with the /graph_charts endpoint (byaddress=...)
-      4. Parses the JSON response, picks the newest+highest zestimate
+      4. Parses the JSON response, picks the highest zestimate
       5. Adds "Home Value" column, displays, and provides CSV download
     """
 
@@ -27,14 +27,13 @@ def run_home_value_tab():
 
     st.markdown("""
     **Instructions**:
-    1. **Upload** an Excel file with columns: **Address1**, **City**, **Zip Code**, and optionally **State**.
-    2. If your data **does not** include a **State** column, you will need to specify a default State below.
-    3. The app will build a single string like `"Address1, City, ST ZIP"` for each row.
-    4. For each row, we make a **request** to the Zillow Working API using **http.client**.
-    5. If Zillow finds a match, we parse the returned JSON to get the **newest and highest** zestimate.
-    6. The enriched data with **Home Value** will be displayed and can be **downloaded** as a CSV.
-    
-    **Note**: Ensure that the addresses are complete and correctly formatted (including the State) to improve Zillow's address matching.
+    1. **Upload** an Excel file with columns: **Address1**, **City**, **Zip Code**.
+    2. The app will build a single string like `"Address1, City, ZIP"` for each row.
+    3. For each row, we make a **request** to the Zillow Working API using **http.client**.
+    4. If Zillow finds a match, we parse the returned JSON to get the **highest** zestimate.
+    5. The enriched data with **Home Value** will be displayed and can be **downloaded** as a CSV.
+
+    **Note**: Ensure that the addresses are complete and correctly formatted to improve Zillow's address matching.
     """)
 
     # 1) File uploader
@@ -63,59 +62,28 @@ def run_home_value_tab():
         st.error(f"⚠️ Missing required columns: {missing_cols}")
         return
 
-    # 4) Determine if 'State' column exists
-    has_state = "State" in df.columns
-    if not has_state:
-        st.warning("🔍 No 'State' column found in the data. Please specify a default State for all addresses below.")
-        # Let user select a default state
-        default_state = st.selectbox(
-            "Select Default State (applied to all addresses without a 'State' column)",
-            options=[
-                "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-                "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-                "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-                "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-                "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
-            ],
-            index=35  # Default to "NC"
-        )
-    else:
-        st.info("✅ Detected 'State' column in the data.")
-
-    # 5) Clean ZIP codes: remove ".0" if any
+    # 4) Clean ZIP codes: remove ".0" if any
     df["Zip Code"] = df["Zip Code"].astype(str).str.replace(".0", "", regex=False).str.strip()
 
-    # 6) Clean Address1 and City
+    # 5) Clean Address1 and City
     df["Address1"] = df["Address1"].fillna("").astype(str).str.replace("\t", " ", regex=False).str.strip()
     df["City"] = df["City"].fillna("").astype(str).str.replace("\t", " ", regex=False).str.strip()
 
-    # 7) Build a "Full_Address" column
-    if has_state:
-        # Ensure 'State' column is in correct format (2-letter abbreviations)
-        df["State"] = df["State"].fillna("").astype(str).str.strip().str.upper()
-        df["Full_Address"] = (
-            df["Address1"] + ", " +
-            df["City"] + ", " +
-            df["State"] + " " +
-            df["Zip Code"]
-        ).str.strip()
-    else:
-        df["Full_Address"] = (
-            df["Address1"] + ", " +
-            df["City"] + ", " +
-            default_state + " " +
-            df["Zip Code"]
-        ).str.strip()
+    # 6) Build a "Full_Address" column
+    # e.g., "168 N Ridge Dr, Waynesville, 28785"
+    df["Full_Address"] = (
+        df["Address1"] + ", " +
+        df["City"] + ", " +
+        df["Zip Code"]
+    ).str.strip()
 
     st.subheader("📝 Data with Full_Address Column")
-    display_cols = ["Address1", "City", "Zip Code", "State"] if has_state else ["Address1", "City", "Zip Code"]
-    display_cols += ["Full_Address"]
-    st.dataframe(df[display_cols].head(10))
+    st.dataframe(df[["Address1", "City", "Zip Code", "Full_Address"]].head(10))
 
-    # 8) Initialize Home Values list
+    # 7) Initialize Home Values list
     home_values = []
 
-    # 9) Process each address
+    # 8) Process each address
     for idx, row in df.iterrows():
         full_address = row["Full_Address"]
         if not full_address:
@@ -145,13 +113,13 @@ def run_home_value_tab():
         # Sleep a bit to avoid hitting rate limits
         time.sleep(0.5)
 
-    # 10) Add the "Home Value" column
+    # 9) Add the "Home Value" column
     df["Home Value"] = home_values
 
     st.subheader("📈 Enriched Data with Home Values")
     st.dataframe(df.head(20))
 
-    # 11) Download button
+    # 10) Download button
     csv_data = df.to_csv(index=False)
     st.download_button(
         "⬇️ Download Enriched CSV",
@@ -160,10 +128,11 @@ def run_home_value_tab():
         mime="text/csv"
     )
 
+
 def get_newest_highest_zestimate_httpclient(encoded_address: str, original_address: str):
     """
     Uses http.client to call /graph_charts?recent_first=True&which=zestimate_history&byaddress=ENCODED_ADDRESS
-    Then picks the newest+highest zestimate from the JSON, or None if no data or 404.
+    Then picks the highest zestimate from the JSON, or None if no data or 404.
     Logs status codes and outcomes.
     """
 
@@ -225,13 +194,15 @@ def get_newest_highest_zestimate_httpclient(encoded_address: str, original_addre
     finally:
         conn.close()
 
+
 def parse_zestimate_history(response_json):
     """
-    Given the JSON for zestimate_history, pick the newest & highest zestimate.
+    Given the JSON for zestimate_history, pick the highest zestimate.
     Adjust field names as needed to match your actual JSON structure.
     """
+    data_points = response_json.get("DataPoints", {})
+    hv_data = data_points.get("homeValueChartData", [])
 
-    hv_data = response_json.get("homeValueChartData", [])
     if not hv_data:
         return None
 
@@ -249,17 +220,16 @@ def parse_zestimate_history(response_json):
     if not points:
         return None
 
-    # Since 'recent_first=True', the first point is the newest
-    latest_zestimate = points[0].get("y")
-    if latest_zestimate is None:
+    # Collect all zestimate values
+    zestimates = [p.get("y") for p in points if p.get("y") is not None]
+
+    if not zestimates:
         return None
 
-    # Additionally, to ensure it's the highest, you can check all points
-    highest_zestimate = max([p.get("y", 0) for p in points if p.get("y") is not None], default=None)
+    # Pick the maximum zestimate
+    highest_zestimate = max(zestimates)
+    return highest_zestimate
 
-    # Decide whether to return the latest or the highest
-    # Based on your requirement: "newest and highest", we'll return the latest
-    return latest_zestimate
 
 # If you run this file directly, you can test it locally.
 # In your main app.py, import this module and call run_home_value_tab()
