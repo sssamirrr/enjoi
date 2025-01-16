@@ -14,3 +14,5 @@ numpy
 python-dateutil
 openpyxl
 xlrd==1.2.0
+xlsxwriter
+
