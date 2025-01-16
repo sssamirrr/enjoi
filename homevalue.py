@@ -118,8 +118,8 @@ def get_zpid_from_address(full_address: str):
     url = f"https://{RAPIDAPI_HOST}/search_zillow"
     querystring = {"location": full_address}
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST
+        "X-RapidAPI-Key": dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076,
+        "X-RapidAPI-Host": zillow-working-api.p.rapidapi.com
     }
 
     try:
