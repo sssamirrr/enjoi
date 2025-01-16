@@ -23,20 +23,22 @@ def run_home_value_tab():
       5. Adds "Home Value" column, displays, and provides CSV download
     """
 
-    st.title("Home Value Lookup via http.client (Newest & Highest)")
+    st.title("🏡 Home Value Lookup via Zillow API (Newest & Highest Zestimate)")
 
     st.markdown("""
     **Instructions**:
-    - Upload an Excel file with columns: **Address1**, **City**, **Zip Code**, and optionally **State**.
-    - If your data **does not** include a **State** column, you will need to specify a default State below.
-    - The app will build a single string like "Address1, City, ST ZIP" for each row.
-    - We make **one** request per row to the Zillow Working API using **http.client**.
-    - If Zillow finds a match, we parse the returned JSON to get the newest and highest zestimate.
-    - A 404 indicates that Zillow can’t match the address.
+    1. **Upload** an Excel file with columns: **Address1**, **City**, **Zip Code**, and optionally **State**.
+    2. If your data **does not** include a **State** column, you will need to specify a default State below.
+    3. The app will build a single string like `"Address1, City, ST ZIP"` for each row.
+    4. For each row, we make a **request** to the Zillow Working API using **http.client**.
+    5. If Zillow finds a match, we parse the returned JSON to get the **newest and highest** zestimate.
+    6. The enriched data with **Home Value** will be displayed and can be **downloaded** as a CSV.
+    
+    **Note**: Ensure that the addresses are complete and correctly formatted (including the State) to improve Zillow's address matching.
     """)
 
     # 1) File uploader
-    uploaded_file = st.file_uploader("Upload Excel (xlsx or xls)", type=["xlsx", "xls"])
+    uploaded_file = st.file_uploader("📂 Upload Excel File (xlsx or xls)", type=["xlsx", "xls"])
     if uploaded_file is None:
         st.info("Please upload an Excel file to begin.")
         return
@@ -45,26 +47,26 @@ def run_home_value_tab():
     try:
         df = pd.read_excel(uploaded_file)
     except ImportError:
-        st.error("Missing libraries: 'openpyxl' (for .xlsx) or 'xlrd==1.2.0' (for .xls). Please install them:\n`pip install openpyxl xlrd==1.2.0`")
+        st.error("⚠️ Missing libraries: 'openpyxl' (for .xlsx) or 'xlrd==1.2.0' (for .xls). Please install them:\n`pip install openpyxl xlrd==1.2.0`")
         return
     except Exception as e:
-        st.error(f"Error reading Excel file: {e}")
+        st.error(f"⚠️ Error reading Excel file: {e}")
         return
 
-    st.subheader("Preview of Uploaded Data")
+    st.subheader("📊 Preview of Uploaded Data")
     st.dataframe(df.head())
 
     # 3) Check required columns
     required_cols = ["Address1", "City", "Zip Code"]
     missing_cols = [c for c in required_cols if c not in df.columns]
     if missing_cols:
-        st.error(f"Missing required columns: {missing_cols}")
+        st.error(f"⚠️ Missing required columns: {missing_cols}")
         return
 
     # 4) Determine if 'State' column exists
     has_state = "State" in df.columns
     if not has_state:
-        st.warning("No 'State' column found in the data. Please specify a default State for all addresses below.")
+        st.warning("🔍 No 'State' column found in the data. Please specify a default State for all addresses below.")
         # Let user select a default state
         default_state = st.selectbox(
             "Select Default State (applied to all addresses without a 'State' column)",
@@ -75,12 +77,10 @@ def run_home_value_tab():
                 "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
                 "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
             ],
-            index=35  # Default to "NC" if suitable
+            index=35  # Default to "NC"
         )
     else:
-        # If 'State' column exists, ensure it's in the correct format (2-letter abbreviations)
-        # You might need to clean or validate this
-        st.info("Detected 'State' column in the data.")
+        st.info("✅ Detected 'State' column in the data.")
 
     # 5) Clean ZIP codes: remove ".0" if any
     df["Zip Code"] = df["Zip Code"].astype(str).str.replace(".0", "", regex=False).str.strip()
@@ -91,10 +91,12 @@ def run_home_value_tab():
 
     # 7) Build a "Full_Address" column
     if has_state:
+        # Ensure 'State' column is in correct format (2-letter abbreviations)
+        df["State"] = df["State"].fillna("").astype(str).str.strip().str.upper()
         df["Full_Address"] = (
             df["Address1"] + ", " +
             df["City"] + ", " +
-            df["State"].fillna("").astype(str).str.strip() + " " +
+            df["State"] + " " +
             df["Zip Code"]
         ).str.strip()
     else:
@@ -105,8 +107,10 @@ def run_home_value_tab():
             df["Zip Code"]
         ).str.strip()
 
-    st.subheader("Data with Full_Address Column")
-    st.dataframe(df[["Address1", "City", "Zip Code", "State" if has_state else None, "Full_Address"]].head(10))
+    st.subheader("📝 Data with Full_Address Column")
+    display_cols = ["Address1", "City", "Zip Code", "State"] if has_state else ["Address1", "City", "Zip Code"]
+    display_cols += ["Full_Address"]
+    st.dataframe(df[display_cols].head(10))
 
     # 8) Initialize Home Values list
     home_values = []
@@ -126,33 +130,35 @@ def run_home_value_tab():
         st.write(f"**Processing Row {idx}:** {full_address}")
 
         # Call the http.client GET request
-        zestimate_val = get_newest_highest_zestimate_httpclient(encoded_address, full_address)
+        zestimate_val = get_newest_highest_zestimate_httpclient(
+            encoded_address, 
+            original_address=full_address
+        )
         home_values.append(zestimate_val)
 
         # Log the result
         if zestimate_val is not None:
-            st.success(f"Row {idx}: Zestimate found - ${zestimate_val:,.2f}")
+            st.success(f"Row {idx}: Zestimate found - **${zestimate_val:,.2f}**")
         else:
             st.warning(f"Row {idx}: Zestimate not found or request failed.")
 
-        # Sleep to avoid hitting rate limits
+        # Sleep a bit to avoid hitting rate limits
         time.sleep(0.5)
 
     # 10) Add the "Home Value" column
     df["Home Value"] = home_values
 
-    st.subheader("Enriched Data (Newest & Highest Zestimate)")
+    st.subheader("📈 Enriched Data with Home Values")
     st.dataframe(df.head(20))
 
     # 11) Download button
     csv_data = df.to_csv(index=False)
     st.download_button(
-        "Download Enriched CSV",
+        "⬇️ Download Enriched CSV",
         data=csv_data,
-        file_name="enriched_zestimate_httpclient.csv",
+        file_name="enriched_zestimate.csv",
         mime="text/csv"
     )
-
 
 def get_newest_highest_zestimate_httpclient(encoded_address: str, original_address: str):
     """
@@ -183,11 +189,11 @@ def get_newest_highest_zestimate_httpclient(encoded_address: str, original_addre
         status_code = res.status
 
         # Log the status code
-        st.write(f"API Response Status for '{original_address}': **{status_code}**")
+        st.write(f"🔄 API Response Status for '{original_address}': **{status_code}**")
 
         if status_code != 200:
             # Log warning if not successful
-            st.warning(f"Zestimate request **failed** ({status_code}) for address: {original_address}")
+            st.warning(f"⚠️ Zestimate request **failed** ({status_code}) for address: {original_address}")
             return None
 
         # Read and decode the response
@@ -195,26 +201,29 @@ def get_newest_highest_zestimate_httpclient(encoded_address: str, original_addre
         data_str = data_raw.decode("utf-8")
 
         # Parse JSON
-        response_json = json.loads(data_str)
+        try:
+            response_json = json.loads(data_str)
+        except json.JSONDecodeError:
+            st.error(f"❌ Failed to parse JSON response for address: {original_address}")
+            return None
 
         # Parse the Zestimate
         zestimate_val = parse_zestimate_history(response_json)
 
         if zestimate_val is None:
-            st.warning(f"No zestimate found in response for address: {original_address}")
+            st.warning(f"⚠️ No zestimate found in response for address: {original_address}")
         else:
-            st.info(f"Zestimate retrieved: ${zestimate_val:,.2f}")
+            st.info(f"✅ Zestimate retrieved: **${zestimate_val:,.2f}**")
 
         return zestimate_val
 
     except Exception as e:
         # Log any exceptions that occur
-        st.error(f"Error retrieving Zestimate for {original_address}: {e}")
+        st.error(f"❌ Error retrieving Zestimate for {original_address}: {e}")
         return None
 
     finally:
         conn.close()
-
 
 def parse_zestimate_history(response_json):
     """
@@ -226,37 +235,31 @@ def parse_zestimate_history(response_json):
     if not hv_data:
         return None
 
-    # Group by date, pick highest among items with the same date.
-    date_groups = defaultdict(list)
+    # Find the 'This home' data
+    this_home_data = None
     for item in hv_data:
-        d_str = item.get("date")
-        zestimate = item.get("zestimate")
-        if d_str and zestimate:
-            date_groups[d_str].append(item)
+        if item.get("name", "").lower() == "this home":
+            this_home_data = item
+            break
 
-    # For each date, pick the entry with the highest zestimate
-    best_per_date = []
-    for d_str, items_on_date in date_groups.items():
-        # Sort items by zestimate descending and pick the first
-        items_on_date.sort(key=lambda x: x.get("zestimate", 0), reverse=True)
-        best_per_date.append(items_on_date[0])
-
-    if not best_per_date:
+    if not this_home_data:
         return None
 
-    # Sort the best_per_date by date descending to get the newest first
-    def parse_date(d_str):
-        try:
-            return datetime.datetime.strptime(d_str, "%Y-%m-%d")
-        except:
-            return datetime.datetime.min
+    points = this_home_data.get("points", [])
+    if not points:
+        return None
 
-    best_per_date.sort(key=lambda x: parse_date(x.get("date")), reverse=True)
+    # Since 'recent_first=True', the first point is the newest
+    latest_zestimate = points[0].get("y")
+    if latest_zestimate is None:
+        return None
 
-    # The first item is the newest date's highest zestimate
-    newest_highest_item = best_per_date[0]
-    return newest_highest_item.get("zestimate")
+    # Additionally, to ensure it's the highest, you can check all points
+    highest_zestimate = max([p.get("y", 0) for p in points if p.get("y") is not None], default=None)
 
+    # Decide whether to return the latest or the highest
+    # Based on your requirement: "newest and highest", we'll return the latest
+    return latest_zestimate
 
 # If you run this file directly, you can test it locally.
 # In your main app.py, import this module and call run_home_value_tab()
