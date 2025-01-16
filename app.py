@@ -17,6 +17,7 @@ import owner_marketing  # Ensure this module is also free of Streamlit commands
 # Import your new reservations.py
 import reservations
 import homevalue  # or from homevalue import run_home_value_tab
+import guestcommunication
 
 
 
@@ -62,15 +63,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 # Define all s
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "Dashboard", 
     "Marketing", 
     "Tour Prediction",
     "Owner Marketing",
     "Overnight Misses",
     "OpenPhone Stats",
-    "Add Home Value"  # <--- New tab
+    "Add Home Value",
+    "Add Guest Openphone Status"  # <--- New tab name
 ])
+
 
 ############################################
 # Hard-coded OpenPhone Credentials
@@ -1184,6 +1187,10 @@ with tab6:
         st.error(f"Error in OpenPhone tab: {str(e)}")
 with tab7:
     homevalue.run_home_value_tab()
+with tab8:
+    st.header("Add Guest Status")
+    # If there's a function in guestcommunication to render the tab:
+    guestcommunication.run_guest_status_tab()
 
 ############################################
 # Raw Data Viewer
