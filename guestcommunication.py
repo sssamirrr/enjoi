@@ -338,41 +338,36 @@ def run_guest_status_tab():
                                      type=["xlsx", "xls"])
 
     if uploaded_file is not None:
-        # Convert to DataFrame
         df = pd.read_excel(uploaded_file)
         if 'Phone Number' not in df.columns:
             st.error("Missing 'Phone Number' column.")
             return
 
-        # Hard-coded header (No 'Bearer')
-        HEADERS = {
-            "Authorization": OPENPHONE_API_KEY,
-            "Content-Type": "application/json"
-        }
-
-        st.info("Enriching data with OpenPhone. This might take time for many rows...")
+        # Processing & updating dataframe
         updated_df = fetch_communication_info(df, HEADERS)
 
         # Show preview
         st.subheader("Preview of Updated Data")
         st.dataframe(updated_df.head(50))
 
-        # Download button
+        # Prepare for download
         st.subheader("Download Updated Excel")
-       output = io.BytesIO()
+        output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             updated_df.to_excel(writer, index=False, sheet_name='Updated')
-            # Note: No need to call writer.save() here.
-    
-        # Rewind the buffer so the download starts at the beginning
+            # No writer.save() needed; the context manager handles everything
+
+        # Rewind the BytesIO buffer
         output.seek(0)
-    
+
+        # Create the download button
         st.download_button(
             label="Download Updated Excel",
             data=output.getvalue(),
             file_name="updated_communication_info.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
 
 # If you want to run this file directly:
 if __name__ == "__main__":
