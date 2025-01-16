@@ -1,28 +1,77 @@
-import time
-import requests
-import io
-from datetime import datetime
-import pandas as pd
+import phonenumbers
 import streamlit as st
+import pandas as pd
+from datetime import datetime
+import gspread
+from google.oauth2 import service_account
+import requests
+import time
 
-############################################
-# 1. Hard-coded API credentials:
-############################################
-OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
-OPENPHONE_NUMBER = "+1XXXXXXXXXX"
+# Hardcoded OpenPhone API Key and Headers
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+HEADERS = {
+    "Authorization": OPENPHONE_API_KEY,
+    "Content-Type": "application/json"
+}
 
-############################################
-# 2. Rate-limited request
-############################################
-def rate_limited_request(url, headers, params, request_type='get'):
-    time.sleep(1 / 5)  # 5 requests per second max
+# Format phone number to E.164
+def format_phone_number(phone):
     try:
-        if request_type == 'get':
-            response = requests.get(url, headers=headers, params=params)
+        parsed_phone = phonenumbers.parse(phone, "US")
+        if phonenumbers.is_valid_number(parsed_phone):
+            return phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.E164)
         else:
-            response = None
+            return None
+    except phonenumbers.NumberParseException:
+        return None
 
-        if response and response.status_code == 200:
+# Fetch Google Sheets Data
+def get_owner_sheet_data():
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly"
+            ],
+        )
+        client = gspread.authorize(credentials)
+        sheet_key = st.secrets["owners_sheets"]["owners_sheet_key"]
+        sheet = client.open_by_key(sheet_key)
+        worksheet = sheet.get_worksheet(0)
+        data = worksheet.get_all_records()
+
+        if not data:
+            st.warning("The Google Sheet is empty.")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+
+        # Clean Data
+        for col in ['Sale Date', 'Maturity Date']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        # Add communication columns
+        df['status'] = "Not Updated"
+        df['last_date'] = None
+        df['total_messages'] = 0
+        df['total_calls'] = 0
+
+        df['Select'] = False  # Selection column
+        df = df[['Select'] + [col for col in df.columns if col != 'Select']]  # Move Select to first column
+        return df
+
+    except Exception as e:
+        st.error(f"Error accessing Google Sheet: {e}")
+        return pd.DataFrame()
+
+# Rate-Limited API Request
+def rate_limited_request(url, params):
+    time.sleep(1 / 5)
+    try:
+        response = requests.get(url, headers=HEADERS, params=params)
+        if response.status_code == 200:
             return response.json()
         else:
             st.warning(f"API Error: {response.status_code}")
@@ -31,291 +80,148 @@ def rate_limited_request(url, headers, params, request_type='get'):
         st.warning(f"Exception during request: {str(e)}")
     return None
 
-############################################
-# 3. Get phone number IDs
-############################################
-def get_all_phone_number_ids(headers):
-    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
-    if not response_data:
-        return []
-    return [pn.get('id') for pn in response_data.get('data', [])]
+# Fetch OpenPhone Communication Data
+def get_communication_info(phone_number):
+    formatted_phone = format_phone_number(phone_number)
+    if not formatted_phone:
+        return {
+            'status': "Invalid Number",
+            'last_date': None,
+            'total_messages': 0,
+            'total_calls': 0
+        }
 
-############################################
-# 4. Get communication info
-############################################
-def get_communication_info(phone_number, headers, arrival_date=None):
-    phone_number_ids = get_all_phone_number_ids(headers)
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
+
+    response_data = rate_limited_request(phone_numbers_url, {})
+    phone_number_ids = [pn.get('id') for pn in response_data.get('data', [])] if response_data else []
+
     if not phone_number_ids:
         return {
             'status': "No Communications",
             'last_date': None,
-            'call_duration': None,
-            'agent_name': None,
             'total_messages': 0,
-            'total_calls': 0,
-            'answered_calls': 0,
-            'missed_calls': 0,
-            'call_attempts': 0,
-            'pre_arrival_calls': 0,
-            'pre_arrival_texts': 0,
-            'post_arrival_calls': 0,
-            'post_arrival_texts': 0,
-            'calls_under_40sec': 0
+            'total_calls': 0
         }
 
-    messages_url = "https://api.openphone.com/v1/messages"
-    calls_url = "https://api.openphone.com/v1/calls"
-
     latest_datetime = None
-    latest_type = None
-    latest_direction = None
-    call_duration = None
-    agent_name = None
-
     total_messages = 0
     total_calls = 0
-    answered_calls = 0
-    missed_calls = 0
-    call_attempts = 0
-
-    pre_arrival_calls = 0
-    pre_arrival_texts = 0
-    post_arrival_calls = 0
-    post_arrival_texts = 0
-    calls_under_40sec = 0
-
-    # Convert arrival_date to datetime
-    if isinstance(arrival_date, str):
-        arrival_date = datetime.fromisoformat(arrival_date)
-    elif isinstance(arrival_date, pd.Timestamp):
-        arrival_date = arrival_date.to_pydatetime()
-    arrival_date_only = arrival_date.date() if arrival_date else None
 
     for phone_number_id in phone_number_ids:
-        # Messages
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
+        params = {"phoneNumberId": phone_number_id, "participants": [formatted_phone], "maxResults": 50}
 
-            messages_response = rate_limited_request(messages_url, headers, params)
-            if messages_response and 'data' in messages_response:
-                messages = messages_response['data']
-                total_messages += len(messages)
-                for message in messages:
-                    msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
-                    if arrival_date_only:
-                        if msg_time.date() <= arrival_date_only:
-                            pre_arrival_texts += 1
-                        else:
-                            post_arrival_texts += 1
+        # Fetch Messages
+        messages_response = rate_limited_request(messages_url, params)
+        if messages_response:
+            total_messages += len(messages_response.get('data', []))
 
-                    if not latest_datetime or msg_time > latest_datetime:
-                        latest_datetime = msg_time
-                        latest_type = "Message"
-                        latest_direction = message.get("direction", "unknown")
-                        agent_name = message.get("user", {}).get("name", "Unknown Agent")
-                next_page = messages_response.get('nextPageToken')
-                if not next_page:
-                    break
-            else:
-                break
+        # Fetch Calls
+        calls_response = rate_limited_request(calls_url, params)
+        if calls_response:
+            calls = calls_response.get('data', [])
+            total_calls += len(calls)
+            for call in calls:
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                if not latest_datetime or call_time > latest_datetime:
+                    latest_datetime = call_time
 
-        # Calls
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
-
-            calls_response = rate_limited_request(calls_url, headers, params)
-            if calls_response and 'data' in calls_response:
-                calls = calls_response['data']
-                total_calls += len(calls)
-                for call in calls:
-                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
-                    duration = call.get("duration", 0)
-                    if arrival_date_only:
-                        if call_time.date() <= arrival_date_only:
-                            pre_arrival_calls += 1
-                        else:
-                            post_arrival_calls += 1
-
-                    if duration < 40:
-                        calls_under_40sec += 1
-
-                    if not latest_datetime or call_time > latest_datetime:
-                        latest_datetime = call_time
-                        latest_type = "Call"
-                        latest_direction = call.get("direction", "unknown")
-                        call_duration = duration
-                        agent_name = call.get("user", {}).get("name", "Unknown Agent")
-
-                    call_attempts += 1
-                    call_status = call.get('status', 'unknown')
-                    if call_status == 'completed':
-                        answered_calls += 1
-                    elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
-                        missed_calls += 1
-                next_page = calls_response.get('nextPageToken')
-                if not next_page:
-                    break
-            else:
-                break
-
-    if not latest_datetime:
-        status = "No Communications"
-    else:
-        status = f"{latest_type} - {latest_direction}"
-
+    status = "No Communications" if not latest_datetime else "Active"
     return {
         'status': status,
         'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
-        'call_duration': call_duration,
-        'agent_name': agent_name,
         'total_messages': total_messages,
-        'total_calls': total_calls,
-        'answered_calls': answered_calls,
-        'missed_calls': missed_calls,
-        'call_attempts': call_attempts,
-        'pre_arrival_calls': pre_arrival_calls,
-        'pre_arrival_texts': pre_arrival_texts,
-        'post_arrival_calls': post_arrival_calls,
-        'post_arrival_texts': post_arrival_texts,
-        'calls_under_40sec': calls_under_40sec
+        'total_calls': total_calls
     }
 
-def fetch_communication_info(df, headers):
-    statuses = []
-    dates = []
-    durations = []
-    agent_names = []
-    total_messages_list = []
-    total_calls_list = []
-    answered_calls_list = []
-    missed_calls_list = []
-    call_attempts_list = []
-    pre_arrival_calls_list = []
-    pre_arrival_texts_list = []
-    post_arrival_calls_list = []
-    post_arrival_texts_list = []
-    calls_under_40sec_list = []
+# Main App Function
+# Main App Function
+def run_owner_marketing_tab(owner_df):
+    st.title("Owner Marketing Dashboard")
 
-    for _, row in df.iterrows():
-        phone = row.get('Phone Number')
-        arrival_date = row.get('Arrival Date')
+    # Initialize session state
+    if 'working_df' not in st.session_state:
+        st.session_state.working_df = owner_df.copy()
 
-        if phone and phone != 'No Data':
-            try:
-                comm_info = get_communication_info(phone, headers, arrival_date)
-                statuses.append(comm_info['status'])
-                dates.append(comm_info['last_date'])
-                durations.append(comm_info['call_duration'])
-                agent_names.append(comm_info['agent_name'])
-                total_messages_list.append(comm_info['total_messages'])
-                total_calls_list.append(comm_info['total_calls'])
-                answered_calls_list.append(comm_info['answered_calls'])
-                missed_calls_list.append(comm_info['missed_calls'])
-                call_attempts_list.append(comm_info['call_attempts'])
-                pre_arrival_calls_list.append(comm_info['pre_arrival_calls'])
-                pre_arrival_texts_list.append(comm_info['pre_arrival_texts'])
-                post_arrival_calls_list.append(comm_info['post_arrival_calls'])
-                post_arrival_texts_list.append(comm_info['post_arrival_texts'])
-                calls_under_40sec_list.append(comm_info['calls_under_40sec'])
-            except Exception as e:
-                st.warning(f"Error fetching info for phone {phone}: {e}")
-                statuses.append("Error")
-                dates.append(None)
-                durations.append(None)
-                agent_names.append("Unknown")
-                total_messages_list.append(0)
-                total_calls_list.append(0)
-                answered_calls_list.append(0)
-                missed_calls_list.append(0)
-                call_attempts_list.append(0)
-                pre_arrival_calls_list.append(0)
-                pre_arrival_texts_list.append(0)
-                post_arrival_calls_list.append(0)
-                post_arrival_texts_list.append(0)
-                calls_under_40sec_list.append(0)
+    # Filters
+    st.subheader("Filters")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        selected_states = st.multiselect("Select States", st.session_state.working_df['State'].dropna().unique())
+    with col2:
+        date_range = st.date_input("Sale Date Range", 
+                                  [st.session_state.working_df['Sale Date'].min(), 
+                                   st.session_state.working_df['Sale Date'].max()])
+    with col3:
+        fico_range = st.slider("FICO Score", 
+                             int(st.session_state.working_df['Primary FICO'].min()), 
+                             int(st.session_state.working_df['Primary FICO'].max()), 
+                             (int(st.session_state.working_df['Primary FICO'].min()), 
+                              int(st.session_state.working_df['Primary FICO'].max())))
+
+    # Apply Filters
+    filtered_df = st.session_state.working_df.copy()
+    if selected_states:
+        filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
+    if date_range:
+        filtered_df = filtered_df[(filtered_df['Sale Date'] >= pd.Timestamp(date_range[0])) & 
+                                (filtered_df['Sale Date'] <= pd.Timestamp(date_range[1]))]
+    filtered_df = filtered_df[(filtered_df['Primary FICO'] >= fico_range[0]) & 
+                            (filtered_df['Primary FICO'] <= fico_range[1])]
+
+    # Display Table
+    st.subheader("Owner Data")
+    edited_df = st.data_editor(filtered_df, use_container_width=True, column_config={
+        "Select": st.column_config.CheckboxColumn("Select")
+    }, key='data_editor')
+
+    # Communication Updates
+    if st.button("Update Communication Info", key="update_button"):
+        selected_rows = edited_df[edited_df['Select']].index.tolist()
+        if not selected_rows:
+            st.warning("No rows selected!")
         else:
-            statuses.append("Invalid Number")
-            dates.append(None)
-            durations.append(None)
-            agent_names.append("Unknown")
-            total_messages_list.append(0)
-            total_calls_list.append(0)
-            answered_calls_list.append(0)
-            missed_calls_list.append(0)
-            call_attempts_list.append(0)
-            pre_arrival_calls_list.append(0)
-            pre_arrival_texts_list.append(0)
-            post_arrival_calls_list.append(0)
-            post_arrival_texts_list.append(0)
-            calls_under_40sec_list.append(0)
+            with st.spinner("Fetching communication info..."):
+                for idx in selected_rows:
+                    phone_number = edited_df.at[idx, "Phone Number"]
+                    comm_data = get_communication_info(phone_number)
+                    for key, value in comm_data.items():
+                        # Update both DataFrames
+                        filtered_df.at[idx, key] = value
+                        st.session_state.working_df.at[idx, key] = value
+                
+                st.success("Communication info updated!")
+                st.rerun()
+    # Map Visualization
+    if st.button("Show Owners on Map", key="map_button"):
+        try:
+            # Ensure the dataframe has Zip Codes for plotting
+            if 'Zip Code' not in filtered_df.columns or filtered_df['Zip Code'].isnull().all():
+                st.warning("No Zip Code data available for plotting!")
+            else:
+                # Prepare data for map
+                geocoded_data = filtered_df.dropna(subset=["Zip Code"]).copy()
+    
+                # Optionally, you can add geocoding logic here if Latitude/Longitude is unavailable
+                # Example: Call an API like Nominatim to fetch lat/lon for each zip code
+    
+                # Plot map using latitude/longitude (if available) or center by Zip Code
+                st.map(geocoded_data[["latitude", "longitude"]], zoom=5)  # Replace with appropriate columns
+        except Exception as e:
+            st.error(f"Error displaying the map: {e}")
 
-    df['Communication Status'] = statuses
-    df['Last Contact Date'] = dates
-    df['Last Call Duration'] = durations
-    df['Last Agent Name'] = agent_names
-    df['Total Messages'] = total_messages_list
-    df['Total Calls'] = total_calls_list
-    df['Answered Calls'] = answered_calls_list
-    df['Missed Calls'] = missed_calls_list
-    df['Call Attempts'] = call_attempts_list
-    df['Pre-Arrival Calls'] = pre_arrival_calls_list
-    df['Pre-Arrival Texts'] = pre_arrival_texts_list
-    df['Post-Arrival Calls'] = post_arrival_calls_list
-    df['Post-Arrival Texts'] = post_arrival_texts_list
-    df['Calls < 40s'] = calls_under_40sec_list
 
-    return df
 
-def run_guest_status_tab():
-    st.title("Guest Communication Insights (No 'Bearer' prefix)")
 
-    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", type=["xlsx", "xls"])
-    if uploaded_file is not None:
-        df = pd.read_excel(uploaded_file)
-        if 'Phone Number' not in df.columns:
-            st.error("Missing 'Phone Number' column.")
-            return
-
-        # IMPORTANT: This will pass the key in Authorization
-        # WITHOUT the 'Bearer ' prefix. 
-        HEADERS = {
-            "Authorization": OPENPHONE_API_KEY,
-            "Content-Type": "application/json"
-        }
-
-        st.info("Enriching data with OpenPhone. This might take time for many rows...")
-        updated_df = fetch_communication_info(df, HEADERS)
-
-        st.subheader("Preview of Updated Data")
-        st.dataframe(updated_df.head())
-
-        st.subheader("Download Updated Excel")
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            updated_df.to_excel(writer, index=False, sheet_name='Updated')
-            writer.save()
-
-        st.download_button(
-            label="Download Updated Excel",
-            data=output.getvalue(),
-            file_name="updated_communication_info.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+def run_minimal_app():
+    owner_df = get_owner_sheet_data()
+    if not owner_df.empty:
+        run_owner_marketing_tab(owner_df)
+    else:
+        st.error("No owner data available.")
 
 if __name__ == "__main__":
-    run_guest_status_tab()
+    st.set_page_config(page_title="Owner Marketing", layout="wide")
+    run_minimal_app()
