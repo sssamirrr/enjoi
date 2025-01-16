@@ -4,12 +4,30 @@ import io
 from datetime import datetime
 import pandas as pd
 import streamlit as st
+import phonenumbers  # <-- For phone number formatting
 
 ############################################
 # 1. Hard-coded API credentials:
 ############################################
 OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
 OPENPHONE_NUMBER = "+1XXXXXXXXXX"
+
+############################################
+# 1b. Helper to format phone numbers to E.164
+############################################
+def format_phone_number_us(raw_number: str) -> str:
+    """
+    Attempts to parse a phone number as a US number and return
+    it in E.164 format (e.g., +14075206507).
+    Returns None if parsing fails.
+    """
+    try:
+        parsed = phonenumbers.parse(raw_number, "US")
+        if phonenumbers.is_valid_number(parsed):
+            return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+    except phonenumbers.NumberParseException:
+        pass
+    return None
 
 ############################################
 # 2. Rate-limited request
@@ -45,6 +63,7 @@ def get_all_phone_number_ids(headers):
 # 4. Get communication info
 ############################################
 def get_communication_info(phone_number, headers, arrival_date=None):
+    # Make sure phone_number is already in E.164 format here
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         return {
@@ -98,7 +117,7 @@ def get_communication_info(phone_number, headers, arrival_date=None):
         while True:
             params = {
                 "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
+                "participants": [phone_number],  # phone_number is E.164
                 "maxResults": 50
             }
             if next_page:
@@ -132,7 +151,7 @@ def get_communication_info(phone_number, headers, arrival_date=None):
         while True:
             params = {
                 "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
+                "participants": [phone_number],  # phone_number is E.164
                 "maxResults": 50
             }
             if next_page:
@@ -173,6 +192,7 @@ def get_communication_info(phone_number, headers, arrival_date=None):
             else:
                 break
 
+    # Final status
     if not latest_datetime:
         status = "No Communications"
     else:
@@ -195,7 +215,15 @@ def get_communication_info(phone_number, headers, arrival_date=None):
         'calls_under_40sec': calls_under_40sec
     }
 
+############################################
+# 5. For a DataFrame with 'Phone Number'
+############################################
 def fetch_communication_info(df, headers):
+    """
+    Loops through each row in a DataFrame (must have 'Phone Number' column)
+    and calls get_communication_info() for each phone number (formatted to E.164).
+    """
+    # Prepare new columns
     statuses = []
     dates = []
     durations = []
@@ -212,10 +240,14 @@ def fetch_communication_info(df, headers):
     calls_under_40sec_list = []
 
     for _, row in df.iterrows():
-        phone = row.get('Phone Number')
-        arrival_date = row.get('Arrival Date')
+        raw_phone = row.get('Phone Number')
+        arrival_date = row.get('Arrival Date')  # optional column
 
-        if phone and phone != 'No Data':
+        # 1) Convert to +1XXXXXXXXXX format
+        phone = format_phone_number_us(str(raw_phone)) if raw_phone else None
+
+        if phone:
+            # 2) Actually fetch the data
             try:
                 comm_info = get_communication_info(phone, headers, arrival_date)
                 statuses.append(comm_info['status'])
@@ -234,6 +266,7 @@ def fetch_communication_info(df, headers):
                 calls_under_40sec_list.append(comm_info['calls_under_40sec'])
             except Exception as e:
                 st.warning(f"Error fetching info for phone {phone}: {e}")
+                # Fill placeholders
                 statuses.append("Error")
                 dates.append(None)
                 durations.append(None)
@@ -249,6 +282,7 @@ def fetch_communication_info(df, headers):
                 post_arrival_texts_list.append(0)
                 calls_under_40sec_list.append(0)
         else:
+            # Invalid or missing phone number
             statuses.append("Invalid Number")
             dates.append(None)
             durations.append(None)
@@ -264,6 +298,7 @@ def fetch_communication_info(df, headers):
             post_arrival_texts_list.append(0)
             calls_under_40sec_list.append(0)
 
+    # Create columns
     df['Communication Status'] = statuses
     df['Last Contact Date'] = dates
     df['Last Call Duration'] = durations
@@ -281,18 +316,31 @@ def fetch_communication_info(df, headers):
 
     return df
 
+############################################
+# 6. Main Streamlit function
+############################################
 def run_guest_status_tab():
-    st.title("Guest Communication Insights (No 'Bearer' prefix)")
+    """
+    Streamlit UI to:
+      1) Upload Excel with 'Phone Number'
+      2) Format phone numbers to E.164 (US)
+      3) Fetch data from OpenPhone (no 'Bearer' in Authorization)
+      4) Display & Download updated results
+    """
+    st.title("Guest Communication Insights (No 'Bearer' prefix, E.164 Phone Numbers)")
 
-    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", type=["xlsx", "xls"])
+    # File upload
+    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", 
+                                     type=["xlsx", "xls"])
+
     if uploaded_file is not None:
+        # Convert to DataFrame
         df = pd.read_excel(uploaded_file)
         if 'Phone Number' not in df.columns:
             st.error("Missing 'Phone Number' column.")
             return
 
-        # IMPORTANT: This will pass the key in Authorization
-        # WITHOUT the 'Bearer ' prefix. 
+        # Hard-coded header (No 'Bearer')
         HEADERS = {
             "Authorization": OPENPHONE_API_KEY,
             "Content-Type": "application/json"
@@ -301,9 +349,11 @@ def run_guest_status_tab():
         st.info("Enriching data with OpenPhone. This might take time for many rows...")
         updated_df = fetch_communication_info(df, HEADERS)
 
+        # Show preview
         st.subheader("Preview of Updated Data")
-        st.dataframe(updated_df.head())
+        st.dataframe(updated_df.head(50))
 
+        # Download button
         st.subheader("Download Updated Excel")
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -317,5 +367,6 @@ def run_guest_status_tab():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+# If you want to run this file directly:
 if __name__ == "__main__":
     run_guest_status_tab()
