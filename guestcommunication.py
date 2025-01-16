@@ -9,8 +9,12 @@ import phonenumbers  # <-- For phone number formatting
 ############################################
 # 1. Hard-coded API credentials:
 ############################################
-OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
-OPENPHONE_NUMBER = "+1XXXXXXXXXX"
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+HEADERS = {
+    "Authorization": OPENPHONE_API_KEY,
+    "Content-Type": "application/json"
+}
+
 
 ############################################
 # 1b. Helper to format phone numbers to E.164
