@@ -359,11 +359,14 @@ def run_guest_status_tab():
 
         # Download button
         st.subheader("Download Updated Excel")
-        output = io.BytesIO()
+       output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             updated_df.to_excel(writer, index=False, sheet_name='Updated')
-            # No writer.save() needed; the context manager handles closing/saving.
-
+            # Note: No need to call writer.save() here.
+    
+        # Rewind the buffer so the download starts at the beginning
+        output.seek(0)
+    
         st.download_button(
             label="Download Updated Excel",
             data=output.getvalue(),
