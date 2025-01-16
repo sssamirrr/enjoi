@@ -8,23 +8,18 @@ import streamlit as st
 ############################################
 # 1. Hard-coded API credentials:
 ############################################
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"  # <--- Replace if needed
-OPENPHONE_NUMBER = "+18438972426"                      # <--- Replace if needed
+OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
+OPENPHONE_NUMBER = "+1XXXXXXXXXX"
 
 ############################################
-# 2. Helper Function: rate_limited_request
+# 2. Rate-limited request
 ############################################
 def rate_limited_request(url, headers, params, request_type='get'):
-    """
-    Make an API request while respecting rate limits.
-    By default, sleeps 1/5 seconds (5 requests/second).
-    """
     time.sleep(1 / 5)  # 5 requests per second max
     try:
         if request_type == 'get':
             response = requests.get(url, headers=headers, params=params)
         else:
-            # Adjust for other request types as needed
             response = None
 
         if response and response.status_code == 200:
@@ -37,29 +32,19 @@ def rate_limited_request(url, headers, params, request_type='get'):
     return None
 
 ############################################
-# 3. Helper Function: get_all_phone_number_ids
+# 3. Get phone number IDs
 ############################################
 def get_all_phone_number_ids(headers):
-    """
-    Retrieve all phoneNumberIds associated with your OpenPhone account.
-    """
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     response_data = rate_limited_request(phone_numbers_url, headers, {})
     if not response_data:
         return []
-    # Extract phoneNumber IDs
     return [pn.get('id') for pn in response_data.get('data', [])]
 
 ############################################
-# 4. Main Logic: get_communication_info
+# 4. Get communication info
 ############################################
 def get_communication_info(phone_number, headers, arrival_date=None):
-    """
-    Retrieve communication info for a specific phone number from the OpenPhone API.
-    - If arrival_date is provided, we separate calls/texts into pre-arrival vs. post-arrival.
-    - If arrival_date is not relevant, we simply fetch all data.
-    """
-    # 4.1. Get all phoneNumberIds
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         return {
@@ -79,11 +64,9 @@ def get_communication_info(phone_number, headers, arrival_date=None):
             'calls_under_40sec': 0
         }
 
-    # 4.2. Define endpoints
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
 
-    # 4.3. Initialize tracking variables
     latest_datetime = None
     latest_type = None
     latest_direction = None
@@ -102,21 +85,15 @@ def get_communication_info(phone_number, headers, arrival_date=None):
     post_arrival_texts = 0
     calls_under_40sec = 0
 
-    # 4.4. Convert arrival_date to date if provided
+    # Convert arrival_date to datetime
     if isinstance(arrival_date, str):
         arrival_date = datetime.fromisoformat(arrival_date)
     elif isinstance(arrival_date, pd.Timestamp):
         arrival_date = arrival_date.to_pydatetime()
-    if arrival_date:
-        arrival_date_only = arrival_date.date()
-    else:
-        arrival_date_only = None
+    arrival_date_only = arrival_date.date() if arrival_date else None
 
-    # 4.5. Loop through each phoneNumberId and fetch messages/calls
     for phone_number_id in phone_number_ids:
-        # ------------------------------
-        # A) Paginate through MESSAGES
-        # ------------------------------
+        # Messages
         next_page = None
         while True:
             params = {
@@ -131,14 +108,10 @@ def get_communication_info(phone_number, headers, arrival_date=None):
             if messages_response and 'data' in messages_response:
                 messages = messages_response['data']
                 total_messages += len(messages)
-
                 for message in messages:
-                    msg_time = datetime.fromisoformat(
-                        message['createdAt'].replace('Z', '+00:00')
-                    )
-                    msg_date = msg_time.date()
+                    msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
                     if arrival_date_only:
-                        if msg_date <= arrival_date_only:
+                        if msg_time.date() <= arrival_date_only:
                             pre_arrival_texts += 1
                         else:
                             post_arrival_texts += 1
@@ -148,17 +121,13 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                         latest_type = "Message"
                         latest_direction = message.get("direction", "unknown")
                         agent_name = message.get("user", {}).get("name", "Unknown Agent")
-
                 next_page = messages_response.get('nextPageToken')
                 if not next_page:
                     break
             else:
-                # No data or error, break out
                 break
 
-        # ---------------------------
-        # B) Paginate through CALLS
-        # ---------------------------
+        # Calls
         next_page = None
         while True:
             params = {
@@ -173,16 +142,11 @@ def get_communication_info(phone_number, headers, arrival_date=None):
             if calls_response and 'data' in calls_response:
                 calls = calls_response['data']
                 total_calls += len(calls)
-
                 for call in calls:
-                    call_time = datetime.fromisoformat(
-                        call['createdAt'].replace('Z', '+00:00')
-                    )
-                    call_date = call_time.date()
+                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
                     duration = call.get("duration", 0)
-
                     if arrival_date_only:
-                        if call_date <= arrival_date_only:
+                        if call_time.date() <= arrival_date_only:
                             pre_arrival_calls += 1
                         else:
                             post_arrival_calls += 1
@@ -198,28 +162,22 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                         agent_name = call.get("user", {}).get("name", "Unknown Agent")
 
                     call_attempts += 1
-
-                    # Determine if the call was answered
                     call_status = call.get('status', 'unknown')
                     if call_status == 'completed':
                         answered_calls += 1
                     elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
                         missed_calls += 1
-
                 next_page = calls_response.get('nextPageToken')
                 if not next_page:
                     break
             else:
-                # No data or error, break out
                 break
 
-    # 4.6. Determine final "status"
     if not latest_datetime:
         status = "No Communications"
     else:
         status = f"{latest_type} - {latest_direction}"
 
-    # 4.7. Return the dictionary of metrics
     return {
         'status': status,
         'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
@@ -237,17 +195,7 @@ def get_communication_info(phone_number, headers, arrival_date=None):
         'calls_under_40sec': calls_under_40sec
     }
 
-############################################
-# 5. fetch_communication_info for a DataFrame
-############################################
 def fetch_communication_info(df, headers):
-    """
-    Loops through each row in a DataFrame (must have 'Phone Number' column)
-    and appends communication info as new columns.
-
-    Returns a new DataFrame with appended columns.
-    """
-    # Prepare columns to store results
     statuses = []
     dates = []
     durations = []
@@ -263,10 +211,9 @@ def fetch_communication_info(df, headers):
     post_arrival_texts_list = []
     calls_under_40sec_list = []
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         phone = row.get('Phone Number')
-        # If you have an 'Arrival Date' or 'Check In' column, adapt accordingly:
-        arrival_date = row.get('Arrival Date')  # or row.get('Check In')
+        arrival_date = row.get('Arrival Date')
 
         if phone and phone != 'No Data':
             try:
@@ -287,7 +234,6 @@ def fetch_communication_info(df, headers):
                 calls_under_40sec_list.append(comm_info['calls_under_40sec'])
             except Exception as e:
                 st.warning(f"Error fetching info for phone {phone}: {e}")
-                # Fill in default values
                 statuses.append("Error")
                 dates.append(None)
                 durations.append(None)
@@ -303,7 +249,6 @@ def fetch_communication_info(df, headers):
                 post_arrival_texts_list.append(0)
                 calls_under_40sec_list.append(0)
         else:
-            # Invalid or missing phone number
             statuses.append("Invalid Number")
             dates.append(None)
             durations.append(None)
@@ -319,7 +264,6 @@ def fetch_communication_info(df, headers):
             post_arrival_texts_list.append(0)
             calls_under_40sec_list.append(0)
 
-    # Create new columns in the DF
     df['Communication Status'] = statuses
     df['Last Contact Date'] = dates
     df['Last Call Duration'] = durations
@@ -337,45 +281,29 @@ def fetch_communication_info(df, headers):
 
     return df
 
-############################################
-# 6. The main Streamlit function to run
-############################################
 def run_guest_status_tab():
-    """
-    Streamlit UI to:
-      1) Upload an Excel file with phone numbers
-      2) Call fetch_communication_info to enrich data
-      3) Download the updated file
-    """
-    st.title("Guest Communication Insights (Hard-Coded API Key)")
+    st.title("Guest Communication Insights (No 'Bearer' prefix)")
 
-    # A) File uploader
-    uploaded_file = st.file_uploader("Upload an Excel file (with 'Phone Number' column)", type=["xlsx", "xls"])
-
+    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", type=["xlsx", "xls"])
     if uploaded_file is not None:
-        # B) Convert uploaded file to DataFrame
         df = pd.read_excel(uploaded_file)
-
         if 'Phone Number' not in df.columns:
-            st.error("Please ensure your Excel has a column named 'Phone Number'.")
+            st.error("Missing 'Phone Number' column.")
             return
 
-        # C) Prepare headers (no 'Bearer', just key)
-        headers = {
-            "X-Api-Key": OPENPHONE_API_KEY,      # <--- Non-bearer usage
+        # IMPORTANT: This will pass the key in Authorization
+        # WITHOUT the 'Bearer ' prefix. 
+        HEADERS = {
+            "Authorization": OPENPHONE_API_KEY,
             "Content-Type": "application/json"
         }
 
-        st.info("Enriching data with OpenPhone communication details. This may take a while if you have many rows...")
+        st.info("Enriching data with OpenPhone. This might take time for many rows...")
+        updated_df = fetch_communication_info(df, HEADERS)
 
-        # D) Fetch communication info and update the DataFrame
-        updated_df = fetch_communication_info(df, headers)
-
-        # E) Show a preview
         st.subheader("Preview of Updated Data")
-        st.dataframe(updated_df.head(50))
+        st.dataframe(updated_df.head())
 
-        # F) Download button
         st.subheader("Download Updated Excel")
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -389,10 +317,5 @@ def run_guest_status_tab():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-############################################
-# 7. If you run this file directly with:
-#    streamlit run guestcommunication.py
-#    the function below will execute.
-############################################
 if __name__ == "__main__":
     run_guest_status_tab()
