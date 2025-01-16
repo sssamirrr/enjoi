@@ -11,33 +11,26 @@ import datetime
 RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"
 RAPIDAPI_HOST = "zillow-working-api.p.rapidapi.com"
 
+
 def run_home_value_tab():
     """
     Streamlit app that:
       1. Uploads Excel (with Address1, City, Zip Code)
       2. Builds a full address, e.g. "123 Main St, City, ST 12345"
-      3. Calls Zillow via http.client with the /graph_charts endpoint (byaddress=...)
-      4. Parses the JSON response, picks the newest+highest zestimate
-      5. Adds "Home Value" column, displays, and provides CSV download
+      3. Calls Zillow via http.client with /graph_charts (byaddress=...)
+      4. Logs the status code & parsed zestimate
+      5. Picks the newest+highest zestimate, adds 'Home Value' column, and displays
     """
 
-    st.title("Home Value Lookup via http.client (Newest & Highest)")
+    st.title("Home Value Lookup (Newest & Highest), with Logging")
 
     st.markdown("""
     **Instructions**:
     - Upload an Excel file with columns: **Address1**, **City**, **Zip Code**.
-    - We build a single string like "Address1, City, ST ZIP" (feel free to modify for your state).
-    - We make **one** request per row to the Zillow Working API using **http.client** format:
-
-    ```python
-    import http.client
-    conn = http.client.HTTPSConnection("zillow-working-api.p.rapidapi.com")
-    headers = {...}
-    conn.request("GET", "/graph_charts?...&byaddress=ENCODED_ADDRESS", headers=headers)
-    ```
-    
-    - If Zillow finds a match, we parse the returned JSON to get the newest and highest zestimate.
-    - A 404 indicates that Zillow can’t match the address.
+    - We build a single string like "Address1, City, ST ZIP".
+    - For each row, we call `https://zillow-working-api.p.rapidapi.com/graph_charts` 
+      with `byaddress=<encoded_address>`.
+    - We **log** the status code for each address, plus whether a Zestimate is found.
     """)
 
     # 1) File uploader
@@ -66,15 +59,13 @@ def run_home_value_tab():
         st.error(f"Missing columns: {missing_cols}")
         return
 
-    # (Optional) Clean ZIP codes: remove ".0"
+    # Clean ZIP codes: remove ".0" if any
     df["Zip Code"] = df["Zip Code"].astype(str).str.replace(".0", "", regex=False)
 
-    # If you have a single-state scenario, you can hard-code a state:
-    # e.g., ", NC" – or if your data has a "State" column, incorporate that.
-    state_abbrev = ", NC"  # Change or remove if needed
+    # If all addresses in the same state, e.g., NC:
+    state_abbrev = ", NC"  # change or remove if needed
 
     # Build a "Full_Address"
-    # e.g., "168 N Ridge Dr, Waynesville, NC 28785"
     df["Full_Address"] = (
         df["Address1"].fillna("").str.strip() + ", "
         + df["City"].fillna("").str.strip()
@@ -85,31 +76,36 @@ def run_home_value_tab():
     st.subheader("Check the 'Full_Address' Column")
     st.dataframe(df[["Address1", "City", "Zip Code", "Full_Address"]].head(10))
 
-    # 3) For each row, call the /graph_charts?recent_first=True&which=zestimate_history&byaddress=...
+    # For each row, call the API
     home_values = []
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
         full_address = row["Full_Address"]
         if not full_address:
             home_values.append(None)
             continue
 
-        # URL-encode the address
+        # URL-encode
         encoded_address = urllib.parse.quote(full_address)
 
-        # Do the http.client GET request
-        zestimate_val = get_newest_highest_zestimate_httpclient(encoded_address)
+        # Log which address we are processing:
+        st.write(f"**Processing row {idx}:** {full_address}")
+
+        # Call the http.client GET
+        zestimate_val = get_newest_highest_zestimate_httpclient(
+            encoded_address, 
+            original_address=full_address
+        )
         home_values.append(zestimate_val)
 
-        # Sleep to avoid rate-limit
+        # Sleep a bit to avoid any rate-limit issues
         time.sleep(0.5)
 
-    # 4) Add the "Home Value" column
     df["Home Value"] = home_values
 
     st.subheader("Enriched Data (Newest & Highest Zestimate)")
     st.dataframe(df.head(20))
 
-    # 5) Download button
+    # Provide a download button
     csv_data = df.to_csv(index=False)
     st.download_button(
         "Download Enriched CSV",
@@ -119,16 +115,15 @@ def run_home_value_tab():
     )
 
 
-def get_newest_highest_zestimate_httpclient(encoded_address: str):
+def get_newest_highest_zestimate_httpclient(encoded_address: str, original_address: str):
     """
-    Uses http.client to call /graph_charts?recent_first=True&which=zestimate_history&byaddress=ENCODED_ADDRESS
-    Then picks the newest+highest zestimate from the JSON, or None if no data or 404.
+    Uses http.client to call /graph_charts?which=zestimate_history&byaddress=ENCODED_ADDRESS
+    Returns the newest+highest zestimate or None if not found.
+    Also logs status codes and any parsing outcomes to Streamlit.
     """
 
     conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
 
-    # Example path:
-    # /graph_charts?recent_first=True&which=zestimate_history&byaddress=123%20Main%20St%2C%20Raleigh
     path = (
         "/graph_charts"
         "?recent_first=True"
@@ -145,8 +140,13 @@ def get_newest_highest_zestimate_httpclient(encoded_address: str):
         conn.request("GET", path, headers=headers)
         res = conn.getresponse()
 
-        # If status != 200, likely 404 or other error
-        if res.status != 200:
+        status_code = res.status
+        # Log the status
+        st.write(f"API Status for '{original_address}': **{status_code}**")
+
+        if status_code != 200:
+            # If it's 404 or something else, log and return None
+            st.warning(f"Zestimate request **failed** ({status_code}). Address: {original_address}")
             return None
 
         data_raw = res.read()
@@ -154,19 +154,27 @@ def get_newest_highest_zestimate_httpclient(encoded_address: str):
         response_json = json.loads(data_str)
 
         zestimate_val = parse_zestimate_history(response_json)
+        if zestimate_val is None:
+            st.warning(f"No zestimate found in JSON. Address: {original_address}")
+        else:
+            st.info(f"Zestimate found: {zestimate_val} for {original_address}")
+
         return zestimate_val
 
     except Exception as e:
+        st.error(f"Error retrieving Zestimate for {original_address}: {e}")
         return None
+
     finally:
         conn.close()
 
 
 def parse_zestimate_history(response_json):
     """
-    Given the JSON for zestimate_history, pick the newest & highest zestimate.
-    Adjust field names as needed to match your actual JSON structure.
+    Given JSON for zestimate_history, return the newest+highest zestimate or None.
+    Logs no messages here; done in the calling function.
     """
+
     hv_data = response_json.get("homeValueChartData", [])
     if not hv_data:
         return None
@@ -180,7 +188,7 @@ def parse_zestimate_history(response_json):
     best_per_date = []
     for d_str, items_on_date in date_groups.items():
         items_on_date.sort(key=lambda x: x.get("zestimate", 0), reverse=True)
-        best_per_date.append(items_on_date[0])  # highest zestimate on that date
+        best_per_date.append(items_on_date[0])  # highest on that date
 
     # Sort by date descending => newest first
     def parse_date(d_str):
@@ -198,8 +206,5 @@ def parse_zestimate_history(response_json):
 
 
 # If you run this file directly, you can test it locally.
-# In your main app.py, just do:
-#   import homevalue
-#   homevalue.run_home_value_tab()
 if __name__ == "__main__":
     run_home_value_tab()
