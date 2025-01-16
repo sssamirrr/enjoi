@@ -1,354 +1,321 @@
-import streamlit as st
+import time
 import requests
-from datetime import datetime, timedelta
-import phonenumbers
+import io
+from datetime import datetime
 import pandas as pd
-import altair as alt
-import numpy as np
+import streamlit as st
 
-# ──────────────────────────────────────────────────────────────────────────
-# 1) API Configuration (no 'Bearer' in Authorization header)
-# ──────────────────────────────────────────────────────────────────────────
+############################################
+# 1. Hard-coded API credentials:
+############################################
 OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
-HEADERS = {
-    "Authorization": OPENPHONE_API_KEY,  # <─ No "Bearer" prefix here
-    "Content-Type": "application/json"
-}
+OPENPHONE_NUMBER = "+1XXXXXXXXXX"
 
-# ──────────────────────────────────────────────────────────────────────────
-# 2) Helper functions
-# ──────────────────────────────────────────────────────────────────────────
-def format_phone_number(phone_number):
-    """
-    Format a phone number to E.164 using the 'phonenumbers' library.
-    Example input: (407) 520-6507 → +14075206507
-    """
+############################################
+# 2. Rate-limited request
+############################################
+def rate_limited_request(url, headers, params, request_type='get'):
+    time.sleep(1 / 5)  # 5 requests per second max
     try:
-        parsed = phonenumbers.parse(phone_number, "US")
-        if phonenumbers.is_valid_number(parsed):
-            return f"+{parsed.country_code}{parsed.national_number}"
+        if request_type == 'get':
+            response = requests.get(url, headers=headers, params=params)
+        else:
+            response = None
+
+        if response and response.status_code == 200:
+            return response.json()
+        else:
+            st.warning(f"API Error: {response.status_code}")
+            st.warning(f"Response: {response.text}")
     except Exception as e:
-        st.error(f"Error parsing phone number: {e}")
+        st.warning(f"Exception during request: {str(e)}")
     return None
 
-def get_openphone_numbers():
-    """
-    Fetch the list of your OpenPhone numbers.
-    """
-    url = "https://api.openphone.com/v1/phone-numbers"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        return response.json().get("data", [])
-    return []
+############################################
+# 3. Get phone number IDs
+############################################
+def get_all_phone_number_ids(headers):
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    response_data = rate_limited_request(phone_numbers_url, headers, {})
+    if not response_data:
+        return []
+    return [pn.get('id') for pn in response_data.get('data', [])]
 
-def fetch_call_history(phone_number):
-    """
-    Fetch all calls for a given phone_number (auto-formatted).
-    """
-    formatted_phone = format_phone_number(phone_number)
-    all_calls = []
-    if formatted_phone:
-        # For each phone number ID in your OpenPhone account
-        for op_number in get_openphone_numbers():
-            phone_number_id = op_number.get("id")
-            if phone_number_id:
-                url = "https://api.openphone.com/v1/calls"
-                params = {
-                    "phoneNumberId": phone_number_id,
-                    "participants": [formatted_phone],
-                    "maxResults": 100
-                }
-                response = requests.get(url, headers=HEADERS, params=params)
-                if response.status_code == 200:
-                    all_calls.extend(response.json().get("data", []))
-    return all_calls
+############################################
+# 4. Get communication info
+############################################
+def get_communication_info(phone_number, headers, arrival_date=None):
+    phone_number_ids = get_all_phone_number_ids(headers)
+    if not phone_number_ids:
+        return {
+            'status': "No Communications",
+            'last_date': None,
+            'call_duration': None,
+            'agent_name': None,
+            'total_messages': 0,
+            'total_calls': 0,
+            'answered_calls': 0,
+            'missed_calls': 0,
+            'call_attempts': 0,
+            'pre_arrival_calls': 0,
+            'pre_arrival_texts': 0,
+            'post_arrival_calls': 0,
+            'post_arrival_texts': 0,
+            'calls_under_40sec': 0
+        }
 
-def fetch_message_history(phone_number):
-    """
-    Fetch all messages for a given phone_number (auto-formatted).
-    """
-    formatted_phone = format_phone_number(phone_number)
-    all_messages = []
-    if formatted_phone:
-        for op_number in get_openphone_numbers():
-            phone_number_id = op_number.get("id")
-            if phone_number_id:
-                url = "https://api.openphone.com/v1/messages"
-                params = {
-                    "phoneNumberId": phone_number_id,
-                    "participants": [formatted_phone],
-                    "maxResults": 100
-                }
-                response = requests.get(url, headers=HEADERS, params=params)
-                if response.status_code == 200:
-                    all_messages.extend(response.json().get("data", []))
-    return all_messages
+    messages_url = "https://api.openphone.com/v1/messages"
+    calls_url = "https://api.openphone.com/v1/calls"
 
-def fetch_call_transcript(call_id):
-    """
-    Fetch transcript for a given call ID.
-    """
-    url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        data = response.json().get("data", {})
-        if data and data.get("dialogue"):
-            return data
-    return None
+    latest_datetime = None
+    latest_type = None
+    latest_direction = None
+    call_duration = None
+    agent_name = None
 
-def create_communication_metrics(calls, messages):
-    """
-    Build a dictionary of simple metrics (counts, durations, etc.).
-    """
-    # Basic metrics
-    total_calls = len(calls)
-    total_messages = len(messages)
-    inbound_calls = len([c for c in calls if c.get('direction') == 'inbound'])
-    outbound_calls = len([c for c in calls if c.get('direction') == 'outbound'])
-    inbound_messages = len([m for m in messages if m.get('direction') == 'inbound'])
-    outbound_messages = len([m for m in messages if m.get('direction') == 'outbound'])
+    total_messages = 0
+    total_calls = 0
+    answered_calls = 0
+    missed_calls = 0
+    call_attempts = 0
 
-    # Calculate call durations
-    call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
-    avg_duration = np.mean(call_durations) if call_durations else 0
-    max_duration = max(call_durations) if call_durations else 0
+    pre_arrival_calls = 0
+    pre_arrival_texts = 0
+    post_arrival_calls = 0
+    post_arrival_texts = 0
+    calls_under_40sec = 0
 
-    # Message lengths
-    message_lengths = [len(str(m.get('content', ''))) for m in messages if m.get('content')]
-    avg_message_length = np.mean(message_lengths) if message_lengths else 0
+    # Convert arrival_date to datetime
+    if isinstance(arrival_date, str):
+        arrival_date = datetime.fromisoformat(arrival_date)
+    elif isinstance(arrival_date, pd.Timestamp):
+        arrival_date = arrival_date.to_pydatetime()
+    arrival_date_only = arrival_date.date() if arrival_date else None
+
+    for phone_number_id in phone_number_ids:
+        # Messages
+        next_page = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "participants": [phone_number],
+                "maxResults": 50
+            }
+            if next_page:
+                params['pageToken'] = next_page
+
+            messages_response = rate_limited_request(messages_url, headers, params)
+            if messages_response and 'data' in messages_response:
+                messages = messages_response['data']
+                total_messages += len(messages)
+                for message in messages:
+                    msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                    if arrival_date_only:
+                        if msg_time.date() <= arrival_date_only:
+                            pre_arrival_texts += 1
+                        else:
+                            post_arrival_texts += 1
+
+                    if not latest_datetime or msg_time > latest_datetime:
+                        latest_datetime = msg_time
+                        latest_type = "Message"
+                        latest_direction = message.get("direction", "unknown")
+                        agent_name = message.get("user", {}).get("name", "Unknown Agent")
+                next_page = messages_response.get('nextPageToken')
+                if not next_page:
+                    break
+            else:
+                break
+
+        # Calls
+        next_page = None
+        while True:
+            params = {
+                "phoneNumberId": phone_number_id,
+                "participants": [phone_number],
+                "maxResults": 50
+            }
+            if next_page:
+                params['pageToken'] = next_page
+
+            calls_response = rate_limited_request(calls_url, headers, params)
+            if calls_response and 'data' in calls_response:
+                calls = calls_response['data']
+                total_calls += len(calls)
+                for call in calls:
+                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                    duration = call.get("duration", 0)
+                    if arrival_date_only:
+                        if call_time.date() <= arrival_date_only:
+                            pre_arrival_calls += 1
+                        else:
+                            post_arrival_calls += 1
+
+                    if duration < 40:
+                        calls_under_40sec += 1
+
+                    if not latest_datetime or call_time > latest_datetime:
+                        latest_datetime = call_time
+                        latest_type = "Call"
+                        latest_direction = call.get("direction", "unknown")
+                        call_duration = duration
+                        agent_name = call.get("user", {}).get("name", "Unknown Agent")
+
+                    call_attempts += 1
+                    call_status = call.get('status', 'unknown')
+                    if call_status == 'completed':
+                        answered_calls += 1
+                    elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
+                        missed_calls += 1
+                next_page = calls_response.get('nextPageToken')
+                if not next_page:
+                    break
+            else:
+                break
+
+    if not latest_datetime:
+        status = "No Communications"
+    else:
+        status = f"{latest_type} - {latest_direction}"
 
     return {
-        'total_calls': total_calls,
+        'status': status,
+        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
+        'call_duration': call_duration,
+        'agent_name': agent_name,
         'total_messages': total_messages,
-        'inbound_calls': inbound_calls,
-        'outbound_calls': outbound_calls,
-        'inbound_messages': inbound_messages,
-        'outbound_messages': outbound_messages,
-        'avg_call_duration': avg_duration,
-        'max_call_duration': max_duration,
-        'avg_message_length': avg_message_length
+        'total_calls': total_calls,
+        'answered_calls': answered_calls,
+        'missed_calls': missed_calls,
+        'call_attempts': call_attempts,
+        'pre_arrival_calls': pre_arrival_calls,
+        'pre_arrival_texts': pre_arrival_texts,
+        'post_arrival_calls': post_arrival_calls,
+        'post_arrival_texts': post_arrival_texts,
+        'calls_under_40sec': calls_under_40sec
     }
 
-def display_metrics_dashboard(metrics):
-    """
-    Show key metrics in columns with Streamlit metrics.
-    """
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Calls", metrics['total_calls'])
-        st.metric("Inbound Calls", metrics['inbound_calls'])
-        st.metric("Outbound Calls", metrics['outbound_calls'])
-    
-    with col2:
-        st.metric("Total Messages", metrics['total_messages'])
-        st.metric("Inbound Msgs", metrics['inbound_messages'])
-        st.metric("Outbound Msgs", metrics['outbound_messages'])
-    
-    with col3:
-        st.metric("Avg Call Duration (sec)", f"{metrics['avg_call_duration']:.1f}")
-        st.metric("Max Call Duration (sec)", f"{metrics['max_call_duration']:.1f}")
-        st.metric("Avg Message Length", f"{metrics['avg_message_length']:.1f}")
+def fetch_communication_info(df, headers):
+    statuses = []
+    dates = []
+    durations = []
+    agent_names = []
+    total_messages_list = []
+    total_calls_list = []
+    answered_calls_list = []
+    missed_calls_list = []
+    call_attempts_list = []
+    pre_arrival_calls_list = []
+    pre_arrival_texts_list = []
+    post_arrival_calls_list = []
+    post_arrival_texts_list = []
+    calls_under_40sec_list = []
 
-def create_time_series_chart(communications):
-    """
-    Create a time-series chart (Altair) to show daily communication volume by type.
-    """
-    df = pd.DataFrame(communications)
-    df['date'] = pd.to_datetime(df['time']).dt.date
-    daily_counts = df.groupby(['date', 'type']).size().reset_index(name='count')
-    
-    chart = alt.Chart(daily_counts).mark_line(point=True).encode(
-        x='date:T',
-        y='count:Q',
-        color='type:N',
-        tooltip=['date', 'type', 'count']
-    ).properties(
-        title='Communication Activity Over Time',
-        width=700,
-        height=400
-    ).interactive()
-    
-    return chart
+    for _, row in df.iterrows():
+        phone = row.get('Phone Number')
+        arrival_date = row.get('Arrival Date')
 
-def create_hourly_heatmap(communications):
-    """
-    Create an Altair heatmap to show activity distribution by day-of-week & hour-of-day.
-    """
-    df = pd.DataFrame(communications)
-    df['hour'] = pd.to_datetime(df['time']).dt.hour
-    df['day_of_week'] = pd.to_datetime(df['time']).dt.day_name()
-    
-    hourly_counts = df.groupby(['day_of_week', 'hour']).size().reset_index(name='count')
-    
-    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    hourly_counts['day_of_week'] = pd.Categorical(hourly_counts['day_of_week'], 
-                                                 categories=days_order, 
-                                                 ordered=True)
-    
-    heatmap = alt.Chart(hourly_counts).mark_rect().encode(
-        x=alt.X('hour:O', title='Hour of Day'),
-        y=alt.Y('day_of_week:O', title='Day of Week'),
-        color=alt.Color('count:Q', scale=alt.Scale(scheme='viridis')),
-        tooltip=['day_of_week', 'hour', 'count']
-    ).properties(
-        title='Activity Heatmap',
-        width=700,
-        height=300
-    )
-    
-    return heatmap
+        if phone and phone != 'No Data':
+            try:
+                comm_info = get_communication_info(phone, headers, arrival_date)
+                statuses.append(comm_info['status'])
+                dates.append(comm_info['last_date'])
+                durations.append(comm_info['call_duration'])
+                agent_names.append(comm_info['agent_name'])
+                total_messages_list.append(comm_info['total_messages'])
+                total_calls_list.append(comm_info['total_calls'])
+                answered_calls_list.append(comm_info['answered_calls'])
+                missed_calls_list.append(comm_info['missed_calls'])
+                call_attempts_list.append(comm_info['call_attempts'])
+                pre_arrival_calls_list.append(comm_info['pre_arrival_calls'])
+                pre_arrival_texts_list.append(comm_info['pre_arrival_texts'])
+                post_arrival_calls_list.append(comm_info['post_arrival_calls'])
+                post_arrival_texts_list.append(comm_info['post_arrival_texts'])
+                calls_under_40sec_list.append(comm_info['calls_under_40sec'])
+            except Exception as e:
+                st.warning(f"Error fetching info for phone {phone}: {e}")
+                statuses.append("Error")
+                dates.append(None)
+                durations.append(None)
+                agent_names.append("Unknown")
+                total_messages_list.append(0)
+                total_calls_list.append(0)
+                answered_calls_list.append(0)
+                missed_calls_list.append(0)
+                call_attempts_list.append(0)
+                pre_arrival_calls_list.append(0)
+                pre_arrival_texts_list.append(0)
+                post_arrival_calls_list.append(0)
+                post_arrival_texts_list.append(0)
+                calls_under_40sec_list.append(0)
+        else:
+            statuses.append("Invalid Number")
+            dates.append(None)
+            durations.append(None)
+            agent_names.append("Unknown")
+            total_messages_list.append(0)
+            total_calls_list.append(0)
+            answered_calls_list.append(0)
+            missed_calls_list.append(0)
+            call_attempts_list.append(0)
+            pre_arrival_calls_list.append(0)
+            pre_arrival_texts_list.append(0)
+            post_arrival_calls_list.append(0)
+            post_arrival_texts_list.append(0)
+            calls_under_40sec_list.append(0)
 
-def display_communications_analysis(calls, messages):
-    """
-    Combines calls & messages into a list of records for visualization (time series, heatmap, etc.).
-    """
-    communications = []
-    
-    for call in calls:
-        communications.append({
-            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
-            'type': 'Call',
-            'direction': call.get('direction'),
-            'duration': call.get('duration', 0)
-        })
-    
-    for message in messages:
-        communications.append({
-            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
-            'type': 'Message',
-            'direction': message.get('direction')
-        })
+    df['Communication Status'] = statuses
+    df['Last Contact Date'] = dates
+    df['Last Call Duration'] = durations
+    df['Last Agent Name'] = agent_names
+    df['Total Messages'] = total_messages_list
+    df['Total Calls'] = total_calls_list
+    df['Answered Calls'] = answered_calls_list
+    df['Missed Calls'] = missed_calls_list
+    df['Call Attempts'] = call_attempts_list
+    df['Pre-Arrival Calls'] = pre_arrival_calls_list
+    df['Pre-Arrival Texts'] = pre_arrival_texts_list
+    df['Post-Arrival Calls'] = post_arrival_calls_list
+    df['Post-Arrival Texts'] = post_arrival_texts_list
+    df['Calls < 40s'] = calls_under_40sec_list
 
-    st.subheader("📈 Communication Trends")
-    time_series = create_time_series_chart(communications)
-    st.altair_chart(time_series, use_container_width=True)
+    return df
 
-    st.subheader("🗓️ Activity Patterns")
-    heatmap = create_hourly_heatmap(communications)
-    st.altair_chart(heatmap, use_container_width=True)
+def run_guest_status_tab():
+    st.title("Guest Communication Insights (No 'Bearer' prefix)")
 
-    # Call duration distribution
-    if calls:
-        st.subheader("⏱️ Call Duration Distribution")
-        call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
-        if call_durations:
-            df_durations = pd.DataFrame({'duration': call_durations})
-            duration_chart = alt.Chart(df_durations).mark_bar().encode(
-                x=alt.X('duration:Q', bin=alt.Bin(maxbins=20)),
-                y='count()',
-                tooltip=['count()']
-            ).properties(
-                width=700,
-                height=300
-            )
-            st.altair_chart(duration_chart, use_container_width=True)
+    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", type=["xlsx", "xls"])
+    if uploaded_file is not None:
+        df = pd.read_excel(uploaded_file)
+        if 'Phone Number' not in df.columns:
+            st.error("Missing 'Phone Number' column.")
+            return
 
-def display_timeline(calls, messages):
-    """
-    Displays a reverse-chronological list (timeline) of calls/messages.
-    Also tries to fetch call transcripts if available.
-    """
-    st.subheader("📅 Communication Timeline")
-    
-    timeline = []
-    
-    for call in calls:
-        timeline.append({
-            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
-            'type': 'Call',
-            'direction': call.get('direction', 'unknown'),
-            'duration': call.get('duration', 'N/A'),
-            'status': call.get('status', 'unknown'),
-            'id': call.get('id'),
-            'participants': call.get('participants', [])
-        })
-    
-    for message in messages:
-        timeline.append({
-            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
-            'type': 'Message',
-            'direction': message.get('direction', 'unknown'),
-            'content': message.get('content', 'No content'),
-            'status': message.get('status', 'unknown'),
-            'id': message.get('id'),
-            'participants': message.get('participants', [])
-        })
-    
-    # Sort by descending time
-    timeline.sort(key=lambda x: x['time'], reverse=True)
-    
-    for item in timeline:
-        time_str = item['time'].strftime("%Y-%m-%d %H:%M")
-        icon = "📞" if item['type'] == "Call" else "💬"
-        direction_icon = "⬅️" if item['direction'] == "inbound" else "➡️"
-        
-        with st.expander(f"{icon} {direction_icon} {time_str}"):
-            participants = item.get('participants', [])
-            if participants:
-                st.write("**Participants:**")
-                for p in participants:
-                    p_number = p.get('phoneNumber', 'Unknown')
-                    p_name = p.get('name', '')
-                    display_str = p_name + f" ({p_number})" if p_name else p_number
-                    st.write("- " + display_str)
+        # IMPORTANT: This will pass the key in Authorization
+        # WITHOUT the 'Bearer ' prefix. 
+        HEADERS = {
+            "Authorization": OPENPHONE_API_KEY,
+            "Content-Type": "application/json"
+        }
 
-            if item['type'] == "Call":
-                st.write(f"**Duration:** {item['duration']} seconds")
-                transcript = fetch_call_transcript(item['id'])
-                if transcript and transcript.get('dialogue'):
-                    with st.expander("View Transcript"):
-                        for seg in transcript['dialogue']:
-                            speaker = seg.get('identifier', 'Unknown')
-                            content = seg.get('content', '')
-                            start = seg.get('start', 0)
-                            end = seg.get('end', 0)
-                            st.write(f"**{speaker}** [{start}s - {end}s]: {content}")
-                else:
-                    st.write("Transcript not available or in progress.")
-            else:
-                st.write(f"**Message:** {item.get('content', 'No content')}")
-            
-            st.write(f"**Status:** {item['status']}")
+        st.info("Enriching data with OpenPhone. This might take time for many rows...")
+        updated_df = fetch_communication_info(df, HEADERS)
 
-# ──────────────────────────────────────────────────────────────────────────
-# 3) Main Streamlit App
-# ──────────────────────────────────────────────────────────────────────────
-def main():
-    st.set_page_config(page_title="Communication Analytics", 
-                      page_icon="📊", 
-                      layout="wide")
+        st.subheader("Preview of Updated Data")
+        st.dataframe(updated_df.head())
 
-    st.title("📱 Communication Analytics Dashboard (No 'Bearer' in Authorization)")
+        st.subheader("Download Updated Excel")
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            updated_df.to_excel(writer, index=False, sheet_name='Updated')
+            writer.save()
 
-    # Get phone number from URL parameter or input
-    query_params = st.experimental_get_query_params()
-    phone_number = query_params.get("phone", [""])[0]
-    
-    if not phone_number:
-        phone_number = st.text_input("Enter phone number:")
-    
-    if phone_number:
-        with st.spinner('Loading communication history...'):
-            calls = fetch_call_history(phone_number)
-            messages = fetch_message_history(phone_number)
-
-            if not calls and not messages:
-                st.warning("No communication history found for this number.")
-                return
-
-            # Create tabs for different views
-            tab1, tab2, tab3 = st.tabs(["📊 Overview", "📈 Analysis", "📅 Timeline"])
-
-            with tab1:
-                metrics = create_communication_metrics(calls, messages)
-                display_metrics_dashboard(metrics)
-
-            with tab2:
-                display_communications_analysis(calls, messages)
-
-            with tab3:
-                display_timeline(calls, messages)
+        st.download_button(
+            label="Download Updated Excel",
+            data=output.getvalue(),
+            file_name="updated_communication_info.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 if __name__ == "__main__":
-    main()
+    run_guest_status_tab()
