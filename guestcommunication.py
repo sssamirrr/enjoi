@@ -9,7 +9,10 @@ import streamlit as st
 # 1. Hard-coded API credentials:
 ############################################
 OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"
-OPENPHONE_NUMBER = "+1XXXXXXXXXX"
+HEADERS = {
+    "Authorization": OPENPHONE_API_KEY,
+    "Content-Type": "application/json"
+}
 
 ############################################
 # 2. Rate-limited request
