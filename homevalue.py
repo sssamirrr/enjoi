@@ -3,8 +3,12 @@ import pandas as pd
 import requests
 import time
 import json
+from collections import defaultdict
+import datetime
 
-# Directly hard-code your RapidAPI credentials:
+# ------------------------------
+# HARD-CODED ZILLOW WORKING API CREDENTIALS
+# ------------------------------
 RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"
 RAPIDAPI_HOST = "zillow-working-api.p.rapidapi.com"
 
@@ -15,18 +19,23 @@ def run_home_value_tab():
       1. Uploads an Excel file (xlsx or xls) with columns: Address1, City, Zip Code
       2. Builds a full address string
       3. Calls the RapidAPI Zillow Working API to fetch a ZPID from the address
-      4. Calls a separate endpoint to retrieve the Zestimate (or other home value)
-      5. Adds the home value to the DataFrame, displays and offers CSV download
+      4. Calls a separate endpoint to retrieve the Zestimate (zestimate_history)
+      5. Picks the newest, highest value from the result
+      6. Adds that value to the DataFrame, displays, and offers CSV download
     """
 
-    st.title("Enrich Customer Data with Home Values (Hard-Coded Credentials)")
+    st.title("Home Value Lookup (Newest & Highest Zestimate)")
 
     st.write("""
-    1. Upload an Excel file containing customer data (one row per customer).
-    2. Ensure there are columns named **Address1**, **City**, and **Zip Code** 
-       that we can combine into a full address.
-    3. We will then call the Zillow API on RapidAPI to get an approximate home value (Zestimate).
-    4. The resulting enriched data will appear below, and you can download it.
+    **Steps**:
+    1. Upload an Excel file with `Address1`, `City`, and `Zip Code`.
+    2. We'll build a single full address, e.g. "123 Main St, CityName, NC 12345".
+    3. We call the "search_zillow" endpoint to find a ZPID.
+    4. We call "zestimate_history" to get an array of home values.
+    5. We pick the newest & highest zestimate if multiple exist.
+    6. You can download the enriched data as CSV.
+    
+    **Note**: If the address is incomplete (e.g., no state) or doesn't exist on Zillow, you'll get 404 or no data.
     """)
 
     # 1. File uploader
@@ -38,9 +47,8 @@ def run_home_value_tab():
             df = pd.read_excel(uploaded_file)
         except ImportError:
             st.error(
-                "**Missing library**: 'openpyxl' (for .xlsx) or 'xlrd==1.2.0' (for .xls) "
-                "is not installed in this environment. Please install them:\n"
-                "`pip install openpyxl xlrd==1.2.0`"
+                "**Missing library**: 'openpyxl' (for .xlsx) or 'xlrd==1.2.0' (for .xls)."
+                "Please install them:\n`pip install openpyxl xlrd==1.2.0`"
             )
             return
         except Exception as e:
@@ -50,56 +58,65 @@ def run_home_value_tab():
         st.subheader("Preview of Uploaded Data")
         st.dataframe(df.head())
 
-        # Check for required columns
+        # 2a. Ensure required columns
         required_cols = ["Address1", "City", "Zip Code"]
         missing_cols = [c for c in required_cols if c not in df.columns]
         if missing_cols:
             st.error(f"Missing required columns: {missing_cols}")
             return
 
-        # 3. Build a Full_Address column
+        # 2b. (Optional) Clean ZIP to remove trailing .0
+        df["Zip Code"] = df["Zip Code"].astype(str).str.replace(".0", "", regex=False)
+
+        # 2c. Hard-code a state if you like (Zillow often needs it).
+        # For example, if all addresses are in NC, do:
+        # state_col = "NC"  
+        # Or if your sheet has a 'State' column, incorporate that.
+        state_col = ""  # replace with e.g. ", NC" if all in NC
+
+        # 3. Build Full_Address
         df["Full_Address"] = (
-            df["Address1"].fillna("").astype(str)
+            df["Address1"].fillna("").astype(str).str.strip()
             + ", "
-            + df["City"].fillna("").astype(str)
-            + " "
-            + df["Zip Code"].fillna("").astype(str)
-        )
+            + df["City"].fillna("").astype(str).str.strip()
+            + state_col + " "
+            + df["Zip Code"].fillna("").astype(str).str.strip()
+        ).str.strip()
 
         st.subheader("Data with Full_Address Column")
-        st.dataframe(df.head())
+        st.dataframe(df[["Address1", "City", "Zip Code", "Full_Address"]].head())
 
-        # 4. Look up each address in the Zillow API
+        # 4. For each row, do the ZPID lookup + get the newest/highest zestimate
         home_values = []
-        for _, row in df.iterrows():
-            full_address = row["Full_Address"].strip()
+        for i, row in df.iterrows():
+            full_address = row["Full_Address"]
             if not full_address:
                 home_values.append(None)
                 continue
 
-            # First, get the ZPID
+            # Get ZPID by searching the address
             zpid = get_zpid_from_address(full_address)
-            if zpid:
-                # Then, get the home value from the ZPID
-                home_val = get_zestimate_from_zpid(zpid)
-            else:
-                home_val = None
+            if not zpid:
+                home_values.append(None)
+                continue
 
-            home_values.append(home_val)
+            # Now fetch the zestimate history and parse out the newest/highest
+            zestimate_val = get_newest_highest_zestimate(zpid)
+            home_values.append(zestimate_val)
 
-            # Optional: Sleep to avoid hitting rate limits
+            # Sleep a bit to avoid any rate-limit issues
             time.sleep(0.5)
 
-        # 5. Add the Home Value column to the DataFrame
+        # 5. Add the "Home Value" column
         df["Home Value"] = home_values
 
-        st.subheader("Enriched Data with Home Values")
+        st.subheader("Enriched Data (Newest & Highest Zestimate)")
         st.dataframe(df.head(20))
 
-        # Download button for CSV
+        # 6. Download as CSV
         csv_data = df.to_csv(index=False)
         st.download_button(
-            label="Download Enriched Data as CSV",
+            label="Download Enriched Data (CSV)",
             data=csv_data,
             file_name="enriched_home_values.csv",
             mime="text/csv"
@@ -108,10 +125,9 @@ def run_home_value_tab():
 
 def get_zpid_from_address(full_address: str):
     """
-    Example function to get a ZPID from a full address string using a RapidAPI Zillow endpoint.
-    Adjust the endpoint & JSON parsing to match your actual 'search' method on the 'Zillow Working API'.
+    Calls the 'search_zillow' endpoint with the address to retrieve a ZPID.
+    Returns None if 404 or no results.
     """
-
     url = f"https://{RAPIDAPI_HOST}/search_zillow"
     querystring = {"location": full_address}
     headers = {
@@ -123,29 +139,28 @@ def get_zpid_from_address(full_address: str):
         resp = requests.get(url, headers=headers, params=querystring)
         if resp.status_code == 200:
             data = resp.json()
-            # Adjust the parsing below to match the actual response structure
             results = data.get("results", [])
             if not results:
-                st.warning(f"No results found for address: {full_address}")
+                st.warning(f"No ZPID found for: {full_address}")
                 return None
-
+            # Just take the first match
             zpid = results[0].get("zpid")
             return zpid
         else:
             st.warning(f"Search (ZPID) request failed ({resp.status_code}). Address: {full_address}")
             return None
-
     except Exception as e:
         st.warning(f"Error searching ZPID for {full_address}: {e}")
         return None
 
 
-def get_zestimate_from_zpid(zpid: str):
+def get_newest_highest_zestimate(zpid: str):
     """
-    Example function to retrieve the home's Zestimate using the ZPID.
-    Adjust the endpoint & JSON parsing to match your actual 'Zestimate' method on the 'Zillow Working API'.
-    """
+    Calls the 'zestimate_history' endpoint (graph_charts) with 'recent_first=true',
+    then parses the 'homeValueChartData' to find the newest, highest zestimate.
 
+    Returns None if no data is found.
+    """
     url = f"https://{RAPIDAPI_HOST}/graph_charts"
     querystring = {
         "recent_first": "true",
@@ -161,19 +176,67 @@ def get_zestimate_from_zpid(zpid: str):
         resp = requests.get(url, headers=headers, params=querystring)
         if resp.status_code == 200:
             data = resp.json()
-            # Typically you'd parse out the most recent zestimate.
-            # This is just an example parse; real structure may differ.
-            items = data.get("data", [])
-            if items:
-                most_recent = items[-1]
-                zestimate = most_recent.get("zestimate", 0)
-                return float(zestimate)
-            else:
-                return None
+            return parse_zestimate_history(data)
         else:
-            st.warning(f"Zestimate request failed ({resp.status_code}) for ZPID: {zpid}")
+            st.warning(f"Zestimate request failed ({resp.status_code}) for ZPID {zpid}")
             return None
-
     except Exception as e:
         st.warning(f"Error retrieving Zestimate for ZPID {zpid}: {e}")
         return None
+
+
+def parse_zestimate_history(response_json):
+    """
+    Given the JSON response for 'zestimate_history', picks the newest & highest zestimate.
+    - 'newest' means the most recent date
+    - if multiple items share the same date, picks the highest among them
+
+    Adjust field names based on your actual 'homeValueChartData' structure.
+    """
+    # The data might look like:
+    # {
+    #   "message": "200: Success",
+    #   "homeValueChartData": [
+    #       {"date": "2023-07-15", "zestimate": 210000, ...},
+    #       {"date": "2023-07-01", "zestimate": 208000, ...},
+    #       ...
+    #   ]
+    # }
+    if "homeValueChartData" not in response_json:
+        return None
+
+    data_points = response_json["homeValueChartData"]
+    if not data_points:
+        return None
+
+    # Group by date, so we handle multiple points on the same date
+    date_to_items = defaultdict(list)
+    for item in data_points:
+        d_str = item.get("date")
+        date_to_items[d_str].append(item)
+
+    # For each date, pick the entry with the highest zestimate
+    best_per_date = []
+    for d_str, items_on_date in date_to_items.items():
+        items_on_date.sort(key=lambda x: x.get("zestimate", 0), reverse=True)
+        best_per_date.append(items_on_date[0])  # highest item for that date
+
+    # Now we have one 'best' item per date. Sort them by date descending to find the newest.
+    def parse_date(d_str):
+        # Adjust format if needed
+        return datetime.datetime.strptime(d_str, "%Y-%m-%d")
+
+    best_per_date.sort(
+        key=lambda x: parse_date(x["date"]) if x.get("date") else datetime.datetime.min,
+        reverse=True
+    )
+
+    # The first item is now the newest date's highest zestimate
+    newest_highest = best_per_date[0]
+    return newest_highest.get("zestimate")
+
+
+# -----------------------------
+# If you're running this as your main app:
+if __name__ == "__main__":
+    run_home_value_tab()
