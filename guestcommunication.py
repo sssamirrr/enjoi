@@ -355,7 +355,7 @@ def run_guest_status_tab():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             updated_df.to_excel(writer, index=False, sheet_name='Updated')
-            # No writer.save() needed; the context manager handles everything
+          
 
         # Rewind the BytesIO buffer
         output.seek(0)
