@@ -4,6 +4,11 @@ import requests
 import time
 import json
 
+# Directly hard-code your RapidAPI credentials:
+RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"
+RAPIDAPI_HOST = "zillow-working-api.p.rapidapi.com"
+
+
 def run_home_value_tab():
     """
     Streamlit page that:
@@ -14,7 +19,7 @@ def run_home_value_tab():
       5. Adds the home value to the DataFrame, displays and offers CSV download
     """
 
-    st.title("Enrich Customer Data with Home Values")
+    st.title("Enrich Customer Data with Home Values (Hard-Coded Credentials)")
 
     st.write("""
     1. Upload an Excel file containing customer data (one row per customer).
@@ -31,9 +36,9 @@ def run_home_value_tab():
         # 2. Try reading the Excel file into a DataFrame
         try:
             df = pd.read_excel(uploaded_file)
-        except ImportError as e:
+        except ImportError:
             st.error(
-                "**Missing library**: It looks like 'openpyxl' (for .xlsx) or 'xlrd' (for .xls) "
+                "**Missing library**: 'openpyxl' (for .xlsx) or 'xlrd==1.2.0' (for .xls) "
                 "is not installed in this environment. Please install them:\n"
                 "`pip install openpyxl xlrd==1.2.0`"
             )
@@ -67,8 +72,8 @@ def run_home_value_tab():
         # 4. Look up each address in the Zillow API
         home_values = []
         for _, row in df.iterrows():
-            full_address = row["Full_Address"]
-            if not full_address.strip():
+            full_address = row["Full_Address"].strip()
+            if not full_address:
                 home_values.append(None)
                 continue
 
@@ -82,7 +87,7 @@ def run_home_value_tab():
 
             home_values.append(home_val)
 
-            # Optional: Sleep to avoid rate-limiting; adjust as needed
+            # Optional: Sleep to avoid hitting rate limits
             time.sleep(0.5)
 
         # 5. Add the Home Value column to the DataFrame
@@ -107,26 +112,17 @@ def get_zpid_from_address(full_address: str):
     Adjust the endpoint & JSON parsing to match your actual 'search' method on the 'Zillow Working API'.
     """
 
-    # Pull credentials from Streamlit secrets (or you could hard-code them for testing)
-    try:
-        RAPIDAPI_KEY = st.secrets["RAPIDAPI_KEY"]
-        RAPIDAPI_HOST = st.secrets["RAPIDAPI_HOST"]
-    except Exception:
-        st.error("Please set 'RAPIDAPI_KEY' and 'RAPIDAPI_HOST' in Streamlit secrets.")
-        return None
-
     url = f"https://{RAPIDAPI_HOST}/search_zillow"
     querystring = {"location": full_address}
     headers = {
-        "X-RapidAPI-Key": dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076,
-        "X-RapidAPI-Host": zillow-working-api.p.rapidapi.com
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST
     }
 
     try:
         resp = requests.get(url, headers=headers, params=querystring)
         if resp.status_code == 200:
             data = resp.json()
-
             # Adjust the parsing below to match the actual response structure
             results = data.get("results", [])
             if not results:
@@ -149,13 +145,6 @@ def get_zestimate_from_zpid(zpid: str):
     Example function to retrieve the home's Zestimate using the ZPID.
     Adjust the endpoint & JSON parsing to match your actual 'Zestimate' method on the 'Zillow Working API'.
     """
-
-    try:
-        RAPIDAPI_KEY = st.secrets["RAPIDAPI_KEY"]
-        RAPIDAPI_HOST = st.secrets["RAPIDAPI_HOST"]
-    except Exception:
-        st.error("Please set 'RAPIDAPI_KEY' and 'RAPIDAPI_HOST' in Streamlit secrets.")
-        return None
 
     url = f"https://{RAPIDAPI_HOST}/graph_charts"
     querystring = {
