@@ -1195,7 +1195,8 @@ with tab8:
     guestcommunication.run_guest_status_tab()
 with tab9:
     # Instead of st.header("Arrival Map"), call your imported function
-    arrivalmap.run_arrival_map_tab()
+    arrivalmap.run_arrival_map()
+    
 ############################################
 # Raw Data Viewer
 ############################################
