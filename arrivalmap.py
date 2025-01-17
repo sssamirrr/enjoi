@@ -79,7 +79,7 @@ def run_arrival_map():
       - Uploads an Excel file
       - Creates 'Full_Address' from Address1 + City + State + Zip Code
       - Geocodes with Nominatim at 1 request per second (cached)
-      - Filters by State, Market, Ticket Value
+      - Filters by State, Market, Ticket Value, and optionally Home Value
       - Shows how many dots (rows) on the map
       - Allows downloading geocoded data
     """
@@ -92,8 +92,9 @@ def run_arrival_map():
        - **Address1**, **City**, **State**, **Zip Code**
        - **Market** (used for coloring dots)
        - **Total Stay Value With Taxes (Base)** (Ticket Value).
+       - (Optional) **Home Value** for additional filter/hover info.
     2. We'll build a **Full_Address**, geocode it with a **1 request/sec** limit for Nominatim.
-    3. Filters: State, Market, Ticket Value
+    3. Filters: State, Market, Ticket Value, (optionally Home Value).
     4. We show how many dots appear & let you download the geocoded data as Excel.
     """)
 
@@ -148,7 +149,10 @@ def run_arrival_map():
     ).str.strip()
 
     st.subheader("Full Addresses")
-    st.dataframe(df[["Full_Address", "Market", "Total Stay Value With Taxes (Base)"]].head(10))
+    show_cols = ["Full_Address", "Market", "Total Stay Value With Taxes (Base)"]
+    if "Home Value" in df.columns:
+        show_cols.append("Home Value")  # just to preview if present
+    st.dataframe(df[show_cols].head(10))
 
     # 5) Geocode (cached)
     st.info("Geocoding addresses at 1 request/second (Nominatim usage policy).")
@@ -158,6 +162,7 @@ def run_arrival_map():
     df_map = df_geocoded.dropna(subset=["Latitude","Longitude"]).copy()
 
     # 6) Filters: State, Market, Ticket Value
+    # -- State filter
     unique_states = sorted(df_map["State"].dropna().unique())
     state_filter = st.multiselect(
         "Filter by State(s)",
@@ -165,6 +170,7 @@ def run_arrival_map():
         default=unique_states
     )
 
+    # -- Market filter
     unique_markets = sorted(df_map["Market"].dropna().unique())
     market_filter = st.multiselect(
         "Filter by Market(s)",
@@ -172,15 +178,31 @@ def run_arrival_map():
         default=unique_markets
     )
 
+    # -- Ticket Value slider
     min_ticket = float(df_map["Total Stay Value With Taxes (Base)"].min() or 0)
     max_ticket = float(df_map["Total Stay Value With Taxes (Base)"].max() or 0)
-
     ticket_value_range = st.slider(
         "Filter by Ticket Value",
         min_value=min_ticket,
         max_value=max_ticket,
         value=(min_ticket, max_ticket)
     )
+
+    # -- OPTIONAL: Home Value slider if 'Home Value' column is present
+    home_value_filter_applied = False
+    if "Home Value" in df_map.columns:
+        st.subheader("Optional Home Value Filter")
+        use_home_value_filter = st.checkbox("Filter by Home Value?", value=False)
+        if use_home_value_filter:
+            home_val_min = float(df_map["Home Value"].min() or 0)
+            home_val_max = float(df_map["Home Value"].max() or 0)
+            home_value_range = st.slider(
+                "Home Value Range",
+                min_value=home_val_min,
+                max_value=home_val_max,
+                value=(home_val_min, home_val_max)
+            )
+            home_value_filter_applied = True
 
     # Apply the filters
     df_filtered = df_map[
@@ -189,6 +211,13 @@ def run_arrival_map():
         (df_map["Total Stay Value With Taxes (Base)"] >= ticket_value_range[0]) &
         (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
     ]
+
+    # If Home Value filtering is turned on, filter further
+    if home_value_filter_applied:
+        df_filtered = df_filtered[
+            (df_filtered["Home Value"] >= home_value_range[0]) &
+            (df_filtered["Home Value"] <= home_value_range[1])
+        ]
 
     st.subheader("Filtered Data for Map")
     num_dots = len(df_filtered)
@@ -199,15 +228,22 @@ def run_arrival_map():
         st.warning("No data after applying filters. Adjust filters above.")
         return
 
-    # 7) Plotly map with color by Market
+    # 7) Plotly map
     st.subheader("📍 Map of Addresses")
+
+    # Decide which columns to show in hover_data. We'll always show State & Ticket Value.
+    hover_data_cols = ["State", "Total Stay Value With Taxes (Base)"]
+    # If there's a Home Value column, also show it:
+    if "Home Value" in df_filtered.columns:
+        hover_data_cols.append("Home Value")
+
     fig = px.scatter_mapbox(
         df_filtered,
         lat="Latitude",
         lon="Longitude",
         color="Market",
         hover_name="Full_Address",
-        hover_data=["State", "Total Stay Value With Taxes (Base)"],
+        hover_data=hover_data_cols,
         zoom=3,
         height=600
     )
