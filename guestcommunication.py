@@ -35,53 +35,64 @@ def format_phone_number_us(raw_number: str) -> str:
 ############################################
 # 2. Rate-limited request (max 10 req/sec)
 ############################################
-def rate_limited_request(url, headers, params, request_type='get', max_retries=3):
+def rate_limited_request(url, headers, params, request_type='get', max_retries=5):
     """
     Makes an API request with:
-      - A default throttle of 10 requests per second
-      - Exponential backoff on 429 rate-limit errors
+    - Throttle of 5 requests per second
+    - Exponential backoff on 429 rate-limit errors
+    - Honors 'Retry-After' header if provided
     """
-    # 1) Throttle to 10 requests per second
-    time.sleep(1 / 10)  # 0.1 seconds per request
+    # Lower the throttle to 5 requests/sec to reduce bursts
+    time.sleep(1 / 5)
 
     retries = 0
-    backoff_delay = 1  # Start with 1 second backoff
+    backoff_delay = 1  # initial backoff
 
-    while True:
+    while retries < max_retries:
         try:
             if request_type == 'get':
                 response = requests.get(url, headers=headers, params=params)
             else:
-                # For example, if you had a POST endpoint
-                # response = requests.post(url, headers=headers, json=params)
                 response = None
 
-            if response is not None:
-                if response.status_code == 200:
-                    return response.json()
-                elif response.status_code == 429:
-                    # Too Many Requests - rate limit exceeded
-                    if retries < max_retries:
-                        st.warning(f"Rate limit (429) encountered. Backing off {backoff_delay}s ...")
-                        time.sleep(backoff_delay)
-                        backoff_delay *= 2
-                        retries += 1
-                        continue
-                    else:
-                        st.error("Max retries reached after repeated 429 errors.")
+            if response is None:
+                st.warning("No valid response object. Possibly invalid request_type.")
+                break
+
+            if response.status_code == 200:
+                # Success
+                return response.json()
+            
+            elif response.status_code == 429:
+                # Rate limit error
+                st.warning("429 Too Many Requests encountered!")
+                retry_after = response.headers.get("Retry-After")
+                if retry_after:
+                    # If the API says 'wait X seconds'
+                    wait_time = int(retry_after)
+                    st.warning(f"Server says wait {wait_time} seconds...")
+                    time.sleep(wait_time)
                 else:
-                    st.warning(f"API Error: {response.status_code}")
-                    st.warning(f"Response: {response.text}")
+                    # Otherwise do exponential backoff
+                    st.warning(f"Backing off {backoff_delay}s ...")
+                    time.sleep(backoff_delay)
+                    backoff_delay *= 2
+                retries += 1
+                continue
+            
             else:
-                st.warning("No response (request_type not implemented or request failed).")
+                # Some other error (4xx, 5xx, etc.)
+                st.warning(f"API Error {response.status_code}")
+                st.warning(f"Response: {response.text}")
+                break
 
         except Exception as e:
             st.warning(f"Exception during request: {str(e)}")
+            break
 
-        # We reach here if success or an unrecoverable error
-        break
-
+    # Return None if all retries fail
     return None
+
 
 ############################################
 # 3. Get phone number IDs
