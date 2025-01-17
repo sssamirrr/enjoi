@@ -6,6 +6,7 @@ import time
 import json
 import urllib.parse
 import http.client
+import numpy as np
 
 ############################################
 # 1) CACHED FUNCTION TO GEOCODE
@@ -96,31 +97,33 @@ def run_arrival_map():
       - Builds 'Full_Address' from Address1 + City + State + Zip Code
       - Geocodes only rows that have no lat/lon
       - Rate = 2 requests/second => time.sleep(0.5)
-      - Hardcoded API key
-      - Skips re-geocoding pre-geocoded rows
+      - Skips re-geocoding for pre-geocoded rows
       - Caches results so filters won't re-geocode
+      - Converts 'Total Stay Value With Taxes (Base)' to numeric
+      - Checks if min/max are valid. If not, skip or default the slider to avoid NaN
       - Lets user filter by State, Market, Ticket Value
-      - Plots on a map, shows dot count
-      - Download geocoded Excel
+      - Plots on a map, shows dot count, and allows a download
     """
 
-    st.title("📍 Arrival Map (2 req/sec, Hardcoded API Key, Skip Pre-Geocoded Rows)")
+    st.title("📍 Arrival Map (2 req/sec, Avoid NaN Slider Range)")
 
     st.markdown("""
     **Instructions**:
     1. **Upload** an Excel file with:
-       - **Address1**, **City**, **State**, **Zip Code**
-       - **Market**, **Total Stay Value With Taxes (Base)**
+       - **Address1**, **City**, **State**, **Zip Code**  
+       - **Market**, **Total Stay Value With Taxes (Base)**  
        - Optionally, **Latitude**, **Longitude** (rows with these won't be re-geocoded).
-    2. We build **Full_Address** (Address1 + City + State + Zip).
-    3. If **Latitude** or **Longitude** is missing, we geocode that row at **2 requests/sec** 
-       using **google-maps-geocoding3** on RapidAPI.
-    4. We **cache** results. Changing filters won't trigger new geocoding 
+    2. We build **Full_Address** from those address columns.
+    3. If **Latitude** or **Longitude** is missing, we geocode that row at 2 requests/sec 
+       using google-maps-geocoding3 on RapidAPI.
+    4. We **cache** results. Changing filters doesn't re-trigger geocoding 
        unless you upload a different Excel.
+    5. We **convert** the 'Total Stay Value With Taxes (Base)' to numeric 
+       to avoid NaN slider issues.
     """)
 
-    # HARDCODED API credentials:
-    RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"   # <--- your key
+    # HARDCODED API credentials (Example)
+    RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"
     RAPIDAPI_HOST = "google-maps-geocoding3.p.rapidapi.com"
 
     # 1) File uploader
@@ -176,14 +179,22 @@ def run_arrival_map():
         + df["Zip Code"]
     ).str.strip()
 
+    # Convert 'Total Stay Value With Taxes (Base)' to numeric to avoid NaN
+    df["Total Stay Value With Taxes (Base)"] = pd.to_numeric(
+        df["Total Stay Value With Taxes (Base)"],
+        errors="coerce"  # invalid entries -> NaN
+    )
+
     # 3) Geocode (cached) only rows missing lat/lon
-    st.info("Geocoding missing rows @ 2 req/sec. Pre-geocoded rows are skipped.")
+    st.info("Geocoding missing rows @ 2 req/sec. Pre-geocoded rows skipped.")
     df_geocoded = geocode_addresses(df, RAPIDAPI_KEY, RAPIDAPI_HOST)
 
     # Drop rows with missing lat/lon
     df_map = df_geocoded.dropna(subset=["Latitude","Longitude"]).copy()
 
     # 4) Filters
+
+    # A) Filter by State
     unique_states = sorted(df_map["State"].dropna().unique())
     state_filter = st.multiselect(
         "Filter by State(s)",
@@ -191,6 +202,7 @@ def run_arrival_map():
         default=unique_states
     )
 
+    # B) Filter by Market
     unique_markets = sorted(df_map["Market"].dropna().unique())
     market_filter = st.multiselect(
         "Filter by Market(s)",
@@ -198,34 +210,57 @@ def run_arrival_map():
         default=unique_markets
     )
 
-    min_ticket = float(df_map["Total Stay Value With Taxes (Base)"].min() or 0)
-    max_ticket = float(df_map["Total Stay Value With Taxes (Base)"].max() or 0)
+    # C) Filter by Ticket Value with SAFE slider bounds
+    #    1) Compute min_val/max_val
+    min_val = df_map["Total Stay Value With Taxes (Base)"].min()
+    max_val = df_map["Total Stay Value With Taxes (Base)"].max()
 
-    ticket_value_range = st.slider(
-        "Filter by Ticket Value",
-        min_value=min_ticket,
-        max_value=max_ticket,
-        value=(min_ticket, max_ticket)
-    )
+    #    2) Check if they're valid (not NaN, not infinite)
+    if pd.isna(min_val) or pd.isna(max_val) or min_val == float("inf") or max_val == float("-inf"):
+        st.warning("No numeric data found for Ticket Value. Skipping slider.")
+        # We'll skip the slider entirely, or you could set default = (0,0).
+        # So the filter won't exclude anything:
+        df_filtered = df_map.copy()
+    else:
+        # Ensure they're floats
+        min_val = float(min_val)
+        max_val = float(max_val)
 
-    # Apply filters
-    df_filtered = df_map[
-        (df_map["State"].isin(state_filter)) &
-        (df_map["Market"].isin(market_filter)) &
-        (df_map["Total Stay Value With Taxes (Base)"] >= ticket_value_range[0]) &
-        (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
-    ]
+        ticket_value_range = st.slider(
+            "Filter by Ticket Value",
+            min_value=min_val,
+            max_value=max_val,
+            value=(min_val, max_val)
+        )
 
+        # Apply that filter
+        df_filtered = df_map[
+            (df_map["State"].isin(state_filter)) &
+            (df_map["Market"].isin(market_filter)) &
+            (df_map["Total Stay Value With Taxes (Base)"] >= ticket_value_range[0]) &
+            (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
+        ]
+
+    # If you want to also apply the State & Market filters outside the slider check:
+    # (We already do that inside the else-block above; if we skip the slider, do them separately.)
+    if pd.isna(min_val) or pd.isna(max_val) or min_val == float("inf") or max_val == float("-inf"):
+        # Also apply the State/Market filter for consistency
+        df_filtered = df_filtered[
+            (df_filtered["State"].isin(state_filter)) &
+            (df_filtered["Market"].isin(market_filter))
+        ]
+
+    # 5) Show filtered data
     st.subheader("Filtered Data for Map")
     num_dots = len(df_filtered)
     st.write(f"**Number of dots on the map:** {num_dots}")
     st.dataframe(df_filtered.head(20))
 
     if df_filtered.empty:
-        st.warning("No data after applying filters. Adjust filters above.")
+        st.warning("No data after filters. Adjust filters above.")
         return
 
-    # 5) Plotly map
+    # 6) Plotly map
     st.subheader("📍 Map of Addresses")
     fig = px.scatter_mapbox(
         df_filtered,
@@ -242,7 +277,7 @@ def run_arrival_map():
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # 6) Download geocoded Excel
+    # 7) Download geocoded Excel
     st.subheader("⬇️ Download Geocoded Excel")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
