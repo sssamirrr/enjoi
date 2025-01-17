@@ -9,12 +9,11 @@ import phonenumbers  # <-- For phone number formatting
 ############################################
 # 1. Hard-coded API credentials:
 ############################################
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
+OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"  # <- Replace with your real API key
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
-
 
 ############################################
 # 1b. Helper to format phone numbers to E.164
@@ -34,23 +33,54 @@ def format_phone_number_us(raw_number: str) -> str:
     return None
 
 ############################################
-# 2. Rate-limited request
+# 2. Rate-limited request (max 10 req/sec)
 ############################################
-def rate_limited_request(url, headers, params, request_type='get'):
-    time.sleep(1 / 5)  # 5 requests per second max
-    try:
-        if request_type == 'get':
-            response = requests.get(url, headers=headers, params=params)
-        else:
-            response = None
+def rate_limited_request(url, headers, params, request_type='get', max_retries=3):
+    """
+    Makes an API request with:
+      - A default throttle of 10 requests per second
+      - Exponential backoff on 429 rate-limit errors
+    """
+    # 1) Throttle to 10 requests per second
+    time.sleep(1 / 10)  # 0.1 seconds per request
 
-        if response and response.status_code == 200:
-            return response.json()
-        else:
-            st.warning(f"API Error: {response.status_code}")
-            st.warning(f"Response: {response.text}")
-    except Exception as e:
-        st.warning(f"Exception during request: {str(e)}")
+    retries = 0
+    backoff_delay = 1  # Start with 1 second backoff
+
+    while True:
+        try:
+            if request_type == 'get':
+                response = requests.get(url, headers=headers, params=params)
+            else:
+                # For example, if you had a POST endpoint
+                # response = requests.post(url, headers=headers, json=params)
+                response = None
+
+            if response is not None:
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 429:
+                    # Too Many Requests - rate limit exceeded
+                    if retries < max_retries:
+                        st.warning(f"Rate limit (429) encountered. Backing off {backoff_delay}s ...")
+                        time.sleep(backoff_delay)
+                        backoff_delay *= 2
+                        retries += 1
+                        continue
+                    else:
+                        st.error("Max retries reached after repeated 429 errors.")
+                else:
+                    st.warning(f"API Error: {response.status_code}")
+                    st.warning(f"Response: {response.text}")
+            else:
+                st.warning("No response (request_type not implemented or request failed).")
+
+        except Exception as e:
+            st.warning(f"Exception during request: {str(e)}")
+
+        # We reach here if success or an unrecoverable error
+        break
+
     return None
 
 ############################################
@@ -67,7 +97,13 @@ def get_all_phone_number_ids(headers):
 # 4. Get communication info
 ############################################
 def get_communication_info(phone_number, headers, arrival_date=None):
-    # Make sure phone_number is already in E.164 format here
+    """
+    Retrieves messages and calls info for the given phone_number from OpenPhone,
+    including stats like total_messages, total_calls, etc.
+
+    phone_number must already be in E.164 format (e.g. +15555550123).
+    """
+    # Ensure phone_number is in E.164 format here
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         return {
@@ -108,20 +144,23 @@ def get_communication_info(phone_number, headers, arrival_date=None):
     post_arrival_texts = 0
     calls_under_40sec = 0
 
-    # Convert arrival_date to datetime
+    # Convert arrival_date to datetime if provided
     if isinstance(arrival_date, str):
         arrival_date = datetime.fromisoformat(arrival_date)
     elif isinstance(arrival_date, pd.Timestamp):
         arrival_date = arrival_date.to_pydatetime()
     arrival_date_only = arrival_date.date() if arrival_date else None
 
+    # For each phone number ID in your OpenPhone account
     for phone_number_id in phone_number_ids:
-        # Messages
+        # ----------------------------------------------------------
+        # 1) Messages
+        # ----------------------------------------------------------
         next_page = None
         while True:
             params = {
                 "phoneNumberId": phone_number_id,
-                "participants": [phone_number],  # phone_number is E.164
+                "participants": [phone_number],  # E.164
                 "maxResults": 50
             }
             if next_page:
@@ -139,23 +178,28 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                         else:
                             post_arrival_texts += 1
 
+                    # Track latest communication
                     if not latest_datetime or msg_time > latest_datetime:
                         latest_datetime = msg_time
                         latest_type = "Message"
                         latest_direction = message.get("direction", "unknown")
                         agent_name = message.get("user", {}).get("name", "Unknown Agent")
+
                 next_page = messages_response.get('nextPageToken')
                 if not next_page:
                     break
             else:
+                # No more messages or error
                 break
 
-        # Calls
+        # ----------------------------------------------------------
+        # 2) Calls
+        # ----------------------------------------------------------
         next_page = None
         while True:
             params = {
                 "phoneNumberId": phone_number_id,
-                "participants": [phone_number],  # phone_number is E.164
+                "participants": [phone_number],
                 "maxResults": 50
             }
             if next_page:
@@ -168,15 +212,19 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                 for call in calls:
                     call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
                     duration = call.get("duration", 0)
+
+                    # Pre/Post arrival
                     if arrival_date_only:
                         if call_time.date() <= arrival_date_only:
                             pre_arrival_calls += 1
                         else:
                             post_arrival_calls += 1
 
+                    # Under 40s
                     if duration < 40:
                         calls_under_40sec += 1
 
+                    # Track latest
                     if not latest_datetime or call_time > latest_datetime:
                         latest_datetime = call_time
                         latest_type = "Call"
@@ -190,10 +238,12 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                         answered_calls += 1
                     elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
                         missed_calls += 1
+
                 next_page = calls_response.get('nextPageToken')
                 if not next_page:
                     break
             else:
+                # No more calls or error
                 break
 
     # Final status
@@ -251,7 +301,7 @@ def fetch_communication_info(df, headers):
         phone = format_phone_number_us(str(raw_phone)) if raw_phone else None
 
         if phone:
-            # 2) Actually fetch the data
+            # 2) Fetch data
             try:
                 comm_info = get_communication_info(phone, headers, arrival_date)
                 statuses.append(comm_info['status'])
@@ -302,7 +352,7 @@ def fetch_communication_info(df, headers):
             post_arrival_texts_list.append(0)
             calls_under_40sec_list.append(0)
 
-    # Create columns
+    # Create columns in the DataFrame
     df['Communication Status'] = statuses
     df['Last Contact Date'] = dates
     df['Last Call Duration'] = durations
@@ -328,10 +378,10 @@ def run_guest_status_tab():
     Streamlit UI to:
       1) Upload Excel with 'Phone Number'
       2) Format phone numbers to E.164 (US)
-      3) Fetch data from OpenPhone (no 'Bearer' in Authorization)
+      3) Fetch data from OpenPhone (using 10 requests/sec limit & exponential backoff)
       4) Display & Download updated results
     """
-    st.title("Guest Communication Insights (No 'Bearer' prefix, E.164 Phone Numbers)")
+    st.title("Guest Communication Insights (10 RPS Limit with Exponential Backoff)")
 
     # File upload
     uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", 
@@ -355,7 +405,6 @@ def run_guest_status_tab():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             updated_df.to_excel(writer, index=False, sheet_name='Updated')
-          
 
         # Rewind the BytesIO buffer
         output.seek(0)
@@ -367,7 +416,6 @@ def run_guest_status_tab():
             file_name="updated_communication_info.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
 
 # If you want to run this file directly:
 if __name__ == "__main__":
