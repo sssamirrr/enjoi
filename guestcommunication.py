@@ -9,7 +9,7 @@ import phonenumbers  # <-- For phone number formatting
 ############################################
 # 1. Hard-coded API credentials:
 ############################################
-OPENPHONE_API_KEY = "YOUR_OPENPHONE_API_KEY"  # <- Replace with your real API key
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"  # <- Replace with your real API key
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
