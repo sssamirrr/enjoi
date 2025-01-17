@@ -63,15 +63,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 # Define all s
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "Dashboard", 
-    "Marketing", 
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    "Dashboard",
+    "Marketing",
     "Tour Prediction",
     "Owner Marketing",
     "Overnight Misses",
     "OpenPhone Stats",
     "Add Home Value",
-    "Add Guest Openphone Status"  # <--- New tab name
+    "Add Guest Openphone Status",
+    "Arrival Map"  # <-- New tab name
 ])
 
 
@@ -1191,7 +1192,9 @@ with tab8:
     st.header("Add Guest Status")
     # If there's a function in guestcommunication to render the tab:
     guestcommunication.run_guest_status_tab()
-
+with tab9:
+    # Instead of st.header("Arrival Map"), call your imported function
+    arrivalmap.run_arrival_map_tab()
 ############################################
 # Raw Data Viewer
 ############################################
