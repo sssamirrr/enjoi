@@ -2,52 +2,96 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import io
-import time
 import datetime
+import time
 
-# For geocoding
+# Geopy for geocoding
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 
+
+############################################
+# 1) CACHED GEOCODING FUNCTION
+############################################
+@st.cache_data  # (If on older Streamlit, use @st.cache instead)
+def geocode_dataframe(df_input: pd.DataFrame) -> pd.DataFrame:
+    """
+    Geocode the DataFrame's 'Full_Address' column only once unless the DataFrame changes.
+    Returns a copy of df_input with 'Latitude'/'Longitude'.
+    Respects a 1-second delay between requests for Nominatim usage policy.
+    """
+
+    df = df_input.copy()
+
+    # Nominatim with custom user_agent & higher timeout
+    geolocator = Nominatim(
+        user_agent="MyArrivalMapApp/1.0 (myemail@domain.com)", 
+        timeout=10  # up to 10s before giving up
+    )
+    # Rate limit: 1 request per second (Nominatim's public max)
+    geocode = RateLimiter(
+        geolocator.geocode, 
+        min_delay_seconds=1,
+        max_retries=2,  # retry a couple times if we get a transient error
+    )
+
+    lat_list = []
+    lon_list = []
+
+    for addr in df["Full_Address"]:
+        if not addr:
+            lat_list.append(None)
+            lon_list.append(None)
+            continue
+
+        try:
+            location = geocode(addr)
+            if location:
+                lat_list.append(location.latitude)
+                lon_list.append(location.longitude)
+            else:
+                lat_list.append(None)
+                lon_list.append(None)
+        except:
+            # If geopy fails or times out, store None
+            lat_list.append(None)
+            lon_list.append(None)
+
+    df["Latitude"] = lat_list
+    df["Longitude"] = lon_list
+
+    return df
+
+
+############################################
+# 2) MAIN STREAMLIT FUNCTION
+############################################
 def run_arrival_map():
     """
     Streamlit app that:
-    1) Uploads an Excel file with columns:
-       - (Do Not Modify) IQReservation
-       - (Do Not Modify) Row Checksum
-       - (Do Not Modify) Modified On
-       - Arrival Date Short
-       - Departure Date Short
-       - # Nights
-       - Market
-       - Total Stay Value With Taxes (Base)
-       - First Name
-       - Last Name
-       - Address1
-       - Zip Code
-       - City
-       - State
-    2) Geocodes Address1 + City + State + Zip into lat/lon
-    3) Plots the addresses on a map with color = Market
-    4) Filter by State (multiselect) and Ticket Value range (default = all)
+      - Uploads an Excel file
+      - Creates 'Full_Address' from Address1 + City + State + Zip Code
+      - Geocodes with Nominatim at 1 request per second (cached)
+      - Filters by State, Market, Ticket Value
+      - Shows how many dots (rows) on the map
+      - Allows downloading geocoded data
     """
 
-    st.title("📍 Arrival Map with Market Colors")
+    st.title("📍 Arrival Map (1 Request/sec, Cached)")
 
     st.markdown("""
     **Instructions**:
-    1. Upload an Excel file containing the following columns:
-       - **Address1**, **Zip Code**, **City**, **State**
-       - **Market** (determines color of each dot)
-       - **Total Stay Value With Taxes (Base)** (we'll call this "Ticket Value")
-       - (Plus any other required columns).
-    2. We will geocode each row's address into lat/long.
-    3. Then display a map (Plotly) with each row as a dot, colored by **Market**.
-    4. You can filter by **State** and by **Ticket Value** range.
+    1. Upload an Excel file with at least these columns:
+       - **Address1**, **City**, **State**, **Zip Code**
+       - **Market** (used for coloring dots)
+       - **Total Stay Value With Taxes (Base)** (Ticket Value).
+    2. We'll build a **Full_Address**, geocode it with a **1 request/sec** limit for Nominatim.
+    3. Filters: State, Market, Ticket Value
+    4. We show how many dots appear & let you download the geocoded data as Excel.
     """)
 
     # 1) File uploader
-    uploaded_file = st.file_uploader("📂 Upload Excel File (xlsx/xls)", type=["xlsx","xls"])
+    uploaded_file = st.file_uploader("📂 Upload Excel File (xlsx/xls)", type=["xlsx", "xls"])
     if not uploaded_file:
         st.info("Please upload a valid Excel file to proceed.")
         return
@@ -62,68 +106,65 @@ def run_arrival_map():
     st.subheader("Preview of Uploaded Data")
     st.dataframe(df.head(10))
 
-    # Basic checks for required columns
-    required_cols = ["Address1", "City", "State", "Zip Code", "Market", "Total Stay Value With Taxes (Base)"]
+    # 3) Check required columns
+    required_cols = [
+        "Address1", 
+        "City", 
+        "State", 
+        "Zip Code", 
+        "Market", 
+        "Total Stay Value With Taxes (Base)"
+    ]
     missing_cols = [c for c in required_cols if c not in df.columns]
     if missing_cols:
         st.error(f"Missing required columns: {missing_cols}")
         return
 
-    # Clean up the address columns
+    # 4) Clean up address columns
     df["Address1"] = df["Address1"].fillna("").astype(str).str.strip()
-    df["City"] = df["City"].fillna("").astype(str).str.strip()
-    df["State"] = df["State"].fillna("").astype(str).str.strip()
-    df["Zip Code"] = df["Zip Code"].fillna("").astype(str).str.replace(".0", "", regex=False).str.strip()
-
-    # Create a full address column
-    df["Full_Address"] = (
-        df["Address1"] + ", " + 
-        df["City"] + ", " + 
-        df["State"] + " " + 
+    df["City"]     = df["City"].fillna("").astype(str).str.strip()
+    df["State"]    = df["State"].fillna("").astype(str).str.strip()
+    df["Zip Code"] = (
         df["Zip Code"]
+        .fillna("")
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    # Create a "Full_Address" column
+    df["Full_Address"] = (
+        df["Address1"] + ", "
+        + df["City"] + ", "
+        + df["State"] + " "
+        + df["Zip Code"]
     ).str.strip()
 
     st.subheader("Full Addresses")
     st.dataframe(df[["Full_Address", "Market", "Total Stay Value With Taxes (Base)"]].head(10))
 
-    # 3) Geocode each address to lat/lon
-    st.info("Geocoding addresses... (this might take a while for large datasets)")
+    # 5) Geocode (cached)
+    st.info("Geocoding addresses at 1 request/second (Nominatim usage policy).")
+    df_geocoded = geocode_dataframe(df)
 
-    geolocator = Nominatim(user_agent="arrival_map_app")
-    # Rate limit to 1 call per second, to be polite
-    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+    # Drop rows with missing lat/lon
+    df_map = df_geocoded.dropna(subset=["Latitude","Longitude"]).copy()
 
-    lat_list = []
-    lon_list = []
-
-    for addr in df["Full_Address"]:
-        if not addr:
-            lat_list.append(None)
-            lon_list.append(None)
-            continue
-        try:
-            location = geocode(addr)
-            if location:
-                lat_list.append(location.latitude)
-                lon_list.append(location.longitude)
-            else:
-                lat_list.append(None)
-                lon_list.append(None)
-        except:
-            lat_list.append(None)
-            lon_list.append(None)
-
-    df["Latitude"] = lat_list
-    df["Longitude"] = lon_list
-
-    # Drop rows with missing lat/lon (optional)
-    df_map = df.dropna(subset=["Latitude","Longitude"]).copy()
-
-    # 4) Filters: State(s) and Ticket Value
+    # 6) Filters: State, Market, Ticket Value
     unique_states = sorted(df_map["State"].dropna().unique())
-    state_filter = st.multiselect("Filter by State(s)", unique_states, default=unique_states)
+    state_filter = st.multiselect(
+        "Filter by State(s)",
+        options=unique_states,
+        default=unique_states
+    )
 
-    # Ticket value range
+    unique_markets = sorted(df_map["Market"].dropna().unique())
+    market_filter = st.multiselect(
+        "Filter by Market(s)",
+        options=unique_markets,
+        default=unique_markets
+    )
+
     min_ticket = float(df_map["Total Stay Value With Taxes (Base)"].min() or 0)
     max_ticket = float(df_map["Total Stay Value With Taxes (Base)"].max() or 0)
 
@@ -137,25 +178,27 @@ def run_arrival_map():
     # Apply the filters
     df_filtered = df_map[
         (df_map["State"].isin(state_filter)) &
+        (df_map["Market"].isin(market_filter)) &
         (df_map["Total Stay Value With Taxes (Base)"] >= ticket_value_range[0]) &
         (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
     ]
 
     st.subheader("Filtered Data for Map")
-    st.write(f"Rows after filters: {len(df_filtered)}")
+    num_dots = len(df_filtered)
+    st.write(f"**Number of dots on the map:** {num_dots}")
     st.dataframe(df_filtered.head(20))
 
     if df_filtered.empty:
         st.warning("No data after applying filters. Adjust filters above.")
         return
 
-    # 5) Plotly map with color by Market
+    # 7) Plotly map with color by Market
     st.subheader("📍 Map of Addresses")
     fig = px.scatter_mapbox(
         df_filtered,
         lat="Latitude",
         lon="Longitude",
-        color="Market",   # color by Market
+        color="Market",
         hover_name="Full_Address",
         hover_data=["State", "Total Stay Value With Taxes (Base)"],
         zoom=3,
@@ -166,7 +209,7 @@ def run_arrival_map():
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # 6) (Optional) Provide a download of the geocoded dataset as Excel
+    # 8) Download the geocoded dataset
     st.subheader("⬇️ Download Geocoded Excel")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -180,6 +223,7 @@ def run_arrival_map():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# If you want to run this file directly, you can test it locally:
+
+# If run as a standalone script:
 if __name__ == "__main__":
     run_arrival_map()
