@@ -16,7 +16,6 @@ def geocode_address_rapidapi(address: str):
     """
     Geocode a single address using the RapidAPI "google-maps-geocoding3" endpoint.
     Returns (latitude, longitude) or (None, None) if not found or error.
-
     Rate limit ~8 calls/sec => time.sleep(0.125).
     """
     if not address:
@@ -93,7 +92,12 @@ def process_next_chunk():
 
     st.success(f"Chunk processed! Rows {start_idx+1}-{end_idx} done.")
 
-def run_app():
+
+def run_arrival_map():
+    """
+    Chunk-Based Geocoding with Partial Progress & Download.
+    Call this function to run in Streamlit.
+    """
     st.title("📍 Chunk-Based Geocoding with Partial Progress & Download")
 
     st.write("""
@@ -132,9 +136,10 @@ def run_app():
     st.subheader("Uploaded File Preview")
     st.dataframe(df_uploaded.head(10))
 
-    # If first time, or new file, initialize session state
+    # If first time or new file, initialize session state
     if "df_geocoded" not in st.session_state or "file_name" not in st.session_state \
        or st.session_state["file_name"] != uploaded_file.name:
+
         # Prepare the DataFrame for geocoding
         df_uploaded["Address1"] = df_uploaded["Address1"].fillna("").astype(str).str.strip()
         df_uploaded["City"]     = df_uploaded["City"].fillna("").astype(str).str.strip()
@@ -157,7 +162,7 @@ def run_app():
         if "Longitude" not in df_uploaded.columns:
             df_uploaded["Longitude"] = None
 
-        # Set up session state
+        # Save to session state
         st.session_state["df_geocoded"] = df_uploaded.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0  # row index for chunking
@@ -265,5 +270,10 @@ def run_app():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+
+# If you run THIS file directly with:
+#   streamlit run arrivalmap.py
+# the function below will execute.
+# If you import arrivalmap into another script, call arrivalmap.run_arrival_map().
 if __name__ == "__main__":
-    run_app()
+    run_arrival_map()
