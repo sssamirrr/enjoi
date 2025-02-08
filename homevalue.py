@@ -184,9 +184,9 @@ def run_home_value_tab():
         st.session_state["current_index"] = 0  # start at row 0
         st.session_state["chunk_size"] = 100   # process 100 rows per chunk
 
-    # 8) Button for chunk-based processing
+    # 8) Button for chunk-based processing with a unique key to avoid duplicate element errors
     st.subheader("Home Value Lookup Controls")
-    if st.button("Process Next Chunk"):
+    if st.button("Process Next Chunk", key="process_next_chunk_home_value"):
         process_next_chunk_home_value()
 
     total_len = len(st.session_state["df_enriched"])
