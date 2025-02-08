@@ -2,100 +2,114 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import io
-import datetime
 import time
-
-# Geopy for geocoding
-from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
+import http.client
+import json
 
 
 ############################################
-# 1) CACHED GEOCODING FUNCTION
+# 1) RAPIDAPI CONFIG
 ############################################
-@st.cache_data  # (If on older Streamlit, use @st.cache instead)
-def geocode_dataframe(df_input: pd.DataFrame) -> pd.DataFrame:
+RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"  # <-- Your hardcoded key
+RAPIDAPI_HOST = "google-maps-geocoding3.p.rapidapi.com"
+
+def geocode_address_rapidapi(address: str):
     """
-    Geocode the DataFrame's 'Full_Address' column only once unless the DataFrame changes.
-    Returns a copy of df_input with 'Latitude'/'Longitude'.
-    Respects a 1-second delay between requests for Nominatim usage policy.
+    Geocode a single address using the RapidAPI "google-maps-geocoding3" endpoint.
+    Returns (latitude, longitude) or (None, None) if not found or error.
     
-    If a row already has valid Latitude/Longitude, we skip geocoding to avoid duplicate calls.
+    We enforce ~8 calls/sec by sleeping 0.125s between calls.
     """
+    if not address:
+        return None, None
 
+    # ~8 calls per second
+    time.sleep(0.125)
+    try:
+        conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
+        headers = {
+            'x-rapidapi-key': RAPIDAPI_KEY,
+            'x-rapidapi-host': RAPIDAPI_HOST
+        }
+        # URL-encode spaces
+        endpoint = f"/geocode?address={address.replace(' ', '%20')}"
+        conn.request("GET", endpoint, headers=headers)
+        res = conn.getresponse()
+        data = res.read()
+        conn.close()
+
+        json_data = json.loads(data.decode("utf-8"))
+        # If 'latitude'/'longitude' keys exist
+        if "latitude" in json_data and "longitude" in json_data:
+            return json_data["latitude"], json_data["longitude"]
+        else:
+            return None, None
+    except Exception as e:
+        st.write(f"Error geocoding '{address}': {e}")
+        return None, None
+
+
+def geocode_dataframe_rapidapi(df_input: pd.DataFrame) -> pd.DataFrame:
+    """
+    Geocode the DataFrame's 'Full_Address' column using RapidAPI.
+    - Skip rows that already have Latitude/Longitude.
+    - Skip rows that have an empty 'Full_Address'.
+    - Shows row-by-row progress and logs.
+    - Rate limit: ~8 calls/sec.
+    """
     df = df_input.copy()
 
-    # Nominatim with custom user_agent & higher timeout
-    geolocator = Nominatim(
-        user_agent="MyArrivalMapApp/1.0 (myemail@domain.com)", 
-        timeout=10  # up to 10s before giving up
-    )
-    # Rate limit: 1 request per second (Nominatim's public max)
-    geocode = RateLimiter(
-        geolocator.geocode, 
-        min_delay_seconds=1,
-        max_retries=2,  # retry a couple times if we get a transient error
-    )
-
-    # If 'Latitude'/'Longitude' columns don't exist yet, create them
+    # Ensure columns for lat/lon exist
     if "Latitude" not in df.columns:
         df["Latitude"] = None
     if "Longitude" not in df.columns:
         df["Longitude"] = None
 
-    for idx, row in df.iterrows():
-        # 1. If we already have lat/lon, skip geocoding
+    n_rows = len(df)
+    if n_rows == 0:
+        return df
+
+    st.write(f"**Total rows to process:** {n_rows}")
+    progress_bar = st.progress(0)
+
+    for i, row in df.iterrows():
+        # Already have lat/lon?
         if pd.notnull(row["Latitude"]) and pd.notnull(row["Longitude"]):
-            continue
-
-        # 2. If there's no Full_Address, skip & leave lat/lon as None
-        full_address = row.get("Full_Address", "")
-        if not full_address:
-            continue
-
-        # 3. Attempt geocoding
-        try:
-            location = geocode(full_address)
-            if location:
-                df.at[idx, "Latitude"] = location.latitude
-                df.at[idx, "Longitude"] = location.longitude
+            st.write(f"Row {i+1}/{n_rows}: Already has lat/lon, skipping.")
+        else:
+            address = row.get("Full_Address", "")
+            if not address.strip():  # empty address
+                st.write(f"Row {i+1}/{n_rows}: Empty address, skipping.")
             else:
-                df.at[idx, "Latitude"] = None
-                df.at[idx, "Longitude"] = None
-        except:
-            # If geopy fails or times out, store None
-            df.at[idx, "Latitude"] = None
-            df.at[idx, "Longitude"] = None
+                st.write(f"Row {i+1}/{n_rows}: Geocoding '{address}'...")
+                lat, lon = geocode_address_rapidapi(address)
+                df.at[i, "Latitude"] = lat
+                df.at[i, "Longitude"] = lon
 
+        # Update progress bar
+        progress_bar.progress((i+1) / n_rows)
+
+    st.success("Geocoding complete!")
     return df
 
 
 ############################################
-# 2) MAIN STREAMLIT FUNCTION
+# 2) MAIN STREAMLIT APP
 ############################################
 def run_arrival_map():
-    """
-    Streamlit app that:
-      - Uploads an Excel file
-      - Creates 'Full_Address' from Address1 + City + State + Zip Code
-      - Geocodes with Nominatim at 1 request per second (cached)
-      - Filters by State, Market, Ticket Value
-      - If present, also filter by Home Value (always displayed, no checkbox)
-      - Shows how many dots (rows) on the map
-      - Allows downloading geocoded data
-    """
-
-    st.title("📍 Arrival Map (1 Request/sec, Cached)")
+    st.title("📍 Arrival Map (RapidAPI ~8 calls/sec)")
 
     st.markdown("""
     **Instructions**:
     1. Upload an Excel file with at least these columns:
        - **Address1**, **City**, **State**, **Zip Code**
        - **Market** (used for coloring dots)
-       - **Total Stay Value With Taxes (Base)** (Ticket Value).
-       - (Optionally) **Home Value** for additional filter and hover info.
-    2. We'll build a **Full_Address**, geocode it with a **1 request/sec** limit for Nominatim.
-    3. Filters: State, Market, Ticket Value, (and Home Value if present).
+       - **Total Stay Value With Taxes (Base)** (Ticket Value)
+       - (Optionally) **Home Value** for additional filter/hover info.
+    2. We'll build a **Full_Address**, then geocode each row via **RapidAPI** 
+       at ~8 requests/sec, showing row-by-row progress (skipping empty or 
+       already-geocoded rows).
+    3. You can filter by State, Market, Ticket Value, and optionally Home Value.
     4. We show how many dots appear & let you download the geocoded data as Excel.
     """)
 
@@ -155,15 +169,15 @@ def run_arrival_map():
         show_cols.append("Home Value")  # Show it if present
     st.dataframe(df[show_cols].head(10))
 
-    # 5) Geocode (cached)
-    st.info("Geocoding addresses at 1 request/second (Nominatim usage policy).")
-    df_geocoded = geocode_dataframe(df)
+    # 5) Geocode with RapidAPI (show progress/log)
+    st.info("Geocoding addresses via RapidAPI (~8 calls/sec).")
+    df_geocoded = geocode_dataframe_rapidapi(df)
 
-    # Drop rows with missing lat/lon
+    # Drop rows with missing lat/lon for the map
     df_map = df_geocoded.dropna(subset=["Latitude","Longitude"]).copy()
 
-    # 6) Filters: State, Market, Ticket Value
-    # -- State filter
+    # 6) Filters
+    # State filter
     unique_states = sorted(df_map["State"].dropna().unique())
     state_filter = st.multiselect(
         "Filter by State(s)",
@@ -171,7 +185,7 @@ def run_arrival_map():
         default=unique_states
     )
 
-    # -- Market filter
+    # Market filter
     unique_markets = sorted(df_map["Market"].dropna().unique())
     market_filter = st.multiselect(
         "Filter by Market(s)",
@@ -179,7 +193,7 @@ def run_arrival_map():
         default=unique_markets
     )
 
-    # -- Ticket Value slider
+    # Ticket Value slider
     min_ticket = float(df_map["Total Stay Value With Taxes (Base)"].min() or 0)
     max_ticket = float(df_map["Total Stay Value With Taxes (Base)"].max() or 0)
     ticket_value_range = st.slider(
@@ -189,7 +203,7 @@ def run_arrival_map():
         value=(min_ticket, max_ticket)
     )
 
-    # -- Home Value slider (always displayed if 'Home Value' exists)
+    # Home Value (if present)
     home_value_exists = "Home Value" in df_map.columns
     if home_value_exists:
         st.subheader("Home Value Filter")
@@ -210,7 +224,6 @@ def run_arrival_map():
         (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
     ]
 
-    # If the 'Home Value' column exists, apply the slider filter
     if home_value_exists:
         df_filtered = df_filtered[
             (df_filtered["Home Value"] >= home_value_range[0]) &
@@ -229,9 +242,8 @@ def run_arrival_map():
     # 7) Plotly map
     st.subheader("📍 Map of Addresses")
 
-    # Decide which columns to show in hover_data. We'll always show State & Ticket Value.
+    # Which columns to show in hover_data
     hover_data_cols = ["State", "Total Stay Value With Taxes (Base)"]
-    # If there's a Home Value column, also show it:
     if home_value_exists:
         hover_data_cols.append("Home Value")
 
@@ -254,7 +266,7 @@ def run_arrival_map():
     st.subheader("⬇️ Download Geocoded Excel")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df_map.to_excel(writer, index=False, sheet_name="GeocodedData")
+        df_geocoded.to_excel(writer, index=False, sheet_name="GeocodedData")
     output.seek(0)
 
     st.download_button(
@@ -265,6 +277,5 @@ def run_arrival_map():
     )
 
 
-# If run as a standalone script:
 if __name__ == "__main__":
     run_arrival_map()
