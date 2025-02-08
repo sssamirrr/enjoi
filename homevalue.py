@@ -1,76 +1,104 @@
 import http.client
 import urllib.parse
 import json
+import time
 
-# Hard-coded Zillow Working API credentials via RapidAPI.
+# Hard-coded Zillow Working API credentials (via RapidAPI)
 RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"
 RAPIDAPI_HOST = "zillow-working-api.p.rapidapi.com"
 
-def get_zestimate(full_address: str):
+def get_zestimate(full_address: str, max_retries: int = 3, sleep_sec: float = 0.20):
     """
-    Given a full address string (e.g., "438 Vitoria Rd, Davenport, FL 33837"),
+    Given a full address string (e.g., "2823 NE 9th St, Gainesville, 32609"),
     this function:
-      1. Validates the address by splitting on commas and checking that
-         at least the street and city parts are non-empty.
+      1. Validates the address by ensuring that:
+         - The street portion (the text before the first comma) is not empty.
+         - There is at least one additional non-empty part (city or zip code).
       2. URL-encodes the full address.
       3. Calls the Zillow Working API (/byaddress endpoint).
       4. Parses the JSON response and returns the "zestimate" value.
          If the address is invalid or no value is found, returns None.
-    
-    Examples:
-      - "438 Vitoria Rd, Davenport, FL 33837" → Valid (returns zestimate)
-      - "Davenport, FL 33837" → Valid by our simple check (but you might want to refine this)
-      - ", Davenport, FL 33837" → Invalid (empty street part), returns None
-      - "438 Vitoria Rd, , FL 33837" → Invalid (empty city part), returns None
+      5. Retries up to 'max_retries' times if no zestimate is found
+         or if an exception occurs.
+
+    Debugging enhancements:
+      - Prints the request endpoint and response status.
+      - Prints the raw response from the API.
+      - Adds a simple retry mechanism to reduce transient empty returns.
     """
-    # Split the address on commas and trim whitespace.
+    # 1) Input Validation
     parts = [part.strip() for part in full_address.split(',')]
-    
-    # Require at least two non-empty parts (street and city)
-    if len(parts) < 2 or not parts[0] or not parts[1]:
-        # The address is considered invalid
+    # The street portion (first part) is not empty.
+    if not parts[0]:
+        print(f"[DEBUG] Address validation failed: street is empty. ({full_address})")
         return None
-
-    # URL-encode the full address.
-    encoded_address = urllib.parse.quote(full_address)
-
-    # Create an HTTPS connection to the Zillow Working API.
-    conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
-    headers = {
-        'x-rapidapi-key': RAPIDAPI_KEY,
-        'x-rapidapi-host': RAPIDAPI_HOST
-    }
+    # There must be at least one additional non-empty part (city or zip).
+    if len(parts) < 2 or not any(parts[1:]):
+        print(f"[DEBUG] Address validation failed: no city/zip. ({full_address})")
+        return None
     
-    # Build the request path using the encoded address.
+    # 2) URL-encode the full address
+    encoded_address = urllib.parse.quote(full_address)
     endpoint = f"/byaddress?propertyaddress={encoded_address}"
     
-    try:
-        conn.request("GET", endpoint, headers=headers)
-        res = conn.getresponse()
-        data = res.read()
-        response_str = data.decode("utf-8")
-        response_json = json.loads(response_str)
-        # Return the zestimate value from the response.
-        return response_json.get("zestimate", None)
-    except Exception as e:
-        print(f"Error retrieving zestimate for address '{full_address}': {e}")
-        return None
-    finally:
-        conn.close()
+    # 3) Make up to 'max_retries' attempts
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Sleep to respect rate limit
+            time.sleep(sleep_sec)
+            
+            print(f"[DEBUG] Attempt {attempt}/{max_retries} -> Requesting: {endpoint}")
+            
+            # Create connection
+            conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
+            headers = {
+                'x-rapidapi-key': RAPIDAPI_KEY,
+                'x-rapidapi-host': RAPIDAPI_HOST
+            }
+            
+            conn.request("GET", endpoint, headers=headers)
+            res = conn.getresponse()
+            status_code = res.status
+            
+            # 4) Check response status code
+            print(f"[DEBUG] HTTP Response Status: {status_code}")
+            data = res.read()
+            response_str = data.decode("utf-8")
+            
+            # Print the raw response for debugging
+            print(f"[DEBUG] Raw API response: {response_str[:500]}...")  # truncate if very long
+            
+            # Close the connection
+            conn.close()
+            
+            # 5) Parse JSON and retrieve "zestimate"
+            if status_code == 200:
+                response_json = json.loads(response_str)
+                zestimate_value = response_json.get("zestimate", None)
+                
+                # If we found a zestimate, return it
+                if zestimate_value is not None:
+                    print(f"[DEBUG] Found zestimate: {zestimate_value}")
+                    return zestimate_value
+                else:
+                    print("[DEBUG] No 'zestimate' key found in JSON. Will retry." if attempt < max_retries else "[DEBUG] No 'zestimate' key found. No more retries.")
+            else:
+                print(f"[DEBUG] Non-200 status ({status_code}). Will retry." if attempt < max_retries else "[DEBUG] Non-200 status. No more retries.")
+            
+        except Exception as e:
+            # Print exception and maybe retry
+            print(f"[DEBUG] Exception occurred: {e}")
+            if attempt < max_retries:
+                print("[DEBUG] Will retry...")
+            else:
+                print("[DEBUG] No more retries left.")
+    
+    # If all attempts fail or we never got a zestimate
+    return None
 
 # Example usage:
 if __name__ == "__main__":
-    # Example valid address.
-    address_valid = "438 Vitoria Rd, Davenport, FL 33837"
-    zestimate_valid = get_zestimate(address_valid)
-    print(f"For '{address_valid}' -> Zestimate: {zestimate_valid}")
-
-    # Example invalid address with empty street.
-    address_invalid1 = ", Davenport, FL 33837"
-    zestimate_invalid1 = get_zestimate(address_invalid1)
-    print(f"For '{address_invalid1}' -> Zestimate: {zestimate_invalid1}")
-
-    # Example invalid address with empty city.
-    address_invalid2 = "438 Vitoria Rd, , FL 33837"
-    zestimate_invalid2 = get_zestimate(address_invalid2)
-    print(f"For '{address_invalid2}' -> Zestimate: {zestimate_invalid2}")
+    # Test address known to have a valid zestimate
+    test_address = "2823 NE 9th St, Gainesville, 32609"
+    zestimate = get_zestimate(test_address)
+    print(f"[RESULT] For address: '{test_address}' -> Zestimate: {zestimate}")
