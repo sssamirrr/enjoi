@@ -6,32 +6,31 @@ import time
 import http.client
 import json
 
-
-############################################
-# 1) RAPIDAPI CONFIG
-############################################
-RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"  # <-- Your hardcoded key
+# -------------------------------------------------
+# 1) HARD-CODED RAPIDAPI CONFIG
+# -------------------------------------------------
+RAPIDAPI_KEY = "dfeb75b744mshcf88e410704f433p1b871ejsn398130bf7076"  # <--- Your key
 RAPIDAPI_HOST = "google-maps-geocoding3.p.rapidapi.com"
 
 def geocode_address_rapidapi(address: str):
     """
     Geocode a single address using the RapidAPI "google-maps-geocoding3" endpoint.
     Returns (latitude, longitude) or (None, None) if not found or error.
-    
-    We enforce ~8 calls/sec by sleeping 0.125s between calls.
+
+    Rate limit ~8 calls/sec => time.sleep(0.125).
     """
     if not address:
         return None, None
 
-    # ~8 calls per second
+    # ~8 calls/second
     time.sleep(0.125)
+
     try:
         conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
         headers = {
             'x-rapidapi-key': RAPIDAPI_KEY,
             'x-rapidapi-host': RAPIDAPI_HOST
         }
-        # URL-encode spaces
         endpoint = f"/geocode?address={address.replace(' ', '%20')}"
         conn.request("GET", endpoint, headers=headers)
         res = conn.getresponse()
@@ -39,7 +38,6 @@ def geocode_address_rapidapi(address: str):
         conn.close()
 
         json_data = json.loads(data.decode("utf-8"))
-        # If 'latitude'/'longitude' keys exist
         if "latitude" in json_data and "longitude" in json_data:
             return json_data["latitude"], json_data["longitude"]
         else:
@@ -49,233 +47,223 @@ def geocode_address_rapidapi(address: str):
         return None, None
 
 
-def geocode_dataframe_rapidapi(df_input: pd.DataFrame) -> pd.DataFrame:
+def process_next_chunk():
     """
-    Geocode the DataFrame's 'Full_Address' column using RapidAPI.
-    - Skip rows that already have Latitude/Longitude.
-    - Skip rows that have an empty 'Full_Address'.
-    - Shows row-by-row progress and logs.
-    - Rate limit: ~8 calls/sec.
+    Process the next chunk of rows (up to chunk_size) in st.session_state["df_geocoded"].
+    Skip rows that:
+      - Already have Latitude & Longitude
+      - Address1, City, State, Zip Code all empty
+    Update rows with newly geocoded lat/lon.
     """
-    df = df_input.copy()
+    df = st.session_state["df_geocoded"]
+    start_idx = st.session_state["current_index"]
+    chunk_size = st.session_state["chunk_size"]
+    end_idx = min(start_idx + chunk_size, len(df))
 
-    # Ensure columns for lat/lon exist
-    if "Latitude" not in df.columns:
-        df["Latitude"] = None
-    if "Longitude" not in df.columns:
-        df["Longitude"] = None
+    st.write(f"**Processing rows {start_idx+1} to {end_idx}** out of {len(df)}")
 
-    n_rows = len(df)
-    if n_rows == 0:
-        return df
+    # Row-by-row geocoding for this chunk
+    for i in range(start_idx, end_idx):
+        row = df.loc[i]
 
-    st.write(f"**Total rows to process:** {n_rows}")
-    progress_bar = st.progress(0)
-
-    for i, row in df.iterrows():
-        # Already have lat/lon?
+        # Already geocoded?
         if pd.notnull(row["Latitude"]) and pd.notnull(row["Longitude"]):
-            st.write(f"Row {i+1}/{n_rows}: Already has lat/lon, skipping.")
-        else:
-            address = row.get("Full_Address", "")
-            if not address.strip():  # empty address
-                st.write(f"Row {i+1}/{n_rows}: Empty address, skipping.")
-            else:
-                st.write(f"Row {i+1}/{n_rows}: Geocoding '{address}'...")
-                lat, lon = geocode_address_rapidapi(address)
-                df.at[i, "Latitude"] = lat
-                df.at[i, "Longitude"] = lon
+            st.write(f"Row {i+1}: Already has lat/lon, skipping.")
+            continue
 
-        # Update progress bar
-        progress_bar.progress((i+1) / n_rows)
+        # Check if all address fields are empty
+        addr1 = str(row.get("Address1", "")).strip()
+        city  = str(row.get("City", "")).strip()
+        state = str(row.get("State", "")).strip()
+        zipc  = str(row.get("Zip Code", "")).strip()
 
-    st.success("Geocoding complete!")
-    return df
+        if not any([addr1, city, state, zipc]):
+            st.write(f"Row {i+1}: No valid address, skipping.")
+            continue
 
+        # Geocode
+        full_address = str(row.get("Full_Address", "")).strip()
+        st.write(f"Row {i+1}: Geocoding '{full_address}'...")
+        lat, lon = geocode_address_rapidapi(full_address)
+        df.at[i, "Latitude"] = lat
+        df.at[i, "Longitude"] = lon
 
-############################################
-# 2) MAIN STREAMLIT APP
-############################################
-def run_arrival_map():
-    st.title("📍 Arrival Map (RapidAPI ~8 calls/sec)")
+    # Update the current index
+    st.session_state["current_index"] = end_idx
 
-    st.markdown("""
-    **Instructions**:
-    1. Upload an Excel file with at least these columns:
-       - **Address1**, **City**, **State**, **Zip Code**
-       - **Market** (used for coloring dots)
-       - **Total Stay Value With Taxes (Base)** (Ticket Value)
-       - (Optionally) **Home Value** for additional filter/hover info.
-    2. We'll build a **Full_Address**, then geocode each row via **RapidAPI** 
-       at ~8 requests/sec, showing row-by-row progress (skipping empty or 
-       already-geocoded rows).
-    3. You can filter by State, Market, Ticket Value, and optionally Home Value.
-    4. We show how many dots appear & let you download the geocoded data as Excel.
+    st.success(f"Chunk processed! Rows {start_idx+1}-{end_idx} done.")
+
+def run_app():
+    st.title("📍 Chunk-Based Geocoding with Partial Progress & Download")
+
+    st.write("""
+    **How it works**:
+    1. Upload an Excel file with columns:
+       - Address1, City, State, Zip Code
+       - Market, Total Stay Value With Taxes (Base)
+       - (Optional) Home Value
+    2. We'll create 'Full_Address' and let you geocode in **chunks** (e.g. 100 rows at a time).
+    3. After each chunk, you can:
+       - Stop if you want (don't click "Process Next Chunk").
+       - Download the partially geocoded file.
+    4. This avoids timeouts for very large files and gives you control over stopping.
     """)
 
-    # 1) File uploader
-    uploaded_file = st.file_uploader("📂 Upload Excel File (xlsx/xls)", type=["xlsx", "xls"])
+    uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
     if not uploaded_file:
-        st.info("Please upload a valid Excel file to proceed.")
+        st.info("Awaiting file upload...")
         return
 
-    # 2) Read the Excel into a DataFrame
+    # Read the file
     try:
-        df = pd.read_excel(uploaded_file)
+        df_uploaded = pd.read_excel(uploaded_file)
     except Exception as e:
-        st.error(f"Error reading Excel file: {e}")
+        st.error(f"Could not read Excel file: {e}")
         return
 
-    st.subheader("Preview of Uploaded Data")
-    st.dataframe(df.head(10))
-
-    # 3) Check required columns
-    required_cols = [
-        "Address1", 
-        "City", 
-        "State", 
-        "Zip Code", 
-        "Market", 
-        "Total Stay Value With Taxes (Base)"
-    ]
-    missing_cols = [c for c in required_cols if c not in df.columns]
-    if missing_cols:
-        st.error(f"Missing required columns: {missing_cols}")
+    # Check mandatory columns
+    required_cols = ["Address1", "City", "State", "Zip Code", "Market", "Total Stay Value With Taxes (Base)"]
+    missing = [c for c in required_cols if c not in df_uploaded.columns]
+    if missing:
+        st.error(f"Missing required columns: {missing}")
         return
 
-    # 4) Clean up address columns
-    df["Address1"] = df["Address1"].fillna("").astype(str).str.strip()
-    df["City"]     = df["City"].fillna("").astype(str).str.strip()
-    df["State"]    = df["State"].fillna("").astype(str).str.strip()
-    df["Zip Code"] = (
-        df["Zip Code"]
-        .fillna("")
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
+    # Show a preview
+    st.subheader("Uploaded File Preview")
+    st.dataframe(df_uploaded.head(10))
 
-    # Create a "Full_Address" column
-    df["Full_Address"] = (
-        df["Address1"] + ", "
-        + df["City"] + ", "
-        + df["State"] + " "
-        + df["Zip Code"]
-    ).str.strip()
+    # If first time, or new file, initialize session state
+    if "df_geocoded" not in st.session_state or "file_name" not in st.session_state \
+       or st.session_state["file_name"] != uploaded_file.name:
+        # Prepare the DataFrame for geocoding
+        df_uploaded["Address1"] = df_uploaded["Address1"].fillna("").astype(str).str.strip()
+        df_uploaded["City"]     = df_uploaded["City"].fillna("").astype(str).str.strip()
+        df_uploaded["State"]    = df_uploaded["State"].fillna("").astype(str).str.strip()
+        df_uploaded["Zip Code"] = (
+            df_uploaded["Zip Code"].fillna("").astype(str)
+            .str.replace(".0", "", regex=False)
+            .str.strip()
+        )
+        df_uploaded["Full_Address"] = (
+            df_uploaded["Address1"] + ", "
+            + df_uploaded["City"] + ", "
+            + df_uploaded["State"] + " "
+            + df_uploaded["Zip Code"]
+        ).str.strip()
 
-    st.subheader("Full Addresses")
-    show_cols = ["Full_Address", "Market", "Total Stay Value With Taxes (Base)"]
-    if "Home Value" in df.columns:
-        show_cols.append("Home Value")  # Show it if present
-    st.dataframe(df[show_cols].head(10))
+        # If no Lat/Long columns exist, add them
+        if "Latitude" not in df_uploaded.columns:
+            df_uploaded["Latitude"] = None
+        if "Longitude" not in df_uploaded.columns:
+            df_uploaded["Longitude"] = None
 
-    # 5) Geocode with RapidAPI (show progress/log)
-    st.info("Geocoding addresses via RapidAPI (~8 calls/sec).")
-    df_geocoded = geocode_dataframe_rapidapi(df)
+        # Set up session state
+        st.session_state["df_geocoded"] = df_uploaded.copy()
+        st.session_state["file_name"] = uploaded_file.name
+        st.session_state["current_index"] = 0  # row index for chunking
+        st.session_state["chunk_size"] = 100   # process 100 rows at a time
 
-    # Drop rows with missing lat/lon for the map
-    df_map = df_geocoded.dropna(subset=["Latitude","Longitude"]).copy()
+    # Buttons for chunk-based processing
+    st.subheader("Geocoding Controls")
+    if st.button("Process Next Chunk"):
+        process_next_chunk()
 
-    # 6) Filters
-    # State filter
-    unique_states = sorted(df_map["State"].dropna().unique())
-    state_filter = st.multiselect(
-        "Filter by State(s)",
-        options=unique_states,
-        default=unique_states
-    )
+    # If current_index >= len(df), we've processed all
+    total_len = len(st.session_state["df_geocoded"])
+    current_idx = st.session_state["current_index"]
+    if current_idx >= total_len:
+        st.success("All rows have been processed!")
+    else:
+        st.write(f"**Rows processed so far**: {current_idx} / {total_len}")
 
-    # Market filter
-    unique_markets = sorted(df_map["Market"].dropna().unique())
-    market_filter = st.multiselect(
-        "Filter by Market(s)",
-        options=unique_markets,
-        default=unique_markets
-    )
+    # ---------------------------------------------------
+    # Map & Filters (Optional)
+    # ---------------------------------------------------
+    df_map = st.session_state["df_geocoded"].dropna(subset=["Latitude", "Longitude"]).copy()
 
-    # Ticket Value slider
-    min_ticket = float(df_map["Total Stay Value With Taxes (Base)"].min() or 0)
-    max_ticket = float(df_map["Total Stay Value With Taxes (Base)"].max() or 0)
-    ticket_value_range = st.slider(
-        "Filter by Ticket Value",
-        min_value=min_ticket,
-        max_value=max_ticket,
-        value=(min_ticket, max_ticket)
-    )
+    if not df_map.empty:
+        st.subheader("Filtering & Map")
 
-    # Home Value (if present)
-    home_value_exists = "Home Value" in df_map.columns
-    if home_value_exists:
-        st.subheader("Home Value Filter")
-        home_val_min = float(df_map["Home Value"].min() or 0)
-        home_val_max = float(df_map["Home Value"].max() or 0)
-        home_value_range = st.slider(
-            "Home Value Range",
-            min_value=home_val_min,
-            max_value=home_val_max,
-            value=(home_val_min, home_val_max)
+        # State filter
+        states = sorted(df_map["State"].dropna().unique())
+        state_selection = st.multiselect(
+            "Filter by State(s)",
+            options=states,
+            default=states
+        )
+        # Market filter
+        markets = sorted(df_map["Market"].dropna().unique())
+        market_selection = st.multiselect(
+            "Filter by Market(s)",
+            options=markets,
+            default=markets
+        )
+        # Ticket Value range
+        min_ticket = float(df_map["Total Stay Value With Taxes (Base)"].min() or 0)
+        max_ticket = float(df_map["Total Stay Value With Taxes (Base)"].max() or 0)
+        ticket_value_range = st.slider(
+            "Filter by Ticket Value",
+            min_value=min_ticket,
+            max_value=max_ticket,
+            value=(min_ticket, max_ticket)
         )
 
-    # Apply the filters
-    df_filtered = df_map[
-        (df_map["State"].isin(state_filter)) &
-        (df_map["Market"].isin(market_filter)) &
-        (df_map["Total Stay Value With Taxes (Base)"] >= ticket_value_range[0]) &
-        (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
-    ]
-
-    if home_value_exists:
-        df_filtered = df_filtered[
-            (df_filtered["Home Value"] >= home_value_range[0]) &
-            (df_filtered["Home Value"] <= home_value_range[1])
+        # Apply filters
+        df_filtered = df_map[
+            (df_map["State"].isin(state_selection)) &
+            (df_map["Market"].isin(market_selection)) &
+            (df_map["Total Stay Value With Taxes (Base)"] >= ticket_value_range[0]) &
+            (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
         ]
 
-    st.subheader("Filtered Data for Map")
-    num_dots = len(df_filtered)
-    st.write(f"**Number of dots on the map:** {num_dots}")
-    st.dataframe(df_filtered.head(20))
+        # Optional Home Value filter
+        if "Home Value" in df_filtered.columns:
+            st.subheader("Home Value Filter")
+            min_home = float(df_filtered["Home Value"].min() or 0)
+            max_home = float(df_filtered["Home Value"].max() or 0)
+            hv_range = st.slider("Home Value Range", min_value=min_home, max_value=max_home, value=(min_home, max_home))
+            df_filtered = df_filtered[
+                (df_filtered["Home Value"] >= hv_range[0]) &
+                (df_filtered["Home Value"] <= hv_range[1])
+            ]
 
-    if df_filtered.empty:
-        st.warning("No data after applying filters. Adjust filters above.")
-        return
+        st.write(f"**Filtered Results**: {len(df_filtered)} rows")
+        st.dataframe(df_filtered.head(20))
 
-    # 7) Plotly map
-    st.subheader("📍 Map of Addresses")
+        if not df_filtered.empty:
+            st.subheader("Map View")
+            fig = px.scatter_mapbox(
+                df_filtered,
+                lat="Latitude",
+                lon="Longitude",
+                color="Market",
+                hover_name="Full_Address",
+                hover_data=["State", "Total Stay Value With Taxes (Base)"],
+                zoom=3,
+                height=600
+            )
+            fig.update_layout(mapbox_style="open-street-map")
+            fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No rows with valid latitude/longitude yet.")
 
-    # Which columns to show in hover_data
-    hover_data_cols = ["State", "Total Stay Value With Taxes (Base)"]
-    if home_value_exists:
-        hover_data_cols.append("Home Value")
-
-    fig = px.scatter_mapbox(
-        df_filtered,
-        lat="Latitude",
-        lon="Longitude",
-        color="Market",
-        hover_name="Full_Address",
-        hover_data=hover_data_cols,
-        zoom=3,
-        height=600
-    )
-    fig.update_layout(mapbox_style="open-street-map")
-    fig.update_layout(margin={"r":0, "t":0, "l":0, "b":0})
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 8) Download the geocoded dataset
-    st.subheader("⬇️ Download Geocoded Excel")
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df_geocoded.to_excel(writer, index=False, sheet_name="GeocodedData")
-    output.seek(0)
+    # ---------------------------------------------------
+    # Download Partial or Full Results
+    # ---------------------------------------------------
+    st.subheader("Download Partial/Full Geocoded Results")
+    df_enriched = st.session_state["df_geocoded"]
+    out_buffer = io.BytesIO()
+    with pd.ExcelWriter(out_buffer, engine="xlsxwriter") as writer:
+        df_enriched.to_excel(writer, index=False, sheet_name="GeocodedData")
+    out_buffer.seek(0)
 
     st.download_button(
-        label="Download Excel (Geocoded)",
-        data=output.getvalue(),
+        label="Download Geocoded Excel",
+        data=out_buffer,
         file_name="arrival_map_geocoded.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-
 if __name__ == "__main__":
-    run_arrival_map()
+    run_app()
