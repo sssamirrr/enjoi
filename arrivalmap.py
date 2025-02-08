@@ -21,8 +21,7 @@ def geocode_address_rapidapi(address: str):
     if not address:
         return None, None
 
-    # ~8 calls/second
-    time.sleep(0.125)
+    time.sleep(0.125)  # ~8 calls/second
 
     try:
         conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
@@ -45,7 +44,6 @@ def geocode_address_rapidapi(address: str):
         st.write(f"Error geocoding '{address}': {e}")
         return None, None
 
-
 def process_next_chunk():
     """
     Process the next chunk of rows (up to chunk_size) in st.session_state["df_geocoded"].
@@ -61,11 +59,10 @@ def process_next_chunk():
 
     st.write(f"**Processing rows {start_idx+1} to {end_idx}** out of {len(df)}")
 
-    # Row-by-row geocoding for this chunk
     for i in range(start_idx, end_idx):
         row = df.loc[i]
 
-        # Already geocoded?
+        # Skip if already geocoded
         if pd.notnull(row["Latitude"]) and pd.notnull(row["Longitude"]):
             st.write(f"Row {i+1}: Already has lat/lon, skipping.")
             continue
@@ -80,23 +77,18 @@ def process_next_chunk():
             st.write(f"Row {i+1}: No valid address, skipping.")
             continue
 
-        # Geocode
         full_address = str(row.get("Full_Address", "")).strip()
         st.write(f"Row {i+1}: Geocoding '{full_address}'...")
         lat, lon = geocode_address_rapidapi(full_address)
         df.at[i, "Latitude"] = lat
         df.at[i, "Longitude"] = lon
 
-    # Update the current index
     st.session_state["current_index"] = end_idx
-
     st.success(f"Chunk processed! Rows {start_idx+1}-{end_idx} done.")
-
 
 def run_arrival_map():
     """
     Chunk-Based Geocoding with Partial Progress & Download.
-    Call this function to run in Streamlit.
     """
     st.title("📍 Chunk-Based Geocoding with Partial Progress & Download")
 
@@ -107,10 +99,7 @@ def run_arrival_map():
        - Market, Total Stay Value With Taxes (Base)
        - (Optional) Home Value
     2. We'll create 'Full_Address' and let you geocode in **chunks** (e.g. 100 rows at a time).
-    3. After each chunk, you can:
-       - Stop if you want (don't click "Process Next Chunk").
-       - Download the partially geocoded file.
-    4. This avoids timeouts for very large files and gives you control over stopping.
+    3. After each chunk, you can stop or download the partially geocoded file.
     """)
 
     uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
@@ -118,29 +107,23 @@ def run_arrival_map():
         st.info("Awaiting file upload...")
         return
 
-    # Read the file
     try:
         df_uploaded = pd.read_excel(uploaded_file)
     except Exception as e:
         st.error(f"Could not read Excel file: {e}")
         return
 
-    # Check mandatory columns
     required_cols = ["Address1", "City", "State", "Zip Code", "Market", "Total Stay Value With Taxes (Base)"]
     missing = [c for c in required_cols if c not in df_uploaded.columns]
     if missing:
         st.error(f"Missing required columns: {missing}")
         return
 
-    # Show a preview
     st.subheader("Uploaded File Preview")
     st.dataframe(df_uploaded.head(10))
 
-    # If first time or new file, initialize session state
     if "df_geocoded" not in st.session_state or "file_name" not in st.session_state \
        or st.session_state["file_name"] != uploaded_file.name:
-
-        # Prepare the DataFrame for geocoding
         df_uploaded["Address1"] = df_uploaded["Address1"].fillna("").astype(str).str.strip()
         df_uploaded["City"]     = df_uploaded["City"].fillna("").astype(str).str.strip()
         df_uploaded["State"]    = df_uploaded["State"].fillna("").astype(str).str.strip()
@@ -150,30 +133,26 @@ def run_arrival_map():
             .str.strip()
         )
         df_uploaded["Full_Address"] = (
-            df_uploaded["Address1"] + ", "
-            + df_uploaded["City"] + ", "
-            + df_uploaded["State"] + " "
-            + df_uploaded["Zip Code"]
+            df_uploaded["Address1"] + ", " +
+            df_uploaded["City"] + ", " +
+            df_uploaded["State"] + " " +
+            df_uploaded["Zip Code"]
         ).str.strip()
 
-        # If no Lat/Long columns exist, add them
         if "Latitude" not in df_uploaded.columns:
             df_uploaded["Latitude"] = None
         if "Longitude" not in df_uploaded.columns:
             df_uploaded["Longitude"] = None
 
-        # Save to session state
         st.session_state["df_geocoded"] = df_uploaded.copy()
         st.session_state["file_name"] = uploaded_file.name
-        st.session_state["current_index"] = 0  # row index for chunking
-        st.session_state["chunk_size"] = 100   # process 100 rows at a time
+        st.session_state["current_index"] = 0
+        st.session_state["chunk_size"] = 100
 
-    # Buttons for chunk-based processing
     st.subheader("Geocoding Controls")
     if st.button("Process Next Chunk"):
         process_next_chunk()
 
-    # If current_index >= len(df), we've processed all
     total_len = len(st.session_state["df_geocoded"])
     current_idx = st.session_state["current_index"]
     if current_idx >= total_len:
@@ -181,39 +160,18 @@ def run_arrival_map():
     else:
         st.write(f"**Rows processed so far**: {current_idx} / {total_len}")
 
-    # ---------------------------------------------------
-    # Map & Filters (Optional)
-    # ---------------------------------------------------
     df_map = st.session_state["df_geocoded"].dropna(subset=["Latitude", "Longitude"]).copy()
 
     if not df_map.empty:
         st.subheader("Filtering & Map")
-
-        # State filter
         states = sorted(df_map["State"].dropna().unique())
-        state_selection = st.multiselect(
-            "Filter by State(s)",
-            options=states,
-            default=states
-        )
-        # Market filter
+        state_selection = st.multiselect("Filter by State(s)", options=states, default=states)
         markets = sorted(df_map["Market"].dropna().unique())
-        market_selection = st.multiselect(
-            "Filter by Market(s)",
-            options=markets,
-            default=markets
-        )
-        # Ticket Value range
+        market_selection = st.multiselect("Filter by Market(s)", options=markets, default=markets)
         min_ticket = float(df_map["Total Stay Value With Taxes (Base)"].min() or 0)
         max_ticket = float(df_map["Total Stay Value With Taxes (Base)"].max() or 0)
-        ticket_value_range = st.slider(
-            "Filter by Ticket Value",
-            min_value=min_ticket,
-            max_value=max_ticket,
-            value=(min_ticket, max_ticket)
-        )
-
-        # Apply filters
+        ticket_value_range = st.slider("Filter by Ticket Value", min_value=min_ticket, max_value=max_ticket, value=(min_ticket, max_ticket))
+        
         df_filtered = df_map[
             (df_map["State"].isin(state_selection)) &
             (df_map["Market"].isin(market_selection)) &
@@ -221,7 +179,6 @@ def run_arrival_map():
             (df_map["Total Stay Value With Taxes (Base)"] <= ticket_value_range[1])
         ]
 
-        # Optional Home Value filter
         if "Home Value" in df_filtered.columns:
             st.subheader("Home Value Filter")
             min_home = float(df_filtered["Home Value"].min() or 0)
@@ -253,9 +210,6 @@ def run_arrival_map():
     else:
         st.info("No rows with valid latitude/longitude yet.")
 
-    # ---------------------------------------------------
-    # Download Partial or Full Results
-    # ---------------------------------------------------
     st.subheader("Download Partial/Full Geocoded Results")
     df_enriched = st.session_state["df_geocoded"]
     out_buffer = io.BytesIO()
@@ -270,10 +224,5 @@ def run_arrival_map():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-
-# If you run THIS file directly with:
-#   streamlit run arrivalmap.py
-# the function below will execute.
-# If you import arrivalmap into another script, call arrivalmap.run_arrival_map().
 if __name__ == "__main__":
     run_arrival_map()
