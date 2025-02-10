@@ -64,7 +64,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 # Define all s
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "Dashboard",
     "Marketing",
     "Tour Prediction",
@@ -73,7 +73,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "OpenPhone Stats",
     "Add Home Value",
     "Add Guest Openphone Status",
-    "Arrival Map"  # <-- New tab name
+    "Arrival Map",
+    "Add Driving Distance"  # New tab
 ])
 
 
@@ -1196,6 +1197,19 @@ with tab8:
 with tab9:
     # Instead of st.header("Arrival Map"), call your imported function
     arrivalmap.run_arrival_map()
+
+with tab10:
+    st.header("Add Driving Distance")
+    st.info("Driving Distance functionality coming soon...")
+
+    # Example form to collect addresses
+    origin = st.text_input("Enter your origin address:")
+    destination = st.text_input("Enter your destination address:")
+
+    if st.button("Calculate Driving Distance"):
+        # Placeholder for the driving distance calculation
+        # Here you could call an API (e.g., Google Maps Distance Matrix API)
+        st.write("Driving distance functionality is under development.")
     
 ############################################
 # Raw Data Viewer
