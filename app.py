@@ -19,7 +19,7 @@ import reservations
 import homevalue  # or from homevalue import run_home_value_tab
 import guestcommunication
 import arrivalmap
-
+import drivingdistance
 
 
 
@@ -1199,17 +1199,8 @@ with tab9:
     arrivalmap.run_arrival_map()
 
 with tab10:
-    st.header("Add Driving Distance")
-    st.info("Driving Distance functionality coming soon...")
-
-    # Example form to collect addresses
-    origin = st.text_input("Enter your origin address:")
-    destination = st.text_input("Enter your destination address:")
-
-    if st.button("Calculate Driving Distance"):
-        # Placeholder for the driving distance calculation
-        # Here you could call an API (e.g., Google Maps Distance Matrix API)
-        st.write("Driving distance functionality is under development.")
+   # Instead of st.header("Arrival Map"), call your imported function
+    drivingdistance.run_driving_distance()
     
 ############################################
 # Raw Data Viewer
