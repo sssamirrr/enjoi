@@ -118,7 +118,7 @@ def process_next_chunk_driving_distance():
     st.session_state["current_index"] = end_idx
     st.success(f"Chunk processed! Rows {start_idx+1} to {end_idx} done.")
 
-def run_driving_distance_tab():
+def run_driving_distance():
     """
     Streamlit app that:
       1. Uploads an Excel file with columns: Address1, City, Zip Code (optionally State).
@@ -214,4 +214,4 @@ def run_driving_distance_tab():
     )
 
 if __name__ == "__main__":
-    run_driving_distance_tab()
+    run_driving_distance()
