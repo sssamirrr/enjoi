@@ -140,7 +140,7 @@ def run_driving_distance():
     5. You can **download** the enriched file as Excel once you've processed the desired rows.
     """)
 
-    uploaded_file = st.file_uploader("📂 Upload Excel File (xlsx or xls)", type=["xlsx", "xls"])
+    uploaded_file = st.file_uploader(    "📂 Upload Excel File (xlsx or xls)",     type=["xlsx", "xls"],    key="drivingdistance_file_uploader")
     if uploaded_file is None:
         st.info("Please upload an Excel file to begin.")
         return
