@@ -197,7 +197,7 @@ def run_driving_distance():
         st.session_state["df_enriched"] = df.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0
-        st.session_state["chunk_size"] = 100
+        st.session_state["chunk_size"] = 1000
 
     st.subheader("Driving Distance Lookup Controls")
     if st.button("Process Next Chunk", key="process_next_chunk_driving_distance"):
