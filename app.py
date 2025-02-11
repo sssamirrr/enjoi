@@ -1200,7 +1200,8 @@ with tab9:
 
 with tab10:
    # Instead of st.header("Arrival Map"), call your imported function
-    drivingdistance.run_driving_distance()
+       drivingdistance.run_driving_distance_tab()
+
     
 ############################################
 # Raw Data Viewer
