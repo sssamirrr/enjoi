@@ -16,37 +16,40 @@ RAPIDAPI_HOST = "driving-distance-calculator-between-two-points.p.rapidapi.com"
 
 FIXED_DESTINATION = "2913 S Ocean Blvd, Myrtle Beach, SC 29577"
 
-def build_origin_address(row):
+def get_candidate_addresses(row):
     """
-    Tries to build a valid origin address string from the row.
-    We require at least one of the following combos:
-      - Address1 + City + Zip Code
-      - City + Zip Code
-      - City + State
-      - Address1 + City
-    Returns the constructed string or None if insufficient data.
+    Returns a list of candidate addresses from the row in the following order:
+      1. Street + City + Zip Code
+      2. City + Zip Code
+      3. Street + Zip Code
+      4. Street + City
+      5. City + State
     """
     address1 = str(row.get("Address1", "")).strip()
     city = str(row.get("City", "")).strip()
     state = str(row.get("State", "")).strip()
     zip_code = str(row.get("Zip Code", "")).strip()
-
-    # Some basic priority logic:
+    candidates = []
     if address1 and city and zip_code:
-        return f"{address1}, {city}, {zip_code}"
-    elif city and zip_code:
-        return f"{city}, {zip_code}"
-    elif city and state:
-        return f"{city}, {state}"
-    elif address1 and city:
-        return f"{address1}, {city}"
-    else:
-        return None
+        candidates.append(f"{address1}, {city}, {zip_code}")
+    if city and zip_code:
+        candidates.append(f"{city}, {zip_code}")
+    if address1 and zip_code:
+        candidates.append(f"{address1}, {zip_code}")
+    if address1 and city:
+        candidates.append(f"{address1}, {city}")
+    if city and state:
+        candidates.append(f"{city}, {state}")
+    # Remove duplicates while preserving order
+    unique_candidates = []
+    for candidate in candidates:
+        if candidate not in unique_candidates:
+            unique_candidates.append(candidate)
+    return unique_candidates
 
 def get_driving_info_httpclient(origin_address: str):
     """
-    Calls the driving distance API, passing the origin_address (URL-encoded)
-    and the fixed destination (URL-encoded).
+    Calls the driving distance API with the URL-encoded origin and fixed destination.
     Returns a tuple (distance_in_miles, travel_time) if successful, else (None, None).
     """
     encoded_origin = urllib.parse.quote(origin_address)
@@ -67,11 +70,9 @@ def get_driving_info_httpclient(origin_address: str):
             return None, None
         data = res.read().decode("utf-8")
         st.write(f"[DEBUG] Raw API response (truncated): {data[:500]}...")
-
         response_json = json.loads(data)
         distance_miles = response_json.get("distance_in_miles")
         travel_time = response_json.get("travel_time")  # e.g. "10 hours, 31 minutes"
-
         return distance_miles, travel_time
     except Exception as e:
         st.write(f"[DEBUG] Exception retrieving driving info for '{origin_address}': {e}")
@@ -82,11 +83,7 @@ def get_driving_info_httpclient(origin_address: str):
 def process_next_chunk_driving_distance():
     """
     Processes the next chunk (e.g., 100 rows) in st.session_state["df_enriched"].
-    For each row:
-      - Build an origin address from the row. If invalid or empty, skip.
-      - If Distance in Miles is already set, skip (assuming we already processed it).
-      - Otherwise, call the driving distance API and store the returned data.
-    Advances the current index in session state.
+    For each row, attempts multiple address combinations until a nonzero distance is returned.
     """
     df = st.session_state["df_enriched"]
     start_idx = st.session_state["current_index"]
@@ -102,17 +99,25 @@ def process_next_chunk_driving_distance():
             st.write(f"Row {i+1}: Already has Distance, skipping.")
             continue
 
-        origin = build_origin_address(row)
-        if not origin:
-            st.write(f"Row {i+1}: Not enough data to build a valid address, skipping.")
-            continue
-
-        st.write(f"Row {i+1}: Fetching driving info for origin '{origin}'...")
-        distance_miles, travel_time = get_driving_info_httpclient(origin)
-        df.at[i, "Distance in Miles"] = distance_miles
-        df.at[i, "Travel Time"] = travel_time
-
-        # Short sleep to respect potential rate limits
+        # Retrieve candidate addresses
+        candidates = get_candidate_addresses(row)
+        result_found = False
+        for candidate in candidates:
+            st.write(f"Row {i+1}: Trying candidate address '{candidate}'...")
+            distance_miles, travel_time = get_driving_info_httpclient(candidate)
+            # Check if the API returned a nonzero value. (It might return 0 as int or "0" as a string.)
+            if distance_miles not in (None, 0, "0", 0.0):
+                df.at[i, "Distance in Miles"] = distance_miles
+                df.at[i, "Travel Time"] = travel_time
+                st.write(f"Row {i+1}: Found valid driving info with candidate '{candidate}'.")
+                result_found = True
+                break
+            else:
+                st.write(f"Row {i+1}: Candidate '{candidate}' returned zero distance.")
+        if not result_found:
+            st.write(f"Row {i+1}: All candidate addresses resulted in zero distance. Setting Distance as 0.")
+            df.at[i, "Distance in Miles"] = 0
+            df.at[i, "Travel Time"] = "N/A"
         time.sleep(0.5)
 
     st.session_state["current_index"] = end_idx
@@ -122,30 +127,38 @@ def run_driving_distance():
     """
     Streamlit app that:
       1. Uploads an Excel file with columns: Address1, City, Zip Code (optionally State).
-      2. Builds an origin address from the row, using minimal logic.
-      3. Processes the data in chunks (100 rows at a time) to call the driving-distance API.
+      2. Attempts multiple address constructions per row until a nonzero driving distance is returned.
+      3. Processes the data in chunks (100 rows at a time) via the driving-distance API.
       4. Enriches the data with distance (in miles) and travel time.
-      5. Displays partial progress and allows download of the enriched Excel file.
+      5. Displays progress and allows download of the enriched Excel file.
     """
     st.title("🚗 Driving Distance & Time Lookup")
 
     st.markdown(f"""
     **Instructions**:
     1. **Upload** an Excel file with columns such as **Address1**, **City**, **Zip Code** (and/or **State**).
-    2. For each row, this app attempts to build an origin address. 
+    2. For each row, this app attempts to build an origin address.
        The **destination** is always:
        > {FIXED_DESTINATION}
-    3. The data is processed in chunks (e.g., 100 rows at a time). 
+    3. The data is processed in chunks (e.g., 100 rows at a time).
     4. The final columns **Distance in Miles** and **Travel Time** are added to your dataset.
-    5. You can **download** the enriched file as Excel once you've processed the desired rows.
+    5. If the API returns zero for the first candidate, the app will try:
+       - First with City + Zip Code,
+       - Then Street + Zip,
+       - Then Street + City,
+       - Then City + State.
+    6. You can **download** the enriched file as Excel once you've processed the desired rows.
     """)
 
-    uploaded_file = st.file_uploader(    "📂 Upload Excel File (xlsx or xls)",     type=["xlsx", "xls"],    key="drivingdistance_file_uploader")
+    uploaded_file = st.file_uploader(
+        "📂 Upload Excel File (xlsx or xls)", 
+        type=["xlsx", "xls"],
+        key="drivingdistance_file_uploader"
+    )
     if uploaded_file is None:
         st.info("Please upload an Excel file to begin.")
         return
 
-    # Attempt to read the file
     try:
         df = pd.read_excel(uploaded_file)
     except ImportError:
@@ -158,7 +171,7 @@ def run_driving_distance():
     st.subheader("📊 Preview of Uploaded Data")
     st.dataframe(df.head())
 
-    # Check for at least some columns we might use:
+    # Check for at least one of the required columns
     possible_cols = ["Address1", "City", "Zip Code", "State"]
     if not any(col in df.columns for col in possible_cols):
         st.error(f"⚠️ The uploaded file must have at least one of these columns: {possible_cols}")
@@ -171,17 +184,16 @@ def run_driving_distance():
         if col in df.columns:
             df[col] = df[col].fillna("").astype(str).str.replace("\t", " ", regex=False).str.strip()
 
-    # Ensure "Distance in Miles" and "Travel Time" columns exist
+    # Ensure the enriched columns exist
     if "Distance in Miles" not in df.columns:
         df["Distance in Miles"] = None
     if "Travel Time" not in df.columns:
         df["Travel Time"] = None
 
-    # Initialize session state if it's a new file or not yet done
+    # Initialize session state if it's a new file or hasn't been processed yet
     if ("df_enriched" not in st.session_state or
         "file_name" not in st.session_state or
-        st.session_state["file_name"] != uploaded_file.name
-    ):
+        st.session_state["file_name"] != uploaded_file.name):
         st.session_state["df_enriched"] = df.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0
