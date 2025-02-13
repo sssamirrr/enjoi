@@ -21,7 +21,6 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
     Returns the zestimate value if the call is successful; otherwise, returns None.
     """
     conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
-    # Build the request path with the encoded address.
     path = f"/byaddress?propertyaddress={encoded_address}"
     headers = {
         "x-rapidapi-key": RAPIDAPI_KEY,
@@ -37,7 +36,6 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
         response_str = data.decode("utf-8")
         st.write(f"[DEBUG] Raw API response (truncated): {response_str[:500]}...")
         response_json = json.loads(response_str)
-        # Return the zestimate value
         return response_json.get("zestimate", None)
     except Exception as e:
         st.write(f"[DEBUG] Exception retrieving zestimate for '{original_address}': {e}")
@@ -58,24 +56,24 @@ def process_next_chunk_home_value():
     start_idx = st.session_state["current_index"]
     chunk_size = st.session_state["chunk_size"]
     end_idx = min(start_idx + chunk_size, len(df))
-    
+
     st.write(f"**Processing rows {start_idx+1} to {end_idx}** out of {len(df)}")
-    
+
     for i in range(start_idx, end_idx):
         row = df.loc[i]
         full_address = str(row.get("Full_Address", "")).strip()
         if not full_address:
             st.write(f"Row {i+1}: No valid address, skipping.")
             continue
-        # If Home Value is already set, skip.
         if pd.notnull(row.get("Home Value", None)):
             st.write(f"Row {i+1}: Home Value already set, skipping.")
             continue
-        
+
         encoded_address = urllib.parse.quote(full_address)
         st.write(f"Row {i+1}: Fetching Home Value for '{full_address}'...")
         home_value = get_newest_zestimate_httpclient(encoded_address, full_address)
         df.at[i, "Home Value"] = home_value
+
         time.sleep(0.5)  # To respect rate limits
 
     st.session_state["current_index"] = end_idx
@@ -85,6 +83,7 @@ def run_home_value_tab():
     """
     Streamlit app that:
       1. Uploads an Excel file with columns: Address1, City, Zip Code.
+         (If "Address1" is missing, it will try to use "Address".)
       2. Builds a Full_Address column.
       3. Processes the data in chunks (e.g., 100 rows at a time) to call Zillow's API.
       4. Enriches the data with the newest Zestimate as "Home Value".
@@ -94,7 +93,7 @@ def run_home_value_tab():
 
     st.markdown("""
     **Instructions**:
-    1. **Upload** an Excel file with columns: **Address1**, **City**, **Zip Code**.
+    1. **Upload** an Excel file with columns: **Address1** (or **Address**), **City**, **Zip Code**.
     2. The app will build a full address like `"438 Vitoria Rd, Davenport, FL 33837"`.
     3. The data is processed in chunks (e.g., 100 rows at a time). After each chunk, you can stop or download the current results.
     4. For each valid address, the app calls Zillow's API to retrieve the newest zestimate.
@@ -118,30 +117,47 @@ def run_home_value_tab():
     st.subheader("📊 Preview of Uploaded Data")
     st.dataframe(df.head())
 
-    # Check required columns.
-    required_cols = ["Address1", "City", "Zip Code"]
-    missing_cols = [c for c in required_cols if c not in df.columns]
-    if missing_cols:
-        st.error(f"⚠️ Missing required columns: {missing_cols}")
+    # Determine which column to use for address:
+    # First check "Address1", if not found, then check "Address".
+    if "Address1" in df.columns:
+        address_col = "Address1"
+    elif "Address" in df.columns:
+        address_col = "Address"
+    else:
+        st.error("⚠️ Missing required column: 'Address1' or 'Address'.")
         return
 
-    # Clean and prepare columns.
-    df["Zip Code"] = df["Zip Code"].astype(str).str.replace(".0", "", regex=False).str.strip()
-    df["Address1"] = df["Address1"].fillna("").astype(str).str.replace("\t", " ", regex=False).str.strip()
+    # Check for City and Zip Code.
+    if "City" not in df.columns or "Zip Code" not in df.columns:
+        st.error("⚠️ Missing required columns: 'City' and/or 'Zip Code'.")
+        return
+
+    # Clean up the Zip Code to only its first 5 digits.
+    df["Zip Code"] = (
+        df["Zip Code"]
+        .astype(str)
+        .str.replace(r"[^0-9]", "", regex=True)  # remove non-digit characters
+        .str[:5]                                 # keep only first 5 digits
+    )
+
+    # Prepare address columns (remove tabs, trim whitespace).
+    df[address_col] = df[address_col].fillna("").astype(str).str.replace("\t", " ", regex=False).str.strip()
     df["City"] = df["City"].fillna("").astype(str).str.replace("\t", " ", regex=False).str.strip()
 
-    # Build Full_Address column.
-    df["Full_Address"] = (df["Address1"] + ", " + df["City"] + ", " + df["Zip Code"]).str.strip()
+    # Build Full_Address column using whichever address column is present.
+    df["Full_Address"] = (df[address_col] + ", " + df["City"] + ", " + df["Zip Code"]).str.strip()
 
     st.subheader("📝 Data with Full_Address Column")
-    st.dataframe(df[["Address1", "City", "Zip Code", "Full_Address"]].head(10))
+    st.dataframe(df[[address_col, "City", "Zip Code", "Full_Address"]].head(10))
 
     # Ensure "Home Value" column exists.
     if "Home Value" not in df.columns:
         df["Home Value"] = None
 
-    # Initialize session state for chunk processing if new file.
-    if "df_enriched" not in st.session_state or "file_name" not in st.session_state or st.session_state["file_name"] != uploaded_file.name:
+    # Initialize session state for chunk processing if this is a new upload
+    if ("df_enriched" not in st.session_state 
+        or "file_name" not in st.session_state 
+        or st.session_state["file_name"] != uploaded_file.name):
         st.session_state["df_enriched"] = df.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0
