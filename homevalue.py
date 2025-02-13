@@ -18,7 +18,12 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
     """
     Uses http.client to call the Zillow Working API endpoint `/byaddress`
     with the URL-encoded address.
-    Returns the zestimate value if the call is successful; otherwise, returns None.
+    Returns the zestimate or fallback price if successful; otherwise, returns None.
+    
+    Fallback Logic:
+      1) Try to get 'zestimate' from the JSON.
+      2) If it's missing, null, or zero, try 'Price'.
+      3) If neither is found, return 0.
     """
     conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
     path = f"/byaddress?propertyaddress={encoded_address}"
@@ -36,7 +41,14 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
         response_str = data.decode("utf-8")
         st.write(f"[DEBUG] Raw API response (truncated): {response_str[:500]}...")
         response_json = json.loads(response_str)
-        return response_json.get("zestimate", None)
+
+        # 1) Get 'zestimate'
+        zestimate_val = response_json.get("zestimate", None)
+        # If 'zestimate' is missing, null, 0, or "0", fallback to 'Price'
+        if not zestimate_val:
+            zestimate_val = response_json.get("Price", 0)  # default to 0 if 'Price' is also missing
+        return zestimate_val
+
     except Exception as e:
         st.write(f"[DEBUG] Exception retrieving zestimate for '{original_address}': {e}")
         return None
@@ -45,36 +57,36 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
 
 def process_next_chunk_home_value():
     """
-    Process the next chunk (e.g., 100 rows) in st.session_state["df_enriched"].
+    Process the next chunk (100 rows) in st.session_state["df_enriched"].
     For each row:
       - If Full_Address is invalid or empty, skip.
       - If "Home Value" is already set, skip.
-      - Otherwise, URL-encode the full address, call Zillow's API, and store the returned zestimate.
+      - Otherwise, URL-encode the full address, call Zillow's API, and store the returned zestimate/price.
     Advances the current index in session state.
     """
     df = st.session_state["df_enriched"]
     start_idx = st.session_state["current_index"]
     chunk_size = st.session_state["chunk_size"]
     end_idx = min(start_idx + chunk_size, len(df))
-
+    
     st.write(f"**Processing rows {start_idx+1} to {end_idx}** out of {len(df)}")
-
+    
     for i in range(start_idx, end_idx):
         row = df.loc[i]
         full_address = str(row.get("Full_Address", "")).strip()
         if not full_address:
             st.write(f"Row {i+1}: No valid address, skipping.")
             continue
+        # If Home Value is already set, skip.
         if pd.notnull(row.get("Home Value", None)):
             st.write(f"Row {i+1}: Home Value already set, skipping.")
             continue
-
+        
         encoded_address = urllib.parse.quote(full_address)
         st.write(f"Row {i+1}: Fetching Home Value for '{full_address}'...")
         home_value = get_newest_zestimate_httpclient(encoded_address, full_address)
         df.at[i, "Home Value"] = home_value
-
-        time.sleep(0.5)  # To respect rate limits
+        time.sleep(0.5)  # To respect potential rate limits
 
     st.session_state["current_index"] = end_idx
     st.success(f"Chunk processed! Rows {start_idx+1} to {end_idx} done.")
@@ -82,24 +94,24 @@ def process_next_chunk_home_value():
 def run_home_value_tab():
     """
     Streamlit app that:
-      1. Uploads an Excel file with columns: Address1, City, Zip Code.
-         (If "Address1" is missing, it will try to use "Address".)
-      2. Looks for data in the sheet "Sheet1"; if not found, uses "unqCC".
-      3. Builds a Full_Address column.
-      4. Processes the data in chunks (e.g., 100 rows at a time) to call Zillow's API.
-      5. Enriches the data with the newest Zestimate as "Home Value".
-      6. Displays partial progress and allows download of the enriched Excel file.
+      1. Uploads an Excel file with columns: Address1, City, Zip Code
+         (If "Address1" is missing, it will try "Address" instead).
+      2. Looks for data in the sheet "Sheet1"; if not found, tries "unqCC".
+      3. Builds a Full_Address column by combining the address, city, zip code.
+      4. Processes data in chunks of 100 rows to call Zillow's API for the newest zestimate or price fallback.
+      5. Enriches the data with a "Home Value" column.
+      6. Displays partial progress and allows downloading the enriched Excel file.
     """
-    st.title("🏡 Home Value Lookup via Zillow API (Newest Zestimate)")
+    st.title("🏡 Home Value Lookup via Zillow API (Newest Zestimate/Price Fallback)")
 
     st.markdown("""
     **Instructions**:
     1. **Upload** an Excel file with columns: **Address1** (or **Address**), **City**, **Zip Code**.
-    2. The app will try reading the sheet named **"Sheet1"**. If that doesn't exist, it will look for **"unqCC"**.
-    3. It will then build a full address like `"438 Vitoria Rd, Davenport, FL 33837"`.
-    4. The data is processed in chunks (e.g., 100 rows at a time). After each chunk, you can stop or download the current results.
-    5. For each valid address, the app calls Zillow's API to retrieve the newest zestimate.
-    6. The enriched data with **Home Value** is displayed and can be downloaded as an Excel file.
+    2. The app will try reading from the sheet **"Sheet1"**. If that sheet is not found, it will attempt **"unqCC"**.
+    3. A **Full_Address** column is built like `"438 Vitoria Rd, Davenport, FL 33837"`.
+    4. Data is processed in chunks of 100 rows. After each chunk, you can process more or download the partially-enriched file.
+    5. If 'zestimate' is missing or zero, the code will try 'Price'. If both are missing, it defaults to 0.
+    6. The enriched data with **Home Value** can be downloaded as an Excel file.
     """)
 
     uploaded_file = st.file_uploader("📂 Upload Excel File (xlsx or xls)", type=["xlsx", "xls"])
@@ -107,12 +119,10 @@ def run_home_value_tab():
         st.info("Please upload an Excel file to begin.")
         return
 
-    # 1) Read the Excel file from the correct sheet.
+    # Try reading from "Sheet1", if not found, try "unqCC"
     try:
-        # Try to read from "Sheet1" first
         df = pd.read_excel(uploaded_file, sheet_name="Sheet1")
-    except ValueError as e1:
-        # If "Sheet1" is missing, try "unqCC"
+    except ValueError:
         st.write("[DEBUG] Could not find 'Sheet1', trying 'unqCC'...")
         try:
             df = pd.read_excel(uploaded_file, sheet_name="unqCC")
@@ -126,8 +136,7 @@ def run_home_value_tab():
     st.subheader("📊 Preview of Uploaded Data")
     st.dataframe(df.head())
 
-    # 2) Determine which column to use for address:
-    #    First check "Address1", if not found, then check "Address".
+    # Address column detection
     if "Address1" in df.columns:
         address_col = "Address1"
     elif "Address" in df.columns:
@@ -136,20 +145,21 @@ def run_home_value_tab():
         st.error("⚠️ Missing required column: 'Address1' or 'Address'.")
         return
 
-    # 3) Check for City and Zip Code
+    # Check for City and Zip Code
     if "City" not in df.columns or "Zip Code" not in df.columns:
         st.error("⚠️ Missing required columns: 'City' and/or 'Zip Code'.")
         return
 
-    # 4) Clean up the Zip Code to only its first 5 digits
+    # Clean up the Zip Code to only its first 5 digits
+    # remove non-digits, then slice first 5
     df["Zip Code"] = (
         df["Zip Code"]
         .astype(str)
-        .str.replace(r"[^0-9]", "", regex=True)  # remove non-digit characters
-        .str[:5]                                 # keep only first 5 digits
+        .str.replace(r"[^0-9]", "", regex=True)
+        .str[:5]
     )
 
-    # 5) Prepare address columns (remove tabs, trim whitespace).
+    # Clean address columns (remove tabs, trim whitespace)
     df[address_col] = (
         df[address_col]
         .fillna("")
@@ -165,7 +175,7 @@ def run_home_value_tab():
         .str.strip()
     )
 
-    # 6) Build Full_Address column using whichever address column is present.
+    # Build Full_Address column
     df["Full_Address"] = (
         df[address_col] + ", " + df["City"] + ", " + df["Zip Code"]
     ).str.strip()
@@ -173,18 +183,18 @@ def run_home_value_tab():
     st.subheader("📝 Data with Full_Address Column")
     st.dataframe(df[[address_col, "City", "Zip Code", "Full_Address"]].head(10))
 
-    # 7) Ensure "Home Value" column exists
+    # Ensure "Home Value" column exists
     if "Home Value" not in df.columns:
         df["Home Value"] = None
 
-    # 8) Initialize session state for chunk processing (if new file)
+    # Initialize session state for chunk processing if new file
     if ("df_enriched" not in st.session_state 
         or "file_name" not in st.session_state 
         or st.session_state["file_name"] != uploaded_file.name):
         st.session_state["df_enriched"] = df.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0
-        st.session_state["chunk_size"] = 500
+        st.session_state["chunk_size"] = 100  # Process 100 rows at a time
 
     st.subheader("Home Value Lookup Controls")
     if st.button("Process Next Chunk", key="process_next_chunk_home_value"):
@@ -203,7 +213,11 @@ def run_home_value_tab():
     st.subheader("⬇️ Download Enriched Excel")
     out_buffer = io.BytesIO()
     with pd.ExcelWriter(out_buffer, engine="xlsxwriter") as writer:
-        st.session_state["df_enriched"].to_excel(writer, index=False, sheet_name="Enriched Zestimate")
+        st.session_state["df_enriched"].to_excel(
+            writer,
+            index=False,
+            sheet_name="Enriched Zestimate"
+        )
     out_buffer.seek(0)
     st.download_button(
         label="Download Excel",
