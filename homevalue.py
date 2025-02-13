@@ -47,6 +47,7 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
         # If 'zestimate' is missing, null, 0, or "0", fallback to 'Price'
         if not zestimate_val:
             zestimate_val = response_json.get("Price", 0)  # default to 0 if 'Price' is also missing
+        
         return zestimate_val
 
     except Exception as e:
@@ -57,7 +58,7 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
 
 def process_next_chunk_home_value():
     """
-    Process the next chunk (100 rows) in st.session_state["df_enriched"].
+    Process the next chunk (1500 rows) in st.session_state["df_enriched"].
     For each row:
       - If Full_Address is invalid or empty, skip.
       - If "Home Value" is already set, skip.
@@ -98,7 +99,7 @@ def run_home_value_tab():
          (If "Address1" is missing, it will try "Address" instead).
       2. Looks for data in the sheet "Sheet1"; if not found, tries "unqCC".
       3. Builds a Full_Address column by combining the address, city, zip code.
-      4. Processes data in chunks of 100 rows to call Zillow's API for the newest zestimate or price fallback.
+      4. Processes data in chunks of 1500 rows to call Zillow's API for the newest zestimate or price fallback.
       5. Enriches the data with a "Home Value" column.
       6. Displays partial progress and allows downloading the enriched Excel file.
     """
@@ -109,7 +110,7 @@ def run_home_value_tab():
     1. **Upload** an Excel file with columns: **Address1** (or **Address**), **City**, **Zip Code**.
     2. The app will try reading from the sheet **"Sheet1"**. If that sheet is not found, it will attempt **"unqCC"**.
     3. A **Full_Address** column is built like `"438 Vitoria Rd, Davenport, FL 33837"`.
-    4. Data is processed in chunks of 100 rows. After each chunk, you can process more or download the partially-enriched file.
+    4. Data is processed in chunks of 1500 rows. After each chunk, you can process more or download the partially-enriched file.
     5. If 'zestimate' is missing or zero, the code will try 'Price'. If both are missing, it defaults to 0.
     6. The enriched data with **Home Value** can be downloaded as an Excel file.
     """)
@@ -194,10 +195,10 @@ def run_home_value_tab():
         st.session_state["df_enriched"] = df.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0
-        st.session_state["chunk_size"] = 100  # Process 100 rows at a time
+        st.session_state["chunk_size"] = 1500  # Process 1500 rows at a time
 
     st.subheader("Home Value Lookup Controls")
-    if st.button("Process Next Chunk", key="process_next_chunk_home_value"):
+    if st.button("Process Next 1500 Rows", key="process_next_chunk_home_value"):
         process_next_chunk_home_value()
 
     total_len = len(st.session_state["df_enriched"])
