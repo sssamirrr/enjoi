@@ -1,5 +1,3 @@
-# homevalue.py
-
 import streamlit as st
 import pandas as pd
 import http.client
@@ -23,7 +21,7 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
     Fallback Logic:
       1) Try to get 'zestimate' from the JSON.
       2) If it's missing, null, or zero, try 'Price'.
-      3) If neither is found, return 0.
+      3) If neither is found, return 0 (but we treat 0 as "no real value").
     """
     conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
     path = f"/byaddress?propertyaddress={encoded_address}"
@@ -56,19 +54,33 @@ def get_newest_zestimate_httpclient(encoded_address: str, original_address: str)
     finally:
         conn.close()
 
+
 def process_next_chunk_home_value():
     """
     Process the next chunk (1500 rows) in st.session_state["df_enriched"].
     For each row:
       - If Full_Address is invalid or empty, skip.
-      - If "Home Value" is already set, skip.
-      - Otherwise, URL-encode the full address, call Zillow's API, and store the returned zestimate/price.
+      - If "Home Value" is already set (non-null), skip.
+      - Otherwise:
+          1) URL-encode the full address: Street + City + Zip
+             Call Zillow's API.
+          2) If None or 0, try again with just Street + Zip.
+          3) Store the final result; if none, store 0.
     Advances the current index in session state.
     """
     df = st.session_state["df_enriched"]
     start_idx = st.session_state["current_index"]
     chunk_size = st.session_state["chunk_size"]
     end_idx = min(start_idx + chunk_size, len(df))
+    
+    # Figure out which column is used for "Address" 
+    # (we do this only once outside the loop for performance)
+    if "Address1" in df.columns:
+        address_col = "Address1"
+    elif "Address" in df.columns:
+        address_col = "Address"
+    else:
+        address_col = "Address1"  # fallback if missing (shouldn't happen if data is valid)
     
     st.write(f"**Processing rows {start_idx+1} to {end_idx}** out of {len(df)}")
     
@@ -83,14 +95,34 @@ def process_next_chunk_home_value():
             st.write(f"Row {i+1}: Home Value already set, skipping.")
             continue
         
+        # 1) Attempt with full address (street + city + zip)
         encoded_address = urllib.parse.quote(full_address)
         st.write(f"Row {i+1}: Fetching Home Value for '{full_address}'...")
         home_value = get_newest_zestimate_httpclient(encoded_address, full_address)
+        time.sleep(0.5)  # courtesy sleep to respect rate limits
+
+        # 2) If that returned None or 0, try fallback with street + zip
+        #    (i.e., ignoring City).
+        if not home_value or home_value == 0:
+            fallback_address = f"{row[address_col]}, {row['Zip Code']}"
+            fallback_address = fallback_address.strip().strip(",")
+            st.write(f"Row {i+1}: Trying fallback with '{fallback_address}'...")
+            encoded_fallback_address = urllib.parse.quote(fallback_address)
+            fallback_value = get_newest_zestimate_httpclient(encoded_fallback_address, fallback_address)
+            time.sleep(0.5)  # courtesy sleep for second call
+
+            if fallback_value and fallback_value != 0:
+                home_value = fallback_value
+        
+        # 3) If still None or 0, store zero
+        if not home_value or home_value == 0:
+            home_value = 0
+
         df.at[i, "Home Value"] = home_value
-        time.sleep(0.5)  # To respect potential rate limits
 
     st.session_state["current_index"] = end_idx
     st.success(f"Chunk processed! Rows {start_idx+1} to {end_idx} done.")
+
 
 def run_home_value_tab():
     """
@@ -100,8 +132,9 @@ def run_home_value_tab():
       2. Looks for data in the sheet "Sheet1"; if not found, tries "unqCC".
       3. Builds a Full_Address column by combining the address, city, zip code.
       4. Processes data in chunks of 1500 rows to call Zillow's API for the newest zestimate or price fallback.
-      5. Enriches the data with a "Home Value" column.
-      6. Displays partial progress and allows downloading the enriched Excel file.
+      5. If the first attempt with (street+city+zip) yields no value, it tries (street+zip) only.
+      6. Enriches the data with a "Home Value" column.
+      7. Displays partial progress and allows downloading the enriched Excel file.
     """
     st.title("🏡 Home Value Lookup via Zillow API (Newest Zestimate/Price Fallback)")
 
@@ -112,7 +145,8 @@ def run_home_value_tab():
     3. A **Full_Address** column is built like `"438 Vitoria Rd, Davenport, FL 33837"`.
     4. Data is processed in chunks of 1500 rows. After each chunk, you can process more or download the partially-enriched file.
     5. If 'zestimate' is missing or zero, the code will try 'Price'. If both are missing, it defaults to 0.
-    6. The enriched data with **Home Value** can be downloaded as an Excel file.
+    6. If the address+city+zip call yields no value, we **retry with street+zip only**.
+    7. The enriched data with **Home Value** can be downloaded as an Excel file.
     """)
 
     uploaded_file = st.file_uploader("📂 Upload Excel File (xlsx or xls)", type=["xlsx", "xls"])
