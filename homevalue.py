@@ -184,7 +184,7 @@ def run_home_value_tab():
         st.session_state["df_enriched"] = df.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0
-        st.session_state["chunk_size"] = 100
+        st.session_state["chunk_size"] = 500
 
     st.subheader("Home Value Lookup Controls")
     if st.button("Process Next Chunk", key="process_next_chunk_home_value"):
