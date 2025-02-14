@@ -75,10 +75,61 @@ def run_owners_map():
     if selected_status != "Both":
         df_map = df_map[df_map["TSWcontractStatus"] == selected_status]
 
-    # Show the counts for active and inactive
-    active_count = len(df_map[df_map["TSWcontractStatus"] == "Active"])
-    inactive_count = len(df_map[df_map["TSWcontractStatus"] == "Inactive"])
-    st.write(f"**Active:** {active_count} | **Inactive:** {inactive_count}")
+    # -------------------------
+    # FICO Slider
+    # -------------------------
+    if "FICO" in df_map.columns:
+        min_fico = df_map["FICO"].min()
+        max_fico = df_map["FICO"].max()
+        fico_range = st.slider(
+            "FICO Range",
+            min_value=int(min_fico),
+            max_value=int(max_fico),
+            value=(int(min_fico), int(max_fico))
+        )
+        df_map = df_map[(df_map["FICO"] >= fico_range[0]) & (df_map["FICO"] <= fico_range[1])]
+
+    # -------------------------
+    # Distance in Miles Slider
+    # -------------------------
+    if "Distance in Miles" in df_map.columns:
+        min_dist = df_map["Distance in Miles"].min()
+        max_dist = df_map["Distance in Miles"].max()
+        dist_range = st.slider(
+            "Distance in Miles",
+            min_value=int(min_dist),
+            max_value=int(max_dist),
+            value=(int(min_dist), int(max_dist))
+        )
+        df_map = df_map[(df_map["Distance in Miles"] >= dist_range[0]) & (df_map["Distance in Miles"] <= dist_range[1])]
+
+    # -------------------------
+    # TSWpaymentAmount Slider
+    # -------------------------
+    if "TSWpaymentAmount" in df_map.columns:
+        min_payment = df_map["TSWpaymentAmount"].min()
+        max_payment = df_map["TSWpaymentAmount"].max()
+        payment_range = st.slider(
+            "TSW Payment Amount",
+            min_value=int(min_payment),
+            max_value=int(max_payment),
+            value=(int(min_payment), int(max_payment))
+        )
+        df_map = df_map[(df_map["TSWpaymentAmount"] >= payment_range[0]) & (df_map["TSWpaymentAmount"] <= payment_range[1])]
+
+    # -------------------------
+    # Sum of Amount Financed Slider
+    # -------------------------
+    if "Sum of Amount Financed" in df_map.columns:
+        min_financed = df_map["Sum of Amount Financed"].min()
+        max_financed = df_map["Sum of Amount Financed"].max()
+        financed_range = st.slider(
+            "Sum of Amount Financed",
+            min_value=int(min_financed),
+            max_value=int(max_financed),
+            value=(int(min_financed), int(max_financed))
+        )
+        df_map = df_map[(df_map["Sum of Amount Financed"] >= financed_range[0]) & (df_map["Sum of Amount Financed"] <= financed_range[1])]
 
     # -------------------------
     # Home Value Filter
@@ -127,6 +178,13 @@ def run_owners_map():
         return
 
     st.subheader("Map View by TSW Contract Status")
+
+    # Dynamic count for active and inactive statuses
+    active_count = len(df_map[df_map["TSWcontractStatus"] == "Active"])
+    inactive_count = len(df_map[df_map["TSWcontractStatus"] == "Inactive"])
+
+    # Show dynamic count labels for active and inactive
+    st.write(f"**Active:** {active_count} | **Inactive:** {inactive_count}")
 
     # Color based on contract status
     df_map["Color"] = df_map["TSWcontractStatus"].apply(
