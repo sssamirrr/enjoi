@@ -80,29 +80,56 @@ def run_owners_map():
     inactive_count = len(df_map[df_map["TSWcontractStatus"] == "Inactive"])
     st.write(f"**Active:** {active_count} | **Inactive:** {inactive_count}")
 
-    # ------------------------------------------------
-    # 7) APPLY FILTERS
-    # ------------------------------------------------
-    df_filtered = df_map.copy()
+    # -------------------------
+    # Home Value Filter
+    # -------------------------
+    include_non_numeric_hv = st.checkbox(
+        "Include Non-Numeric Home Value Entries (e.g. 'Apartment', 'Not available')?",
+        value=True
+    )
 
-    # State filter
-    if selected_states:
-        df_filtered = df_filtered[df_filtered["State"].isin(selected_states)]
+    if "Home Value" in df_map.columns:
+        # Convert "Home Value" to numeric => invalid => NaN
+        df_map["Home Value"] = pd.to_numeric(df_map["Home Value"], errors="coerce")
 
-    st.write(f"**Filtered Results**: {len(df_filtered)} row(s).")
-    st.dataframe(df_filtered.head(20))
+        # Get numeric and non-numeric entries separately
+        numeric_values = df_map["Home Value"].dropna()
+        non_numeric_values = df_map[df_map["Home Value"].isna()]
+
+        # Check if user wants to include non-numeric entries
+        if not include_non_numeric_hv:
+            df_map = df_map[df_map["Home Value"].notna()]  # Keep only numeric values
+
+        # Numeric filter with the slider
+        min_home_val = numeric_values.min() if not numeric_values.empty else 0
+        max_home_val = numeric_values.max() if not numeric_values.empty else 9999999
+        home_range = st.slider(
+            "Home Value Range",
+            min_value=float(min_home_val),
+            max_value=float(max_home_val),
+            value=(float(min_home_val), float(max_home_val))
+        )
+
+        # Apply home value filter for numeric data
+        df_map = df_map[
+            (df_map["Home Value"].fillna(-999999999) >= home_range[0]) & 
+            (df_map["Home Value"].fillna(999999999) <= home_range[1])
+        ]
+
+    st.write(f"**Filtered Results**: {len(df_map)} row(s).")
+    st.dataframe(df_map.head(20))
 
     # ------------------------------------------------
     # 8) PLOT MAP (color by TSW contract status)
     # ------------------------------------------------
-    if df_filtered.empty:
+    if df_map.empty:
         st.warning("No data left after filters.")
         return
 
     st.subheader("Map View by TSW Contract Status")
 
     # Color based on contract status
-    df_filtered["Color"] = df_filtered["TSWcontractStatus"].apply(
+    df_map["Color"] = df_map["TSWcontractStatus"].apply(
         lambda x: "green" if x == "Active" else "red" if x == "Inactive" else "gray"
     )
 
@@ -114,7 +141,7 @@ def run_owners_map():
         "Last Name 2",
         "First Name 2",
         "FICO",
-        "HomeValue_Original",
+        "Home Value",
         "Distance in Miles",
         "Sum of Amount Financed",
         "TSWpaymentAmount",
@@ -124,10 +151,10 @@ def run_owners_map():
         "State",
         "Zip Code"
     ]
-    hover_cols = [c for c in hover_cols if c in df_filtered.columns]
+    hover_cols = [c for c in hover_cols if c in df_map.columns]
 
     fig = px.scatter_mapbox(
-        df_filtered,
+        df_map,
         lat="Latitude",
         lon="Longitude",
         color="Color",
