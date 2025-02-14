@@ -59,10 +59,10 @@ def run_owners_map():
         selected_states = []
 
     # -------------------------
-    # TSW Contract Status Filter
+    # TSW Contract Status Filter (Active, Defaulted, or Both)
     # -------------------------
     if "TSWcontractStatus" in df_map.columns:
-        status_options = ["Active", "Inactive", "Both"]
+        status_options = ["Active", "Defaulted", "Both"]
         selected_status = st.selectbox(
             "Filter by Contract Status",
             options=status_options,
@@ -179,16 +179,16 @@ def run_owners_map():
 
     st.subheader("Map View by TSW Contract Status")
 
-    # Dynamic count for active and inactive statuses
+    # Dynamic count for active and default statuses
     active_count = len(df_map[df_map["TSWcontractStatus"] == "Active"])
-    inactive_count = len(df_map[df_map["TSWcontractStatus"] == "Inactive"])
+    default_count = len(df_map[df_map["TSWcontractStatus"] == "Defaulted"])
 
-    # Show dynamic count labels for active and inactive
-    st.write(f"**Active:** {active_count} | **Inactive:** {inactive_count}")
+    # Show dynamic count labels for active and default
+    st.write(f"**Active:** {active_count} | **Defaulted:** {default_count}")
 
     # Color based on contract status
     df_map["Color"] = df_map["TSWcontractStatus"].apply(
-        lambda x: "green" if x == "Active" else "red" if x == "Inactive" else "gray"
+        lambda x: "green" if x == "Active" else "gray"  # Defaulted as gray
     )
 
     # Only include columns actually in the DataFrame
