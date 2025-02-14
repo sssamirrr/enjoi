@@ -74,7 +74,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "OpenPhone Stats",
     "Add Home Value",
     "Add Guest Openphone Status",
-    "Arrival Map"
+    "Arrival Map",
     "Add Driving Distance",  # New tab
     "Owners Map"  # New tab    
 ])
