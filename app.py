@@ -20,6 +20,7 @@ import homevalue  # or from homevalue import run_home_value_tab
 import guestcommunication
 import arrivalmap
 import drivingdistance
+import owners_map
 
 
 
@@ -64,7 +65,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 # Define all s
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "Dashboard",
     "Marketing",
     "Tour Prediction",
@@ -75,6 +76,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "Add Guest Openphone Status",
     "Arrival Map",
     "Add Driving Distance"  # New tab
+    "Owners Map"  # New tab    
 ])
 
 
@@ -1201,6 +1203,10 @@ with tab9:
 with tab10:
    # Instead of st.header("Arrival Map"), call your imported function
        drivingdistance.run_driving_distance()
+
+with tab10:
+   # Instead of st.header("Arrival Map"), call your imported function
+       owners_map.run_owners_map()
 
     
 ############################################
