@@ -16,8 +16,6 @@ def run_owners_map():
     df = pd.read_excel(file_path)
 
     # 3) RENAME LAT/LON COLUMNS IF NEEDED
-    #    Suppose your sheet has "Origin Latitude"/"Origin Longitude"
-    #    Change them to "Latitude"/"Longitude"
     df.rename(
         columns={
             "Origin Latitude": "Latitude",
@@ -48,6 +46,20 @@ def run_owners_map():
     st.subheader("Filters")
 
     # -------------------------
+    # Contract Status Filter
+    # -------------------------
+    if "TSWcontractStatus" in df_map.columns:
+        all_statuses = sorted(df_map["TSWcontractStatus"].dropna().unique())
+        # By default, select all
+        selected_statuses = st.multiselect(
+            "Select Contract Status(es)",
+            options=all_statuses,
+            default=all_statuses
+        )
+    else:
+        selected_statuses = []
+
+    # -------------------------
     # State Filter
     # -------------------------
     if "State" in df_map.columns:
@@ -59,16 +71,13 @@ def run_owners_map():
             default=default_states
         )
     else:
-        # If no "State" column, define empty sets
         selected_states = []
 
     # -------------------------
     # FICO Filter
     # -------------------------
     if "FICO" in df_map.columns:
-        # Convert to numeric
         df_map["FICO"] = pd.to_numeric(df_map["FICO"], errors="coerce")
-        # Grab min/max ignoring NaN
         min_fico_val = df_map["FICO"].min(skipna=True)
         max_fico_val = df_map["FICO"].max(skipna=True)
         if pd.isna(min_fico_val):
@@ -83,28 +92,27 @@ def run_owners_map():
             value=(float(min_fico_val), float(max_fico_val))
         )
     else:
-        fico_range = (0, 850)  # Some default
+        fico_range = (0, 850)
 
     # -------------------------
-    # Home Value Filter
+    # Check box: Include non-numeric home values?
     # -------------------------
     include_non_numeric_hv = st.checkbox(
         "Include Non-Numeric Home Value Entries (e.g. 'Apartment','PO BOX')?",
         value=True
     )
 
+    # -------------------------
+    # Home Value
+    # -------------------------
     if "Home Value" in df_map.columns:
-        # We'll keep an original reference to show in the table
         df_map["HomeValue_Original"] = df_map["Home Value"]
-        # Convert "Home Value" to numeric => invalid => NaN
+        # Coerce to numeric
         df_map["Home Value"] = pd.to_numeric(df_map["Home Value"], errors="coerce")
 
-        # Check how many are numeric vs. non-numeric
         numeric_mask = df_map["Home Value"].notna()
-
-        # If everything is NaN, we skip the numeric filter
         if numeric_mask.sum() == 0:
-            st.warning("All 'Home Value' entries appear to be non-numeric. No numeric filtering will apply.")
+            st.warning("All 'Home Value' entries are non-numeric. No numeric filtering applied.")
             home_range = (0, 9999999)
         else:
             min_home_val = df_map.loc[numeric_mask, "Home Value"].min()
@@ -116,9 +124,8 @@ def run_owners_map():
                 value=(float(min_home_val), float(max_home_val))
             )
     else:
-        # If no column found, do a dummy range
         home_range = (0, 9999999)
-        include_non_numeric_hv = True  # No column => no filter
+        include_non_numeric_hv = True
 
     # -------------------------
     # Distance in Miles Filter
@@ -186,6 +193,10 @@ def run_owners_map():
     # ------------------------------------------------
     df_filtered = df_map.copy()
 
+    # TSWcontractStatus filter
+    if "TSWcontractStatus" in df_filtered.columns and selected_statuses:
+        df_filtered = df_filtered[df_filtered["TSWcontractStatus"].isin(selected_statuses)]
+
     # State filter
     if "State" in df_filtered.columns and selected_states:
         df_filtered = df_filtered[df_filtered["State"].isin(selected_states)]
@@ -199,11 +210,9 @@ def run_owners_map():
 
     # Home Value filter
     if "Home Value" in df_filtered.columns:
-        # If user does NOT want to include non-numeric => drop those rows
         if not include_non_numeric_hv:
-            # Keep only numeric rows
+            # Exclude rows with non-numeric values
             df_filtered = df_filtered[df_filtered["Home Value"].notna()]
-        # Now filter by range
         df_filtered = df_filtered[
             (df_filtered["Home Value"].fillna(-999999999) >= home_range[0]) &
             (df_filtered["Home Value"].fillna(999999999) <= home_range[1])
@@ -234,7 +243,7 @@ def run_owners_map():
     st.dataframe(df_filtered.head(20))
 
     # ------------------------------------------------
-    # 8) PLOT MAP (color by TSWcontractStatus if present)
+    # 8) PLOT MAP
     # ------------------------------------------------
     if df_filtered.empty:
         st.warning("No data left after filters.")
@@ -242,10 +251,10 @@ def run_owners_map():
 
     st.subheader("Map View by TSW Contract Status")
 
-    # If no TSWcontractStatus, default color to something else
+    # We'll color by TSWcontractStatus if present
     color_col = "TSWcontractStatus" if "TSWcontractStatus" in df_filtered.columns else None
 
-    # Only include columns actually in the DataFrame
+    # Hover data
     possible_hover_cols = [
         "OwnerName",
         "Last Name 1",
@@ -253,7 +262,7 @@ def run_owners_map():
         "Last Name 2",
         "First Name 2",
         "FICO",
-        "HomeValue_Original",   # The original string or numeric
+        "HomeValue_Original",   # original text or numeric
         "Distance in Miles",
         "Sum of Amount Financed",
         "TSWpaymentAmount",
@@ -269,7 +278,7 @@ def run_owners_map():
         df_filtered,
         lat="Latitude",
         lon="Longitude",
-        color=color_col,  # can be None
+        color=color_col,  # distinct color per contract status
         hover_data=hover_cols,
         zoom=4,
         height=600
