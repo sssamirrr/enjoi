@@ -1204,7 +1204,7 @@ with tab10:
    # Instead of st.header("Arrival Map"), call your imported function
        drivingdistance.run_driving_distance()
 
-with tab10:
+with tab11:
    # Instead of st.header("Arrival Map"), call your imported function
        owners_map.run_owners_map()
 
