@@ -42,13 +42,45 @@ def run_owners_map():
         st.warning("No valid rows with Latitude/Longitude found. Cannot display map.")
         st.stop()
 
+    # ------------------------------------------------
     # 6) BUILD FILTERS
+    # ------------------------------------------------
     st.subheader("Filters")
 
-    # -- State Filter --
+    # -------------------------
+    # TSWcontractStatus Filter
+    # -------------------------
+    if "TSWcontractStatus" in df_map.columns:
+        # Convert statuses to a consistent form if needed
+        # e.g. strip spaces, unify case, etc.
+        df_map["TSWcontractStatus"] = df_map["TSWcontractStatus"].astype(str).str.strip()
+
+        all_statuses = sorted(df_map["TSWcontractStatus"].dropna().unique())
+        # By default, only show Active/Default (if present)
+        default_statuses = [s for s in ["Active", "Default"] if s in all_statuses]
+
+        # Let the user pick
+        selected_statuses = st.multiselect(
+            "Filter by Contract Status(es)",
+            options=all_statuses,
+            default=default_statuses if default_statuses else all_statuses
+        )
+        # Filter the data
+        df_map = df_map[df_map["TSWcontractStatus"].isin(selected_statuses)]
+    else:
+        st.info("No TSWcontractStatus column found; skipping status filter.")
+
+    # If that filter yields nothing, stop
+    if df_map.empty:
+        st.warning("No data left after TSWcontractStatus filter.")
+        return
+
+    # -------------------------
+    # State Filter
+    # -------------------------
     if "State" in df_map.columns:
         unique_states = sorted(df_map["State"].dropna().unique())
-        default_states = unique_states
+        default_states = unique_states  # show all by default
         selected_states = st.multiselect(
             "Filter by State(s)",
             options=unique_states,
@@ -57,7 +89,11 @@ def run_owners_map():
     else:
         selected_states = []
 
-    # -- FICO Filter --
+    # ...
+    # (The rest of your filters remain exactly as before)
+    # ...
+
+    # FICO Filter
     if "FICO" in df_map.columns:
         df_map["FICO"] = pd.to_numeric(df_map["FICO"], errors="coerce")
         min_fico_val = df_map["FICO"].min(skipna=True)
@@ -75,17 +111,15 @@ def run_owners_map():
     else:
         fico_range = (0, 850)
 
-    # -- Home Value Filter --
+    # Home Value Filter
     include_non_numeric_hv = st.checkbox(
         "Include Non-Numeric Home Value Entries (e.g. 'Apartment','PO BOX')?",
         value=True
     )
-
     if "Home Value" in df_map.columns:
         df_map["HomeValue_Original"] = df_map["Home Value"]
         df_map["Home Value"] = pd.to_numeric(df_map["Home Value"], errors="coerce")
         numeric_mask = df_map["Home Value"].notna()
-
         if numeric_mask.sum() == 0:
             st.warning("All 'Home Value' entries appear to be non-numeric.")
             home_range = (0, 9999999)
@@ -102,7 +136,7 @@ def run_owners_map():
         home_range = (0, 9999999)
         include_non_numeric_hv = True
 
-    # -- Distance in Miles Filter --
+    # Distance in Miles Filter
     if "Distance in Miles" in df_map.columns:
         df_map["Distance in Miles"] = pd.to_numeric(df_map["Distance in Miles"], errors="coerce")
         min_dist_val = df_map["Distance in Miles"].min(skipna=True)
@@ -120,7 +154,7 @@ def run_owners_map():
     else:
         dist_range = (0, 999999)
 
-    # -- Sum of Amount Financed --
+    # Sum of Amount Financed Filter
     if "Sum of Amount Financed" in df_map.columns:
         df_map["Sum of Amount Financed"] = pd.to_numeric(df_map["Sum of Amount Financed"], errors="coerce")
         min_fin_val = df_map["Sum of Amount Financed"].min(skipna=True)
@@ -138,7 +172,7 @@ def run_owners_map():
     else:
         financed_range = (0, 999999999)
 
-    # -- TSW Payment Amount --
+    # TSW Payment Amount Filter
     if "TSWpaymentAmount" in df_map.columns:
         df_map["TSWpaymentAmount"] = pd.to_numeric(df_map["TSWpaymentAmount"], errors="coerce")
         min_pay_val = df_map["TSWpaymentAmount"].min(skipna=True)
@@ -205,24 +239,23 @@ def run_owners_map():
     st.write(f"**Filtered Results**: {len(df_filtered)} row(s).")
     st.dataframe(df_filtered.head(20))
 
-    # ------------------------------------------------
-    # 8) PLOT MAP (color by TSWcontractStatus if present)
-    # ------------------------------------------------
     if df_filtered.empty:
         st.warning("No data left after filters.")
         return
 
+    # ------------------------------------------------
+    # 8) PLOT MAP (with color map for Active/Default)
+    # ------------------------------------------------
     st.subheader("Map View by TSW Contract Status")
 
-    # NOTE 1: Softer colors for Active and Default
+    # Softer color palette for Active & Default
     color_map = {
-        "Active": "#66CC66",   # a softer green
-        "Default": "#FF6666"   # a softer red
+        "Active": "#66CC66",
+        "Default": "#FF6666"
     }
 
     color_col = "TSWcontractStatus" if "TSWcontractStatus" in df_filtered.columns else None
 
-    # Build list of hover columns
     possible_hover_cols = [
         "OwnerName",
         "Last Name 1",
@@ -246,15 +279,15 @@ def run_owners_map():
         df_filtered,
         lat="Latitude",
         lon="Longitude",
-        color=color_col,                     # color by TSWcontractStatus (if present)
-        color_discrete_map=color_map,        # apply custom colors for Active/Default
+        color=color_col,
+        color_discrete_map=color_map,
         hover_data=hover_cols,
         zoom=4,
         height=600
     )
 
-    # NOTE 2: Adjust marker size if you like (e.g. smaller = 7)
-    fig.update_traces(marker=dict(size=7), selector=dict(mode='markers'))
+    # Restore marker size to around 10
+    fig.update_traces(marker=dict(size=10), selector=dict(mode='markers'))
 
     fig.update_layout(mapbox_style="open-street-map")
     fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
