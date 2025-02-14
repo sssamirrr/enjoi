@@ -154,4 +154,55 @@ def run_owners_map():
         # Numeric filter with the slider
         if not numeric_values.empty:
             min_home_val = numeric_values.min()
-            max_home_val = numeric_values.max
+            max_home_val = numeric_values.max()
+            home_range = st.slider(
+                "Home Value Range",
+                min_value=float(min_home_val),
+                max_value=float(max_home_val),
+                value=(float(min_home_val), float(max_home_val))
+            )
+            # Apply home value filter for numeric data
+            df_map = df_map[
+                (df_map["Home Value"].fillna(-999999999) >= home_range[0]) & 
+                (df_map["Home Value"].fillna(999999999) <= home_range[1])
+            ]
+
+    # Display filtered data count
+    st.write(f"**Filtered Results**: {len(df_map)} row(s).")
+    st.dataframe(df_map.head(20))
+
+    # ------------------------------------------------
+    # 8) PLOT MAP (color by TSW contract status)
+    # ------------------------------------------------
+    if df_map.empty:
+        st.warning("No data left after filters.")
+        return
+
+    st.subheader("Map View by TSW Contract Status")
+
+    # Dynamic count for active and default statuses
+    active_count = len(df_map[df_map["TSWcontractStatus"] == "Active"])
+    default_count = len(df_map[df_map["TSWcontractStatus"] == "Defaulted"])
+
+    # Show dynamic count labels for active and default
+    st.write(f"**Active:** {active_count} | **Defaulted:** {default_count}")
+
+    # Color based on contract status
+    df_map["Color"] = df_map["TSWcontractStatus"].apply(
+        lambda x: "green" if x == "Active" else "gray"  # Defaulted as gray
+    )
+
+    # Only include columns actually in the DataFrame
+    hover_cols = [
+        "OwnerName",
+        "Last Name 1",
+        "First Name 1",
+        "Last Name 2",
+        "First Name 2",
+        "FICO",
+        "Home Value",
+        "Distance in Miles",
+        "Sum of Amount Financed",
+        "TSWpaymentAmount",
+        "TSWcontractStatus",
+        "Address
