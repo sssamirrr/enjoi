@@ -1,5 +1,3 @@
-# drivingdistance.py
-
 import streamlit as st
 import pandas as pd
 import http.client
@@ -36,7 +34,6 @@ def parse_travel_time(time_str: str):
     minutes = 0
     seconds = 0
 
-    # Look for patterns like "(\d+) hours?", "(\d+) minutes?", "(\d+) seconds?"
     match_hours = re.search(r"(\d+)\s+hours?", time_str)
     if match_hours:
         hours = int(match_hours.group(1))
@@ -56,13 +53,11 @@ def parse_travel_time(time_str: str):
 def get_driving_info_httpclient(origin_address: str):
     """
     Calls the driving distance API with the URL-encoded origin and FIXED_DESTINATION.
-    Returns a tuple:
-      (
-        distance_in_miles (float or None),
-        travel_time_raw (str, e.g. "10 hours, 31 minutes"),
-        origin_lat (str or None),
-        origin_lon (str or None)
-      )
+    Returns:
+      distance_in_miles (float or None),
+      travel_time_raw (str),
+      origin_lat (str or None),
+      origin_lon (str or None)
     """
     encoded_origin = urllib.parse.quote(origin_address)
     encoded_dest = urllib.parse.quote(FIXED_DESTINATION)
@@ -85,10 +80,10 @@ def get_driving_info_httpclient(origin_address: str):
         st.write(f"[DEBUG] Raw API response (truncated): {data[:250]}...")
         response_json = json.loads(data)
 
-        distance_miles = response_json.get("distance_in_miles")     # e.g. "4.1"
-        travel_time_raw = response_json.get("travel_time")          # e.g. "12 minutes, 49 seconds"
-        origin_lat = response_json.get("origin_latitude")           # e.g. "40.7127281"
-        origin_lon = response_json.get("origin_longitude")          # e.g. "-74.0060152"
+        distance_miles = response_json.get("distance_in_miles")
+        travel_time_raw = response_json.get("travel_time")
+        origin_lat = response_json.get("origin_latitude")
+        origin_lon = response_json.get("origin_longitude")
 
         return distance_miles, travel_time_raw, origin_lat, origin_lon
 
@@ -132,96 +127,13 @@ def get_candidate_addresses(row, address_col: str):
 
     return unique_candidates
 
-def process_next_chunk_driving_distance():
-    """
-    Processes the next chunk (1500 rows) in st.session_state["df_enriched"].
-    For each row, attempts multiple address combinations until a nonzero distance is returned.
-    Stores:
-      - Distance in Miles
-      - Travel Time (h/m)
-      - Driving Time (Minutes)
-      - Origin Latitude
-      - Origin Longitude
-    """
-    df = st.session_state["df_enriched"]
-    start_idx = st.session_state["current_index"]
-    chunk_size = st.session_state["chunk_size"]
-    end_idx = min(start_idx + chunk_size, len(df))
-
-    address_col = st.session_state["address_col"]  # which column to use for address
-
-    st.write(f"**Processing rows {start_idx+1} to {end_idx}** out of {len(df)}")
-
-    for i in range(start_idx, end_idx):
-        row = df.loc[i]
-
-        # If Distance in Miles is already populated, skip
-        if pd.notnull(row.get("Distance in Miles", None)):
-            st.write(f"Row {i+1}: Already has Distance, skipping.")
-            continue
-
-        # Get a list of candidate addresses for this row
-        candidates = get_candidate_addresses(row, address_col)
-        result_found = False
-
-        # Try each candidate address until we find a nonzero distance
-        for candidate in candidates:
-            st.write(f"Row {i+1}: Trying candidate address '{candidate}'...")
-            (
-                distance_miles,
-                travel_time_raw,
-                origin_lat,
-                origin_lon
-            ) = get_driving_info_httpclient(candidate)
-
-            # Check if the API returned a nonzero distance
-            if distance_miles not in (None, 0, "0", 0.0):
-                # Parse the travel time into "h/m" format and total minutes
-                travel_time_hm, total_minutes = parse_travel_time(travel_time_raw)
-
-                # Store the results in the DataFrame
-                df.at[i, "Distance in Miles"] = distance_miles
-                df.at[i, "Travel Time (h/m)"] = travel_time_hm
-                df.at[i, "Driving Time (Minutes)"] = round(total_minutes, 2)
-                df.at[i, "Origin Latitude"] = origin_lat
-                df.at[i, "Origin Longitude"] = origin_lon
-
-                st.write(f"Row {i+1}: Found valid driving info with candidate '{candidate}'.")
-                result_found = True
-                break
-            else:
-                st.write(f"Row {i+1}: Candidate '{candidate}' returned zero distance or no data.")
-
-        # If all candidates returned zero or no data, set distance to 0
-        if not result_found:
-            st.write(f"Row {i+1}: All candidate addresses resulted in zero distance. Setting Distance as 0.")
-            df.at[i, "Distance in Miles"] = 0
-            df.at[i, "Travel Time (h/m)"] = "0h 0m"
-            df.at[i, "Driving Time (Minutes)"] = 0
-            df.at[i, "Origin Latitude"] = None
-            df.at[i, "Origin Longitude"] = None
-
-        time.sleep(0.5)  # rate limit respect
-
-    st.session_state["current_index"] = end_idx
-    st.success(f"Chunk processed! Rows {start_idx+1} to {end_idx} done.")
-
 def run_driving_distance():
     """
     Streamlit app that:
       1. Uploads an Excel file with columns: (Address1 or Address), City, Zip Code, optionally State.
-      2. Reads the Excel file (default sheet).
-      3. Truncates Zip Code to its first 5 digits (removing non-digit chars).
-      4. Figures out which column to use for addresses (Address1 vs. Address).
-      5. Processes data in chunks of 1500 rows:
-         - For each row, tries multiple address combos until we get a nonzero distance from the API.
-      6. Stores:
-         - "Distance in Miles"
-         - "Travel Time (h/m)"
-         - "Driving Time (Minutes)"
-         - "Origin Latitude"
-         - "Origin Longitude"
-      7. Displays partial progress and allows downloading the enriched dataset as Excel.
+      2. Reads the file, cleans data, and sets up session state for results.
+      3. Processes data in chunks of 1500 rows, calling an API for driving distance & time.
+      4. Shows partial progress, allows chunk-by-chunk processing, and final download.
     """
     st.title("🚗 Driving Distance & Time Lookup")
 
@@ -245,7 +157,7 @@ def run_driving_distance():
     5. The final columns include:
        - **Distance in Miles**
        - **Travel Time (h/m)** (e.g. "2h 15m")
-       - **Driving Time (Minutes)** (numeric)
+       - **Driving Time (Minutes)**
        - **Origin Latitude**
        - **Origin Longitude**
     6. You can **download** the enriched file as Excel anytime.
@@ -256,11 +168,13 @@ def run_driving_distance():
         type=["xlsx", "xls"],
         key="drivingdistance_file_uploader"
     )
+
+    # If no file is uploaded, don't proceed further.
     if uploaded_file is None:
         st.info("Please upload an Excel file to begin.")
         return
 
-    # 1) Read the Excel file (default sheet)
+    # Read the Excel file (default sheet)
     try:
         df = pd.read_excel(uploaded_file)
     except ImportError:
@@ -273,7 +187,7 @@ def run_driving_distance():
     st.subheader("📊 Preview of Uploaded Data")
     st.dataframe(df.head())
 
-    # 2) Determine which address column to use
+    # Determine which address column to use
     if "Address1" in df.columns:
         address_col = "Address1"
     elif "Address" in df.columns:
@@ -282,12 +196,12 @@ def run_driving_distance():
         st.error("⚠️ Missing required column: 'Address1' or 'Address'.")
         return
 
-    # 3) Check for City, Zip Code, etc.
+    # Check for City, Zip Code, etc.
     if "City" not in df.columns or "Zip Code" not in df.columns:
         st.error("⚠️ Missing required columns: 'City' and/or 'Zip Code'.")
         return
 
-    # 4) Clean up the Zip Code to only its first 5 digits (remove non-digit characters)
+    # Clean up the Zip Code to only its first 5 digits (remove non-digit characters)
     df["Zip Code"] = (
         df["Zip Code"]
         .astype(str)
@@ -295,7 +209,7 @@ def run_driving_distance():
         .str[:5]                                 # keep only first 5
     )
 
-    # 5) Clean/prepare columns
+    # Clean/prepare address, city, state columns
     for col_name in [address_col, "City", "State"]:
         if col_name in df.columns:
             df[col_name] = (
@@ -306,7 +220,7 @@ def run_driving_distance():
                 .str.strip()
             )
 
-    # 6) Ensure the enriched columns exist
+    # Ensure the enriched columns exist
     if "Distance in Miles" not in df.columns:
         df["Distance in Miles"] = None
     if "Travel Time (h/m)" not in df.columns:
@@ -318,18 +232,90 @@ def run_driving_distance():
     if "Origin Longitude" not in df.columns:
         df["Origin Longitude"] = None
 
-    # 7) Initialize session state if new file or not processed yet
-    if ("df_enriched" not in st.session_state
+    # Initialize session state if it's a new file or not processed yet
+    if (
+        "df_enriched" not in st.session_state
         or "file_name" not in st.session_state
-        or st.session_state["file_name"] != uploaded_file.name):
+        or st.session_state["file_name"] != uploaded_file.name
+    ):
         st.session_state["df_enriched"] = df.copy()
         st.session_state["file_name"] = uploaded_file.name
         st.session_state["current_index"] = 0
-        st.session_state["chunk_size"] = 1500  # CHANGED TO 1500
+        st.session_state["chunk_size"] = 1500  # You can adjust as needed
         st.session_state["address_col"] = address_col
 
+    def process_next_chunk_driving_distance():
+        """
+        Processes the next chunk (1500 rows) in st.session_state["df_enriched"].
+        For each row, attempts multiple address combinations until a nonzero distance is returned.
+        Stores:
+          - Distance in Miles
+          - Travel Time (h/m)
+          - Driving Time (Minutes)
+          - Origin Latitude
+          - Origin Longitude
+        """
+        df_local = st.session_state["df_enriched"]
+        start_idx = st.session_state["current_index"]
+        chunk_size = st.session_state["chunk_size"]
+        end_idx = min(start_idx + chunk_size, len(df_local))
+
+        address_col_local = st.session_state["address_col"]  # which column to use for address
+
+        st.write(f"**Processing rows {start_idx+1} to {end_idx}** out of {len(df_local)}")
+
+        for i in range(start_idx, end_idx):
+            row = df_local.loc[i]
+
+            # If Distance in Miles is already populated, skip
+            if pd.notnull(row.get("Distance in Miles", None)):
+                st.write(f"Row {i+1}: Already has Distance, skipping.")
+                continue
+
+            # Generate candidate addresses for this row
+            candidates = get_candidate_addresses(row, address_col_local)
+            result_found = False
+
+            # Try each candidate address until we find a nonzero distance
+            for candidate in candidates:
+                st.write(f"Row {i+1}: Trying candidate address '{candidate}'...")
+                distance_miles, travel_time_raw, origin_lat, origin_lon = get_driving_info_httpclient(candidate)
+
+                # Check if the API returned a nonzero distance
+                if distance_miles not in (None, 0, "0", 0.0):
+                    travel_time_hm, total_minutes = parse_travel_time(travel_time_raw)
+
+                    # Store results
+                    df_local.at[i, "Distance in Miles"] = distance_miles
+                    df_local.at[i, "Travel Time (h/m)"] = travel_time_hm
+                    df_local.at[i, "Driving Time (Minutes)"] = round(total_minutes, 2)
+                    df_local.at[i, "Origin Latitude"] = origin_lat
+                    df_local.at[i, "Origin Longitude"] = origin_lon
+
+                    st.write(f"Row {i+1}: Found valid driving info with '{candidate}'.")
+                    result_found = True
+                    break
+                else:
+                    st.write(f"Row {i+1}: Candidate '{candidate}' returned zero or no data.")
+
+            # If all candidates failed, set distance to 0
+            if not result_found:
+                st.write(f"Row {i+1}: All candidates gave zero distance. Setting Distance as 0.")
+                df_local.at[i, "Distance in Miles"] = 0
+                df_local.at[i, "Travel Time (h/m)"] = "0h 0m"
+                df_local.at[i, "Driving Time (Minutes)"] = 0
+                df_local.at[i, "Origin Latitude"] = None
+                df_local.at[i, "Origin Longitude"] = None
+
+            # Sleep to respect possible API rate limits
+            time.sleep(0.5)
+
+        # Update session state
+        st.session_state["current_index"] = end_idx
+        st.success(f"Chunk processed! Rows {start_idx+1} to {end_idx} done.")
+
     st.subheader("Driving Distance Lookup Controls")
-    if st.button("Process Next 1500 Rows", key="process_next_chunk_driving_distance"):
+    if st.button("Process Next 1500 Rows"):
         process_next_chunk_driving_distance()
 
     total_len = len(st.session_state["df_enriched"])
@@ -359,4 +345,5 @@ def run_driving_distance():
     )
 
 if __name__ == "__main__":
+    # Always run the app with: streamlit run drivingdistance.py
     run_driving_distance()
