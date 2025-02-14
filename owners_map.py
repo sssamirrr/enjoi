@@ -205,4 +205,26 @@ def run_owners_map():
         "Sum of Amount Financed",
         "TSWpaymentAmount",
         "TSWcontractStatus",
-        "Address
+        "Address",
+        "City",
+        "State",
+        "Zip Code"
+    ]
+    hover_cols = [c for c in hover_cols if c in df_map.columns]
+
+    fig = px.scatter_mapbox(
+        df_map,
+        lat="Latitude",
+        lon="Longitude",
+        color="Color",
+        hover_data=hover_cols,
+        zoom=4,
+        height=600
+    )
+    fig.update_layout(mapbox_style="open-street-map")
+    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    st.plotly_chart(fig, use_container_width=True)
+
+# Streamlit entry point
+if __name__ == "__main__":
+    run_owners_map()
