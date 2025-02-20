@@ -5,18 +5,20 @@ import os
 
 def run_owners_map():
     st.title("Timeshare Owners Map")
-    file_path = "Owners enriched with home value and driving distance.xlsx"
+
+    # 1) LOAD THE EXCEL FILE
+    file_path = "Owners home value and driving distance.xlsx"
     if not os.path.exists(file_path):
         st.error(f"File not found: {file_path}")
         st.stop()
 
     df = pd.read_excel(file_path)
-    original_count = len(df)  # track how many we start with
+    original_count = len(df)  # how many rows we start with
 
-    # A list to store filter summary messages
+    # We'll store filter steps in a list of messages
     filter_messages = []
 
-    # Helper function to track how many rows a given filter removes
+    # Helper function to track how many rows each filter removes
     def apply_filter(df, mask, description):
         old_len = len(df)
         filtered = df[mask]
@@ -25,7 +27,7 @@ def run_owners_map():
             filter_messages.append(f"- {removed} row(s) removed by {description}")
         return filtered
 
-    # Rename lat/lon if needed
+    # 2) RENAME LAT/LON COLUMNS IF NEEDED
     if "Origin Latitude" in df.columns and "Origin Longitude" in df.columns:
         df.rename(columns={
             "Origin Latitude": "Latitude",
@@ -43,7 +45,7 @@ def run_owners_map():
 
     st.subheader("Filters")
 
-    # ------------------------- 
+    # -------------------------
     # State Filter
     # -------------------------
     if "State" in df.columns:
@@ -83,16 +85,13 @@ def run_owners_map():
         df = apply_filter(df, mask, f"Distance in [{dist_range[0]}, {dist_range[1]}]")
 
     # -------------------------
-    # TSW Payment Amount (fill NaN with 0)
+    # TSW Payment Amount (fill blanks with 0)
     # -------------------------
     if "TSWpaymentAmount" in df.columns:
-        # Make sure TSWpaymentAmount is numeric; fill blanks with 0
         df["TSWpaymentAmount"] = pd.to_numeric(df["TSWpaymentAmount"], errors="coerce").fillna(0)
-
         min_payment = df["TSWpaymentAmount"].min()
         max_payment = df["TSWpaymentAmount"].max()
-        payment_range = st.slider("TSW Payment Amount",
-                                  int(min_payment), int(max_payment),
+        payment_range = st.slider("TSW Payment Amount", int(min_payment), int(max_payment),
                                   (int(min_payment), int(max_payment)))
         mask = (df["TSWpaymentAmount"] >= payment_range[0]) & (df["TSWpaymentAmount"] <= payment_range[1])
         df = apply_filter(df, mask, f"TSW Payment in [{payment_range[0]}, {payment_range[1]}]")
@@ -103,8 +102,7 @@ def run_owners_map():
     if "Sum of Amount Financed" in df.columns:
         min_financed = df["Sum of Amount Financed"].min()
         max_financed = df["Sum of Amount Financed"].max()
-        financed_range = st.slider("Sum of Amount Financed",
-                                   int(min_financed), int(max_financed),
+        financed_range = st.slider("Sum of Amount Financed", int(min_financed), int(max_financed),
                                    (int(min_financed), int(max_financed)))
         mask = (df["Sum of Amount Financed"] >= financed_range[0]) & (df["Sum of Amount Financed"] <= financed_range[1])
         df = apply_filter(df, mask, f"Amount Financed in [{financed_range[0]}, {financed_range[1]}]")
@@ -128,8 +126,9 @@ def run_owners_map():
 
         mask_positive = (df["Home Value"] > 0) & (df["Home Value"] >= hv_range[0]) & (df["Home Value"] <= hv_range[1])
         mask_negative = (df["Home Value"] < 0) & include_negative
-        combined = mask_positive | mask_negative
-        df = apply_filter(df, combined, f"Home Value in [{hv_range[0]}, {hv_range[1]}], negative={include_negative}")
+        combined_mask = mask_positive | mask_negative
+        df = apply_filter(df, combined_mask,
+                          f"Home Value in [{hv_range[0]}, {hv_range[1]}], negative={include_negative}")
 
     # -------------------------------------------------
     # SHOW FINAL FILTER RESULTS
@@ -143,47 +142,45 @@ def run_owners_map():
         for msg in filter_messages:
             st.write(msg)
 
-    st.dataframe(df.head(30))
+    st.dataframe(df.head(20))
 
     if df.empty:
         st.warning("No data left after filters.")
         return
 
     # -------------------------------------------------
-    # PLOT THE MAP
+    # MAP PLOT
     # -------------------------------------------------
     if "Latitude" not in df.columns or "Longitude" not in df.columns:
-        st.info("No 'Latitude'/'Longitude' columns to map.")
+        st.info("No 'Latitude'/'Longitude' columns. No map to display.")
         return
 
     before_map = len(df)
-    map_df = df.dropna(subset=["Latitude","Longitude"])
+    map_df = df.dropna(subset=["Latitude", "Longitude"])
     excluded_map = before_map - len(map_df)
     if excluded_map > 0:
-        st.write(f"Excluded {excluded_map} row(s) with missing Lat/Lon for the map plot.")
+        st.write(f"Excluded {excluded_map} row(s) with missing Lat/Lon for map plot.")
 
     if map_df.empty:
-        st.warning("No rows with valid lat/lon to plot.")
+        st.warning("No valid lat/lon to display on map.")
         return
 
-    # Use LIGHT GREEN (#90ee90) for "Active" and LIGHT RED (#ff9999) for "Defaulted"
-    def pick_color(status):
-        if status == "Active":
-            return "#90ee90"  # light green
-        elif status == "Defaulted":
-            return "#ff9999"  # light red
-        else:
-            return "blue"
-
-    if "TSWcontractStatus" in map_df.columns:
-        map_df["Color"] = map_df["TSWcontractStatus"].apply(pick_color)
-    else:
-        map_df["Color"] = "blue"
+    # Approach A: Let Plotly color by TSWcontractStatus, using color_discrete_map
+    # Light green (#90ee90) for "Active", light red (#ff9999) for "Defaulted"
+    # Any other statuses => fallback color
+    color_map = {
+        "Active": "#90ee90",    # light green
+        "Defaulted": "#ff9999" # light red
+    }
 
     hover_cols = [
-        "OwnerName", "Last Name 1", "First Name 1", "Last Name 2", "First Name 2",
-        "FICO", "Home Value", "Distance in Miles", "Sum of Amount Financed",
-        "TSWpaymentAmount", "TSWcontractStatus", "Address", "City", "State", "Zip Code"
+        "OwnerName",
+        "Last Name 1", "First Name 1",
+        "Last Name 2", "First Name 2",
+        "FICO", "Home Value",
+        "Distance in Miles", "Sum of Amount Financed",
+        "TSWpaymentAmount", "TSWcontractStatus",
+        "Address", "City", "State", "Zip Code"
     ]
     hover_cols = [c for c in hover_cols if c in map_df.columns]
 
@@ -192,7 +189,8 @@ def run_owners_map():
         lat="Latitude",
         lon="Longitude",
         hover_data=hover_cols,
-        color="Color",
+        color="TSWcontractStatus",
+        color_discrete_map=color_map,
         zoom=4,
         height=600
     )
@@ -200,5 +198,6 @@ def run_owners_map():
     fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig, use_container_width=True)
 
+# Run in Streamlit
 if __name__ == "__main__":
     run_owners_map()
