@@ -124,7 +124,7 @@ def run_owners_map():
     #    Renamed UI text as requested
     # ------------------------------------------------------------------
     if "Home Value" in df_home.columns:
-        st.markdown("### Home Value Options (numeric & non‐numeric)")
+        st.markdown("### Home Value Available")
 
         # Keep original in HV_original
         df_home["HV_original"] = df_home["Home Value"].astype(str)
@@ -149,7 +149,7 @@ def run_owners_map():
         df_home["HV_numeric"] = df_home.apply(to_hv_numeric, axis=1)
 
         # "Include rows with numeric Home Value?"
-        include_numeric = st.checkbox("Include rows with numeric Home Value?", value=True)
+        include_numeric = st.checkbox("Include rows with without home value", value=True)
 
         # Non‐numeric heading
         st.write("#### Include homes without a numeric Home Value?")
