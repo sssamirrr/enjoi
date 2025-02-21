@@ -29,10 +29,13 @@ def run_owners_map():
 
     # Rename lat/lon columns if they exist
     if "Origin Latitude" in df_home.columns and "Origin Longitude" in df_home.columns:
-        df_home.rename(columns={
-            "Origin Latitude": "Latitude",
-            "Origin Longitude": "Longitude"
-        }, inplace=True)
+        df_home.rename(
+            columns={
+                "Origin Latitude": "Latitude",
+                "Origin Longitude": "Longitude"
+            },
+            inplace=True
+        )
 
     # Convert lat/lon to numeric (if they exist)
     df_home["Latitude"] = pd.to_numeric(df_home.get("Latitude"), errors="coerce")
@@ -113,11 +116,17 @@ def run_owners_map():
         fmin = math.floor(fin_min_val)
         fmax = math.ceil(fin_max_val)
         financed_range = st.slider("Sum of Amount Financed", fmin, fmax, (fmin, fmax))
-        mask = (df_home["Sum of Amount Financed"] >= financed_range[0]) & (df_home["Sum of Amount Financed"] <= financed_range[1])
-        df_home = apply_filter(df_home, mask, f"Sum of Amount Financed in [{financed_range[0]}, {financed_range[1]}]")
+        mask = (
+            (df_home["Sum of Amount Financed"] >= financed_range[0]) 
+            & (df_home["Sum of Amount Financed"] <= financed_range[1])
+        )
+        df_home = apply_filter(
+            df_home, mask, 
+            f"Sum of Amount Financed in [{financed_range[0]}, {financed_range[1]}]"
+        )
 
     # ------------------------------------------------------------------
-    # HOME VALUE => Renamed as "Owner Filter"
+    # HOME VALUE => "Owner Filter"
     # ------------------------------------------------------------------
     if "Home Value" in df_home.columns:
         st.markdown("### Owner Filter")
@@ -132,12 +141,12 @@ def run_owners_map():
         non_numeric_mask = df_home["HV_numeric"].isna()
         non_numeric_vals = sorted(df_home.loc[non_numeric_mask, "HV_original"].unique())
 
-        # Make a dictionary from text => unique negative code
+        # Map each distinct non‐numeric text to a unique negative code
         text2neg = {}
         for i, txt in enumerate(non_numeric_vals, start=1):
             text2neg[txt] = -float(i)
 
-        # Convert HV_numeric
+        # Convert HV_numeric to negative code if non-numeric
         def to_hv_numeric(row):
             if pd.isna(row["HV_numeric"]):
                 return text2neg[row["HV_original"]]
@@ -150,8 +159,9 @@ def run_owners_map():
             "Include homes with a positive (numeric) Home Value?",
             value=True
         )
-        # Show slider right underneath, only if that checkbox is checked
-        hv_range = (0, 0)
+
+        # Show numeric slider immediately after the checkbox (if checked)
+        numeric_min, numeric_max = (0.0, 0.0)
         if include_pos_numeric:
             pos_mask = df_home["HV_numeric"] > 0
             if pos_mask.any():
@@ -159,7 +169,7 @@ def run_owners_map():
                 hv_max = df_home.loc[pos_mask, "HV_numeric"].max()
                 hv_floor = math.floor(hv_min)
                 hv_ceil = math.ceil(hv_max)
-                hv_range = st.slider(
+                numeric_min, numeric_max = st.slider(
                     "Numeric Home Value Range",
                     float(hv_floor),
                     float(hv_ceil),
@@ -168,7 +178,7 @@ def run_owners_map():
             else:
                 st.info("No positive Home Values found.")
 
-        # B) Now handle the non‐numeric items
+        # B) Non‐numeric items below that
         st.markdown("#### Non‐Numeric Home Values")
         st.write("(Check each one you want to keep)")
 
@@ -178,22 +188,23 @@ def run_owners_map():
             is_checked = st.checkbox(f"Include '{txt}'", value=True)
             keep_map[neg_code] = is_checked
 
-        # Build a single mask function for all home‐value logic
+        # Single mask for all home‐value logic
         def hv_filter(row):
             val = row["HV_numeric"]
             if val < 0:
-                # This row had non‐numeric home value => keep if user’s checkbox
+                # Non‐numeric => keep if user’s checkbox
                 return keep_map.get(val, False)
             else:
-                # Numeric => keep only if user wants numeric
+                # Numeric => keep only if checkbox is enabled + in slider range
                 if include_pos_numeric:
-                    return (val >= hv_range[0]) and (val <= hv_range[1])
+                    return (val >= numeric_min) and (val <= numeric_max)
                 else:
                     return False
 
         hv_mask = df_home.apply(hv_filter, axis=1)
         df_home = apply_filter(df_home, hv_mask,
-            "Owner Filter (Home Value, numeric+non‐numeric)")
+            "Owner Filter (Home Value, numeric+non‐numeric)"
+        )
 
     # ------------------------------------------------------------------
     # Final results and Removals
@@ -216,7 +227,7 @@ def run_owners_map():
         st.warning("No data left after filters.")
         return
 
-    # Summaries for TSW statuses
+    # Summaries for TSW statuses (Active/Defaulted)
     if "TSWcontractStatus" in df_home.columns:
         total_remaining = len(df_home)
         active_count = len(df_home[df_home["TSWcontractStatus"] == "Active"])
@@ -225,8 +236,8 @@ def run_owners_map():
             active_pct = (active_count / total_remaining) * 100
             defaulted_pct = (defaulted_count / total_remaining) * 100
         else:
-            active_pct = 0
-            defaulted_pct = 0
+            active_pct = 0.0
+            defaulted_pct = 0.0
 
         st.write(
             f"**Active**: {active_count} ({active_pct:.2f}%) | "
@@ -256,7 +267,8 @@ def run_owners_map():
         "Defaulted": "#ff9999"  # light red
     }
     hover_cols = [
-        "OwnerName", "Last Name 1", "First Name 1", "Last Name 2", "First Name 2",
+        "OwnerName", "Last Name 1", "First Name 1",
+        "Last Name 2", "First Name 2",
         "FICO", "Home Value", "HV_original", "HV_numeric",
         "Distance in Miles", "Sum of Amount Financed",
         "TSWpaymentAmount", "TSWcontractStatus",
