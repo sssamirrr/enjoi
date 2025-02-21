@@ -38,6 +38,9 @@ def run_owners_map():
     df_home["Latitude"] = pd.to_numeric(df_home.get("Latitude"), errors="coerce")
     df_home["Longitude"] = pd.to_numeric(df_home.get("Longitude"), errors="coerce")
 
+    # ------------------------------------------------------------------
+    # Instead of showing a data preview at the top, we skip that.
+    # ------------------------------------------------------------------
     st.subheader("Filters")
 
     # ------------------------------------------------------------------
@@ -80,7 +83,7 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"FICO in [{fico_range[0]}, {fico_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 5) Distance in Miles Slider
+    # 5) Distance in Miles
     # ------------------------------------------------------------------
     if "Distance in Miles" in df_home.columns:
         dist_min_val = df_home["Distance in Miles"].min()
@@ -92,7 +95,7 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"Distance in [{dist_range[0]}, {dist_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 6) TSW Payment Amount Slider
+    # 6) TSW Payment Amount
     # ------------------------------------------------------------------
     if "TSWpaymentAmount" in df_home.columns:
         df_home["TSWpaymentAmount"] = pd.to_numeric(df_home["TSWpaymentAmount"], errors="coerce").fillna(0)
@@ -105,7 +108,7 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"TSWpaymentAmount in [{pay_range[0]}, {pay_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 7) Sum of Amount Financed Slider
+    # 7) Sum of Amount Financed
     # ------------------------------------------------------------------
     if "Sum of Amount Financed" in df_home.columns:
         fin_min_val = df_home["Sum of Amount Financed"].min()
@@ -117,24 +120,27 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"Sum of Amount Financed in [{financed_range[0]}, {financed_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 8) HOME VALUE: First parse and handle numeric slider
+    # 8) HOME VALUE: Non-numeric => unique negative codes
+    #    Renamed UI text as requested
     # ------------------------------------------------------------------
     if "Home Value" in df_home.columns:
+        st.markdown("### Home Value Available")
+
         # Keep original in HV_original
         df_home["HV_original"] = df_home["Home Value"].astype(str)
         # Attempt parse => NaN if not numeric
         df_home["HV_numeric"] = pd.to_numeric(df_home["Home Value"], errors="coerce")
 
-        # Identify any non-numeric
+        # Identify non‐numeric values
         non_numeric_mask = df_home["HV_numeric"].isna()
         non_numeric_vals = sorted(df_home.loc[non_numeric_mask, "HV_original"].unique())
 
-        # Map each distinct non-numeric text to a unique negative code
+        # Make a dictionary from text => unique negative code
         text2neg = {}
         for i, txt in enumerate(non_numeric_vals, start=1):
             text2neg[txt] = -float(i)
 
-        # Convert HV_numeric so that non-numerics become negative codes
+        # Convert HV_numeric
         def to_hv_numeric(row):
             if pd.isna(row["HV_numeric"]):
                 return text2neg[row["HV_original"]]
@@ -142,65 +148,67 @@ def run_owners_map():
                 return row["HV_numeric"]
         df_home["HV_numeric"] = df_home.apply(to_hv_numeric, axis=1)
 
-        # Now display the slider for the numeric portion:
-        # We'll only consider the positive portion in this slider
-        # so the user can filter "normal" numeric home values
-        st.markdown("### Numeric Home Value Range")
-        pos_mask = (df_home["HV_numeric"] > 0)
-        if pos_mask.any():
-            hv_min = df_home.loc[pos_mask, "HV_numeric"].min()
-            hv_max = df_home.loc[pos_mask, "HV_numeric"].max()
-            hv_floor = math.floor(hv_min)
-            hv_ceil = math.ceil(hv_max)
-            hv_range = st.slider(
-                "Numeric Home Value Range",
-                float(hv_floor),
-                float(hv_ceil),
-                (float(hv_floor), float(hv_ceil))
-            )
-        else:
-            hv_range = (0.0, 0.0)
-            st.info("No positive numeric home values found.")
+        # "Include rows with numeric Home Value?"
+        include_numeric = st.checkbox("Include rows with without home value", value=True)
 
-        # ------------------------------------------------------------------
-        # 9) Non-Numeric Home Value Checkboxes
-        # ------------------------------------------------------------------
-        st.markdown("### Non‐Numeric Home Values")
-        st.write("(Check each one you want to keep)")
-
+        # Non‐numeric heading
+        st.write("#### Include Homes Without Home Value:")
         keep_map = {}
         for txt in non_numeric_vals:
             neg_code = text2neg[txt]
-            label = f"Include '{txt}'"
-            is_checked = st.checkbox(label, value=True)
+            # Label e.g. "Include 'Apartment'"
+            is_checked = st.checkbox(f"Include '{txt}'", value=True)
             keep_map[neg_code] = is_checked
 
-        # Build final mask
+        # If we do want numeric => show a slider for numeric
+        if include_numeric:
+            pos_mask = df_home["HV_numeric"] > 0
+            if pos_mask.any():
+                hv_min = df_home.loc[pos_mask, "HV_numeric"].min()
+                hv_max = df_home.loc[pos_mask, "HV_numeric"].max()
+                hv_floor = math.floor(hv_min)
+                hv_ceil = math.ceil(hv_max)
+                hv_range = st.slider(
+                    "Numeric Home Value Range",
+                    float(hv_floor),
+                    float(hv_ceil),
+                    (float(hv_floor), float(hv_ceil))
+                )
+            else:
+                hv_range = (0, 0)
+                st.info("No positive Home Values found.")
+        else:
+            hv_range = (0, 0)
+
         def hv_filter(row):
             val = row["HV_numeric"]
             if val < 0:
-                # negative means non-numeric => keep only if its checkbox is selected
+                # This row had non‐numeric home value => keep if user’s checkbox
                 return keep_map.get(val, False)
             else:
-                # numeric => keep if in the user-chosen range
-                return (val >= hv_range[0]) and (val <= hv_range[1])
+                # This row had numeric => keep only if user wants numeric
+                if include_numeric:
+                    return (val >= hv_range[0]) and (val <= hv_range[1])
+                else:
+                    return False
 
         hv_mask = df_home.apply(hv_filter, axis=1)
-        df_home = apply_filter(df_home, hv_mask, "Home Value (numeric slider + checkboxes)")
+        df_home = apply_filter(df_home, hv_mask,
+            "Home Value Filter (include_numeric=%s)" % include_numeric)
 
     # ------------------------------------------------------------------
-    # Wrap up
+    # Final results and Removals
     # ------------------------------------------------------------------
     final_count = len(df_home)
     removed_total = original_count - final_count
     st.write(f"**Filtered Results**: {final_count} row(s) out of {original_count} originally.")
     st.write(f"**Total Removed**: {removed_total} row(s).")
 
-    # Show breakdown of removed sets
+    # Show breakdown
     if filter_removals:
         st.write("### Rows Removed by Each Filter")
         for (reason, removed_df) in filter_removals:
-            if not removed_df.empty:
+            if len(removed_df) > 0:
                 with st.expander(f"{len(removed_df)} row(s) removed by {reason}"):
                     st.dataframe(removed_df)
 
