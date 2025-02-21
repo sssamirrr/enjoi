@@ -145,21 +145,13 @@ def run_owners_map():
                 return row["HV_numeric"]
         df_home["HV_numeric"] = df_home.apply(to_hv_numeric, axis=1)
 
-        # Add a checkbox for "Include homes with a positive (numeric) Home Value?"
-        # Default to True
-        include_pos_numeric = st.checkbox("Include homes with a positive (numeric) Home Value?", value=True)
-
-        # Non‐numeric heading
-        st.markdown("#### Non‐Numeric Home Values")
-        st.write("(Check each one you want to keep)")
-
-        keep_map = {}
-        for txt in non_numeric_vals:
-            neg_code = text2neg[txt]
-            is_checked = st.checkbox(f"Include '{txt}'", value=True)
-            keep_map[neg_code] = is_checked
-
-        # If we do want numeric => show a slider for numeric
+        # A) Checkbox for including numeric‐valued rows
+        include_pos_numeric = st.checkbox(
+            "Include homes with a positive (numeric) Home Value?",
+            value=True
+        )
+        # Show slider right underneath, only if that checkbox is checked
+        hv_range = (0, 0)
         if include_pos_numeric:
             pos_mask = df_home["HV_numeric"] > 0
             if pos_mask.any():
@@ -174,11 +166,19 @@ def run_owners_map():
                     (float(hv_floor), float(hv_ceil))
                 )
             else:
-                hv_range = (0, 0)
                 st.info("No positive Home Values found.")
-        else:
-            hv_range = (0, 0)
 
+        # B) Now handle the non‐numeric items
+        st.markdown("#### Non‐Numeric Home Values")
+        st.write("(Check each one you want to keep)")
+
+        keep_map = {}
+        for txt in non_numeric_vals:
+            neg_code = text2neg[txt]
+            is_checked = st.checkbox(f"Include '{txt}'", value=True)
+            keep_map[neg_code] = is_checked
+
+        # Build a single mask function for all home‐value logic
         def hv_filter(row):
             val = row["HV_numeric"]
             if val < 0:
