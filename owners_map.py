@@ -38,13 +38,10 @@ def run_owners_map():
     df_home["Latitude"] = pd.to_numeric(df_home.get("Latitude"), errors="coerce")
     df_home["Longitude"] = pd.to_numeric(df_home.get("Longitude"), errors="coerce")
 
-    # ------------------------------------------------------------------
-    # Instead of showing a data preview at the top, we skip that.
-    # ------------------------------------------------------------------
     st.subheader("Filters")
 
     # ------------------------------------------------------------------
-    # 2) State Filter
+    # State Filter
     # ------------------------------------------------------------------
     if "State" in df_home.columns:
         unique_states = sorted(df_home["State"].dropna().unique())
@@ -57,7 +54,7 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"State filter: {selected_states}")
 
     # ------------------------------------------------------------------
-    # 3) TSW Contract Status Filter
+    # TSW Contract Status Filter
     # ------------------------------------------------------------------
     if "TSWcontractStatus" in df_home.columns:
         status_options = ["Active", "Defaulted", "Both"]
@@ -71,7 +68,7 @@ def run_owners_map():
             df_home = apply_filter(df_home, mask, f"TSWcontractStatus = {chosen_status}")
 
     # ------------------------------------------------------------------
-    # 4) FICO Slider
+    # FICO Slider
     # ------------------------------------------------------------------
     if "FICO" in df_home.columns:
         min_fico_val = df_home["FICO"].min()
@@ -83,7 +80,7 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"FICO in [{fico_range[0]}, {fico_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 5) Distance in Miles
+    # Distance in Miles
     # ------------------------------------------------------------------
     if "Distance in Miles" in df_home.columns:
         dist_min_val = df_home["Distance in Miles"].min()
@@ -95,7 +92,7 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"Distance in [{dist_range[0]}, {dist_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 6) TSW Payment Amount
+    # TSW Payment Amount
     # ------------------------------------------------------------------
     if "TSWpaymentAmount" in df_home.columns:
         df_home["TSWpaymentAmount"] = pd.to_numeric(df_home["TSWpaymentAmount"], errors="coerce").fillna(0)
@@ -108,7 +105,7 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"TSWpaymentAmount in [{pay_range[0]}, {pay_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 7) Sum of Amount Financed
+    # Sum of Amount Financed
     # ------------------------------------------------------------------
     if "Sum of Amount Financed" in df_home.columns:
         fin_min_val = df_home["Sum of Amount Financed"].min()
@@ -120,11 +117,11 @@ def run_owners_map():
         df_home = apply_filter(df_home, mask, f"Sum of Amount Financed in [{financed_range[0]}, {financed_range[1]}]")
 
     # ------------------------------------------------------------------
-    # 8) HOME VALUE: Non-numeric => unique negative codes
-    #    Renamed UI text as requested
+    # HOME VALUE => Renamed as "Owner Filter"
     # ------------------------------------------------------------------
     if "Home Value" in df_home.columns:
-        st.markdown("### Home Value Available")
+        st.markdown("### Owner Filter")
+        st.write("(Check to include or exclude various categories of home value data)")
 
         # Keep original in HV_original
         df_home["HV_original"] = df_home["Home Value"].astype(str)
@@ -148,20 +145,22 @@ def run_owners_map():
                 return row["HV_numeric"]
         df_home["HV_numeric"] = df_home.apply(to_hv_numeric, axis=1)
 
-        # "Include rows with numeric Home Value?"
-        include_numeric = st.checkbox("Include rows with home value", value=True)
+        # Add a checkbox for "Include homes with a positive (numeric) Home Value?"
+        # Default to True
+        include_pos_numeric = st.checkbox("Include homes with a positive (numeric) Home Value?", value=True)
 
         # Non‐numeric heading
-        st.write("#### Include Homes Without Home Value:")
+        st.markdown("#### Non‐Numeric Home Values")
+        st.write("(Check each one you want to keep)")
+
         keep_map = {}
         for txt in non_numeric_vals:
             neg_code = text2neg[txt]
-            # Label e.g. "Include 'Apartment'"
             is_checked = st.checkbox(f"Include '{txt}'", value=True)
             keep_map[neg_code] = is_checked
 
         # If we do want numeric => show a slider for numeric
-        if include_numeric:
+        if include_pos_numeric:
             pos_mask = df_home["HV_numeric"] > 0
             if pos_mask.any():
                 hv_min = df_home.loc[pos_mask, "HV_numeric"].min()
@@ -186,15 +185,15 @@ def run_owners_map():
                 # This row had non‐numeric home value => keep if user’s checkbox
                 return keep_map.get(val, False)
             else:
-                # This row had numeric => keep only if user wants numeric
-                if include_numeric:
+                # Numeric => keep only if user wants numeric
+                if include_pos_numeric:
                     return (val >= hv_range[0]) and (val <= hv_range[1])
                 else:
                     return False
 
         hv_mask = df_home.apply(hv_filter, axis=1)
         df_home = apply_filter(df_home, hv_mask,
-            "Home Value Filter (include_numeric=%s)" % include_numeric)
+            "Owner Filter (Home Value, numeric+non‐numeric)")
 
     # ------------------------------------------------------------------
     # Final results and Removals
@@ -283,6 +282,7 @@ def run_owners_map():
     with st.expander("Show Included Data After Filtering"):
         st.dataframe(df_home)
 
-# Streamlit entrypoint
+
+# If you want to run this map code as a standalone app:
 if __name__ == "__main__":
     run_owners_map()
