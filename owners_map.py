@@ -149,7 +149,7 @@ def run_owners_map():
         df_home["HV_numeric"] = df_home.apply(to_hv_numeric, axis=1)
 
         # "Include rows with numeric Home Value?"
-        include_numeric = st.checkbox("Include rows with without home value", value=True)
+        include_numeric = st.checkbox("Include rows with home value", value=True)
 
         # Non‐numeric heading
         st.write("#### Include Homes Without Home Value:")
