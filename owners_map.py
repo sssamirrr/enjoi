@@ -172,7 +172,7 @@ def run_owners_map():
             is_checked = st.checkbox(f"Include '{txt}' (code={neg_code})", value=True)
             keep_map[neg_code] = is_checked
 
-        # If we are not excluding positives => let them choose a slider
+        # If we are not excluding positives entirely => let them choose a slider
         # for positive HV
         if not exclude_positive:
             # gather only positive rows
@@ -236,9 +236,22 @@ def run_owners_map():
 
     # -------------- Summaries for TSW statuses --------------
     if "TSWcontractStatus" in df.columns:
+        total_remaining = len(df)
         active_count = len(df[df["TSWcontractStatus"] == "Active"])
         defaulted_count = len(df[df["TSWcontractStatus"] == "Defaulted"])
-        st.write(f"**Active**: {active_count} | **Defaulted**: {defaulted_count}")
+
+        # Compute percentages if total_remaining > 0
+        if total_remaining > 0:
+            active_pct = (active_count / total_remaining) * 100
+            defaulted_pct = (defaulted_count / total_remaining) * 100
+        else:
+            active_pct = 0
+            defaulted_pct = 0
+
+        st.write(
+            f"**Active**: {active_count} ({active_pct:.2f}%) | "
+            f"**Defaulted**: {defaulted_count} ({defaulted_pct:.2f}%)"
+        )
 
     # -------------- MAP --------------
     if "Latitude" not in df.columns or "Longitude" not in df.columns:
