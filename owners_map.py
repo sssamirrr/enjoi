@@ -152,7 +152,7 @@ def run_owners_map():
         include_numeric = st.checkbox("Include rows with without home value", value=True)
 
         # Non‐numeric heading
-        st.write("#### Include homes without a numeric Home Value?")
+        st.write("#### Include Homes Without Home Value:")
         keep_map = {}
         for txt in non_numeric_vals:
             neg_code = text2neg[txt]
