@@ -156,7 +156,7 @@ def run_owners_map():
 
         # A) Checkbox for including numeric‐valued rows
         include_pos_numeric = st.checkbox(
-            "Include homes with a positive (numeric) Home Value?",
+            "Include homes with Home Value available?",
             value=True
         )
 
@@ -170,7 +170,7 @@ def run_owners_map():
                 hv_floor = math.floor(hv_min)
                 hv_ceil = math.ceil(hv_max)
                 numeric_min, numeric_max = st.slider(
-                    "Numeric Home Value Range",
+                    "Home Value Range",
                     float(hv_floor),
                     float(hv_ceil),
                     (float(hv_floor), float(hv_ceil))
@@ -179,7 +179,7 @@ def run_owners_map():
                 st.info("No positive Home Values found.")
 
         # B) Non‐numeric items below that
-        st.markdown("#### Non‐Numeric Home Values")
+        st.markdown("#### Homes without home values")
         st.write("(Check each one you want to keep)")
 
         keep_map = {}
