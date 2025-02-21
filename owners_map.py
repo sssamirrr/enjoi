@@ -105,7 +105,6 @@ def run_owners_map():
     # 6) TSW Payment Amount
     # ------------------
     if "TSWpaymentAmount" in df.columns:
-        # Convert & fill missing w/ 0
         df["TSWpaymentAmount"] = pd.to_numeric(df["TSWpaymentAmount"], errors="coerce").fillna(0)
         pay_min_val = df["TSWpaymentAmount"].min()
         pay_max_val = df["TSWpaymentAmount"].max()
@@ -173,7 +172,7 @@ def run_owners_map():
             is_checked = st.checkbox(f"Include '{txt}' (code={neg_code})", value=True)
             keep_map[neg_code] = is_checked
 
-        # If we are not excluding positives entirely => let them choose a slider
+        # If we are not excluding positives => let them choose a slider
         # for positive HV
         if not exclude_positive:
             # gather only positive rows
@@ -234,6 +233,12 @@ def run_owners_map():
     if df.empty:
         st.warning("No data left after filters.")
         return
+
+    # -------------- Summaries for TSW statuses --------------
+    if "TSWcontractStatus" in df.columns:
+        active_count = len(df[df["TSWcontractStatus"] == "Active"])
+        defaulted_count = len(df[df["TSWcontractStatus"] == "Defaulted"])
+        st.write(f"**Active**: {active_count} | **Defaulted**: {defaulted_count}")
 
     # -------------- MAP --------------
     if "Latitude" not in df.columns or "Longitude" not in df.columns:
