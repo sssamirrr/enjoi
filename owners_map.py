@@ -7,15 +7,18 @@ import math
 def run_owners_map():
     st.title("Timeshare Owners Map")
 
+    # ------------------------------------------------------------------
+    # 1) Load & Prepare the DataFrame with a unique name, df_home
+    # ------------------------------------------------------------------
     file_path = "Owners home value and driving distance.xlsx"
     if not os.path.exists(file_path):
         st.error(f"File not found: {file_path}")
         st.stop()
 
-    df = pd.read_excel(file_path)
-    original_count = len(df)
+    df_home = pd.read_excel(file_path)
+    original_count = len(df_home)
 
-    # Filter removals for “breakdown” expansions
+    # Keep track of which rows get removed at each filter step
     filter_removals = []
     def apply_filter(df, mask, reason):
         kept = df[mask]
@@ -24,37 +27,39 @@ def run_owners_map():
             filter_removals.append((reason, removed.copy()))
         return kept
 
-    # -----------------------------
-    # 1) Prep Lat/Lon (no preview)
-    # -----------------------------
-    if "Origin Latitude" in df.columns and "Origin Longitude" in df.columns:
-        df.rename(columns={
+    # Rename lat/lon columns if they exist
+    if "Origin Latitude" in df_home.columns and "Origin Longitude" in df_home.columns:
+        df_home.rename(columns={
             "Origin Latitude": "Latitude",
             "Origin Longitude": "Longitude"
         }, inplace=True)
 
-    df["Latitude"] = pd.to_numeric(df.get("Latitude"), errors="coerce")
-    df["Longitude"] = pd.to_numeric(df.get("Longitude"), errors="coerce")
+    # Convert lat/lon to numeric (if they exist)
+    df_home["Latitude"] = pd.to_numeric(df_home.get("Latitude"), errors="coerce")
+    df_home["Longitude"] = pd.to_numeric(df_home.get("Longitude"), errors="coerce")
 
-    # (We skip the old “Data Preview” – comment it out)
-    # st.subheader("Data Preview")
-    # st.dataframe(df.head(10))
-
+    # ------------------------------------------------------------------
+    # Instead of showing a data preview at the top, we skip that.
+    # ------------------------------------------------------------------
     st.subheader("Filters")
 
+    # ------------------------------------------------------------------
     # 2) State Filter
-    if "State" in df.columns:
-        unique_states = sorted(df["State"].dropna().unique())
+    # ------------------------------------------------------------------
+    if "State" in df_home.columns:
+        unique_states = sorted(df_home["State"].dropna().unique())
         selected_states = st.multiselect(
             "Filter by State(s)",
             options=unique_states,
             default=unique_states
         )
-        mask = df["State"].isin(selected_states)
-        df = apply_filter(df, mask, f"State filter: {selected_states}")
+        mask = df_home["State"].isin(selected_states)
+        df_home = apply_filter(df_home, mask, f"State filter: {selected_states}")
 
+    # ------------------------------------------------------------------
     # 3) TSW Contract Status Filter
-    if "TSWcontractStatus" in df.columns:
+    # ------------------------------------------------------------------
+    if "TSWcontractStatus" in df_home.columns:
         status_options = ["Active", "Defaulted", "Both"]
         chosen_status = st.selectbox(
             "Filter by Contract Status",
@@ -62,89 +67,113 @@ def run_owners_map():
             index=2
         )
         if chosen_status != "Both":
-            mask = (df["TSWcontractStatus"] == chosen_status)
-            df = apply_filter(df, mask, f"TSWcontractStatus = {chosen_status}")
+            mask = (df_home["TSWcontractStatus"] == chosen_status)
+            df_home = apply_filter(df_home, mask, f"TSWcontractStatus = {chosen_status}")
 
+    # ------------------------------------------------------------------
     # 4) FICO Slider
-    if "FICO" in df.columns:
-        min_fico_val = df["FICO"].min()
-        max_fico_val = df["FICO"].max()
+    # ------------------------------------------------------------------
+    if "FICO" in df_home.columns:
+        min_fico_val = df_home["FICO"].min()
+        max_fico_val = df_home["FICO"].max()
         fico_min = math.floor(min_fico_val)
         fico_max = math.ceil(max_fico_val)
         fico_range = st.slider("FICO Range", fico_min, fico_max, (fico_min, fico_max))
-        mask = (df["FICO"] >= fico_range[0]) & (df["FICO"] <= fico_range[1])
-        df = apply_filter(df, mask, f"FICO in [{fico_range[0]}, {fico_range[1]}]")
+        mask = (df_home["FICO"] >= fico_range[0]) & (df_home["FICO"] <= fico_range[1])
+        df_home = apply_filter(df_home, mask, f"FICO in [{fico_range[0]}, {fico_range[1]}]")
 
+    # ------------------------------------------------------------------
     # 5) Distance in Miles
-    if "Distance in Miles" in df.columns:
-        dist_min_val = df["Distance in Miles"].min()
-        dist_max_val = df["Distance in Miles"].max()
+    # ------------------------------------------------------------------
+    if "Distance in Miles" in df_home.columns:
+        dist_min_val = df_home["Distance in Miles"].min()
+        dist_max_val = df_home["Distance in Miles"].max()
         dmin = math.floor(dist_min_val)
         dmax = math.ceil(dist_max_val)
         dist_range = st.slider("Distance in Miles", dmin, dmax, (dmin, dmax))
-        mask = (df["Distance in Miles"] >= dist_range[0]) & (df["Distance in Miles"] <= dist_range[1])
-        df = apply_filter(df, mask, f"Distance in [{dist_range[0]}, {dist_range[1]}]")
+        mask = (df_home["Distance in Miles"] >= dist_range[0]) & (df_home["Distance in Miles"] <= dist_range[1])
+        df_home = apply_filter(df_home, mask, f"Distance in [{dist_range[0]}, {dist_range[1]}]")
 
+    # ------------------------------------------------------------------
     # 6) TSW Payment Amount
-    if "TSWpaymentAmount" in df.columns:
-        df["TSWpaymentAmount"] = pd.to_numeric(df["TSWpaymentAmount"], errors="coerce").fillna(0)
-        pay_min_val = df["TSWpaymentAmount"].min()
-        pay_max_val = df["TSWpaymentAmount"].max()
+    # ------------------------------------------------------------------
+    if "TSWpaymentAmount" in df_home.columns:
+        df_home["TSWpaymentAmount"] = pd.to_numeric(df_home["TSWpaymentAmount"], errors="coerce").fillna(0)
+        pay_min_val = df_home["TSWpaymentAmount"].min()
+        pay_max_val = df_home["TSWpaymentAmount"].max()
         pmin = math.floor(pay_min_val)
         pmax = math.ceil(pay_max_val)
         pay_range = st.slider("TSW Payment Amount", pmin, pmax, (pmin, pmax))
-        mask = (df["TSWpaymentAmount"] >= pay_range[0]) & (df["TSWpaymentAmount"] <= pay_range[1])
-        df = apply_filter(df, mask, f"TSWpaymentAmount in [{pay_range[0]}, {pay_range[1]}]")
+        mask = (df_home["TSWpaymentAmount"] >= pay_range[0]) & (df_home["TSWpaymentAmount"] <= pay_range[1])
+        df_home = apply_filter(df_home, mask, f"TSWpaymentAmount in [{pay_range[0]}, {pay_range[1]}]")
 
+    # ------------------------------------------------------------------
     # 7) Sum of Amount Financed
-    if "Sum of Amount Financed" in df.columns:
-        fin_min_val = df["Sum of Amount Financed"].min()
-        fin_max_val = df["Sum of Amount Financed"].max()
+    # ------------------------------------------------------------------
+    if "Sum of Amount Financed" in df_home.columns:
+        fin_min_val = df_home["Sum of Amount Financed"].min()
+        fin_max_val = df_home["Sum of Amount Financed"].max()
         fmin = math.floor(fin_min_val)
         fmax = math.ceil(fin_max_val)
         financed_range = st.slider("Sum of Amount Financed", fmin, fmax, (fmin, fmax))
-        mask = (df["Sum of Amount Financed"] >= financed_range[0]) & (df["Sum of Amount Financed"] <= financed_range[1])
-        df = apply_filter(df, mask, f"Sum of Amount Financed in [{financed_range[0]}, {financed_range[1]}]")
+        mask = (df_home["Sum of Amount Financed"] >= financed_range[0]) & (df_home["Sum of Amount Financed"] <= financed_range[1])
+        df_home = apply_filter(df_home, mask, f"Sum of Amount Financed in [{financed_range[0]}, {financed_range[1]}]")
 
-    # 8) HOME VALUE with negative codes for non-numeric
-    if "Home Value" in df.columns:
-        st.markdown("### Home Value Filters (numeric & non‐numeric)")
+    # ------------------------------------------------------------------
+    # 8) HOME VALUE: Non-numeric => unique negative codes
+    #    Renamed UI text as requested
+    # ------------------------------------------------------------------
+    if "Home Value" in df_home.columns:
+        st.markdown("### Home Value Options (numeric & non‐numeric)")
 
-        df["HV_original"] = df["Home Value"].astype(str)
-        df["HV_numeric"] = pd.to_numeric(df["Home Value"], errors="coerce")
+        # Keep original in HV_original
+        df_home["HV_original"] = df_home["Home Value"].astype(str)
+        # Attempt parse => NaN if not numeric
+        df_home["HV_numeric"] = pd.to_numeric(df_home["Home Value"], errors="coerce")
 
-        non_numeric_mask = df["HV_numeric"].isna()
-        non_numeric_vals = sorted(df.loc[non_numeric_mask, "HV_original"].unique())
+        # Identify non‐numeric values
+        non_numeric_mask = df_home["HV_numeric"].isna()
+        non_numeric_vals = sorted(df_home.loc[non_numeric_mask, "HV_original"].unique())
 
+        # Make a dictionary from text => unique negative code
         text2neg = {}
         for i, txt in enumerate(non_numeric_vals, start=1):
             text2neg[txt] = -float(i)
 
+        # Convert HV_numeric
         def to_hv_numeric(row):
             if pd.isna(row["HV_numeric"]):
                 return text2neg[row["HV_original"]]
             else:
                 return row["HV_numeric"]
-        df["HV_numeric"] = df.apply(to_hv_numeric, axis=1)
+        df_home["HV_numeric"] = df_home.apply(to_hv_numeric, axis=1)
 
-        exclude_positive = st.checkbox("Exclude rows with any positive (numeric) Home Value?")
-        st.write("#### Non‐Numeric Home Values to Include?")
+        # "Include rows with numeric Home Value?"
+        include_numeric = st.checkbox("Include rows with numeric Home Value?", value=True)
+
+        # Non‐numeric heading
+        st.write("#### Include homes without a numeric Home Value?")
         keep_map = {}
         for txt in non_numeric_vals:
             neg_code = text2neg[txt]
-            is_checked = st.checkbox(f"Include '{txt}' (code={neg_code})", value=True)
+            # Label e.g. "Include 'Apartment'"
+            is_checked = st.checkbox(f"Include '{txt}'", value=True)
             keep_map[neg_code] = is_checked
 
-        if not exclude_positive:
-            pos_mask = df["HV_numeric"] > 0
+        # If we do want numeric => show a slider for numeric
+        if include_numeric:
+            pos_mask = df_home["HV_numeric"] > 0
             if pos_mask.any():
-                hv_min = df.loc[pos_mask, "HV_numeric"].min()
-                hv_max = df.loc[pos_mask, "HV_numeric"].max()
+                hv_min = df_home.loc[pos_mask, "HV_numeric"].min()
+                hv_max = df_home.loc[pos_mask, "HV_numeric"].max()
                 hv_floor = math.floor(hv_min)
                 hv_ceil = math.ceil(hv_max)
-                hv_range = st.slider("Home Value Range (Positive Only)",
-                                     float(hv_floor), float(hv_ceil),
-                                     (float(hv_floor), float(hv_ceil)))
+                hv_range = st.slider(
+                    "Numeric Home Value Range",
+                    float(hv_floor),
+                    float(hv_ceil),
+                    (float(hv_floor), float(hv_ceil))
+                )
             else:
                 hv_range = (0, 0)
                 st.info("No positive Home Values found.")
@@ -154,24 +183,28 @@ def run_owners_map():
         def hv_filter(row):
             val = row["HV_numeric"]
             if val < 0:
-                # Non-numeric => keep if checkbox is True
+                # This row had non‐numeric home value => keep if user’s checkbox
                 return keep_map.get(val, False)
             else:
-                if exclude_positive:
-                    return False
-                else:
+                # This row had numeric => keep only if user wants numeric
+                if include_numeric:
                     return (val >= hv_range[0]) and (val <= hv_range[1])
+                else:
+                    return False
 
-        hv_mask = df.apply(hv_filter, axis=1)
-        df = apply_filter(df, hv_mask,
-                          f"Home Value Filter exclude_positive={exclude_positive}")
+        hv_mask = df_home.apply(hv_filter, axis=1)
+        df_home = apply_filter(df_home, hv_mask,
+            "Home Value Filter (include_numeric=%s)" % include_numeric)
 
-    # Final results
-    final_count = len(df)
+    # ------------------------------------------------------------------
+    # Final results and Removals
+    # ------------------------------------------------------------------
+    final_count = len(df_home)
     removed_total = original_count - final_count
     st.write(f"**Filtered Results**: {final_count} row(s) out of {original_count} originally.")
     st.write(f"**Total Removed**: {removed_total} row(s).")
 
+    # Show breakdown
     if filter_removals:
         st.write("### Rows Removed by Each Filter")
         for (reason, removed_df) in filter_removals:
@@ -179,15 +212,16 @@ def run_owners_map():
                 with st.expander(f"{len(removed_df)} row(s) removed by {reason}"):
                     st.dataframe(removed_df)
 
-    if df.empty:
+    # If empty => stop
+    if df_home.empty:
         st.warning("No data left after filters.")
         return
 
-    # Summary of TSW statuses
-    if "TSWcontractStatus" in df.columns:
-        total_remaining = len(df)
-        active_count = len(df[df["TSWcontractStatus"] == "Active"])
-        defaulted_count = len(df[df["TSWcontractStatus"] == "Defaulted"])
+    # Summaries for TSW statuses
+    if "TSWcontractStatus" in df_home.columns:
+        total_remaining = len(df_home)
+        active_count = len(df_home[df_home["TSWcontractStatus"] == "Active"])
+        defaulted_count = len(df_home[df_home["TSWcontractStatus"] == "Defaulted"])
         if total_remaining > 0:
             active_pct = (active_count / total_remaining) * 100
             defaulted_pct = (defaulted_count / total_remaining) * 100
@@ -200,13 +234,15 @@ def run_owners_map():
             f"**Defaulted**: {defaulted_count} ({defaulted_pct:.2f}%)"
         )
 
+    # ------------------------------------------------------------------
     # MAP
-    if "Latitude" not in df.columns or "Longitude" not in df.columns:
+    # ------------------------------------------------------------------
+    if "Latitude" not in df_home.columns or "Longitude" not in df_home.columns:
         st.info("No latitude/longitude columns. Cannot map.")
         return
 
-    before_map = len(df)
-    map_df = df.dropna(subset=["Latitude","Longitude"])
+    before_map = len(df_home)
+    map_df = df_home.dropna(subset=["Latitude","Longitude"])
     exclude_map = before_map - len(map_df)
     if exclude_map > 0:
         st.write(f"Excluded {exclude_map} row(s) missing lat/lon for map display.")
@@ -215,9 +251,10 @@ def run_owners_map():
         st.warning("No rows with valid lat/lon to plot.")
         return
 
+    # Use a color map for TSW statuses
     color_map = {
-        "Active": "#90ee90",
-        "Defaulted": "#ff9999"
+        "Active": "#90ee90",     # light green
+        "Defaulted": "#ff9999"  # light red
     }
     hover_cols = [
         "OwnerName", "Last Name 1", "First Name 1", "Last Name 2", "First Name 2",
@@ -242,10 +279,10 @@ def run_owners_map():
     fig.update_layout(margin={"r":0, "t":0, "l":0, "b":0})
     st.plotly_chart(fig, use_container_width=True)
 
-    # Now show the final included data under the map in an expander
+    # Show final data in an expander at the bottom
     with st.expander("Show Included Data After Filtering"):
-        st.dataframe(df)
+        st.dataframe(df_home)
 
-# Entry
+# Streamlit entrypoint
 if __name__ == "__main__":
     run_owners_map()
