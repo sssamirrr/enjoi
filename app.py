@@ -1209,8 +1209,3 @@ with tab11:
        owners_map.run_owners_map()
 
     
-############################################
-# Raw Data Viewer
-############################################
-with st.expander("Show Raw Data"):
-    st.dataframe(df)
