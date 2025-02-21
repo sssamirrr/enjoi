@@ -263,7 +263,7 @@ def run_owners_map():
 
     # Use a color map for TSW statuses
     color_map = {
-        "Active": "#90ee90",     # light green
+        "Active": "#3283a8",     # light green
         "Defaulted": "#ff9999"  # light red
     }
     hover_cols = [
