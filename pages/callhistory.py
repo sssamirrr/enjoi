@@ -358,7 +358,6 @@ def display_timeline(calls, messages):
                         # Safely convert start/end to int
                         start_sec = seg.get('start', 0)
                         end_sec = seg.get('end', 0)
-                        # Convert them to int (handling strings, None, floats, etc.)
                         try:
                             start_sec = int(float(start_sec))
                         except:
@@ -379,9 +378,6 @@ def display_timeline(calls, messages):
             
             st.write(f"**Status:** {item['status']}")
 
-# -----------------------------------------------------------------------------
-# THE "OVERVIEW" (COMBINED TABLE) FUNCTION
-# -----------------------------------------------------------------------------
 def display_all_events_in_one_table(calls, messages):
     """
     OVERVIEW TABLE: Shows calls & messages in one combined DataFrame.
@@ -397,49 +393,49 @@ def display_all_events_in_one_table(calls, messages):
     
     # Process calls
     for c in calls:
-        dt_gmt4 = localize_to_gmt_minus_4(c['createdAt'])
+        dt_gmt4 = localize_to_gmt_minus_4(c["createdAt"])
         from_ = ""
         to_ = ""
-        for p in c.get('participants', []) or []:
+        for p in c.get("participants", []) or []:
             if isinstance(p, dict):
-                role = p.get('direction', 'unknown')
-                number = p.get('phoneNumber', '')
-                if role == 'source':
+                role = p.get("direction", "unknown")
+                number = p.get("phoneNumber", "")
+                if role == "source":
                     from_ = number
-                elif role == 'destination':
+                elif role == "destination":
                     to_ = number
 
         rows.append({
-            "DisplayTime": dt_gmt_g4_fmt := dt_gmt4.strftime("%Y-%m-%d %H:%M:%S"),
+            "DisplayTime": dt_gmt4.strftime("%Y-%m-%d %H:%M:%S"),
             "type": "Call",
-            "direction": c.get('direction', ''),
+            "direction": c.get("direction", ""),
             "From": from_,
             "To": to_,
             "Content": f"Call Transcript ID: {c.get('id')}",
-            "Duration": format_duration_seconds(c.get('duration', 0))
+            "Duration": format_duration_seconds(c.get("duration", 0))
         })
 
     # Process messages
     for m in messages:
-        dt_gmt4 = localize_to_gmt_minus_4(m['createdAt'])
+        dt_gmt4 = localize_to_gmt_minus_4(m["createdAt"])
         from_ = ""
         to_ = ""
-        for p in m.get('participants', []) or []:
+        for p in m.get("participants", []) or []:
             if isinstance(p, dict):
-                role = p.get('direction', 'unknown')
-                number = p.get('phoneNumber', '')
-                if role == 'source':
+                role = p.get("direction", "unknown")
+                number = p.get("phoneNumber", "")
+                if role == "source":
                     from_ = number
-                elif role == 'destination':
+                elif role == "destination":
                     to_ = number
 
         rows.append({
             "DisplayTime": dt_gmt4.strftime("%Y-%m-%d %H:%M:%S"),
             "type": "Message",
-            "direction": m.get('direction', ''),
+            "direction": m.get("direction", ""),
             "From": from_,
             "To": to_,
-            "Content": m.get('content', 'No content'),
+            "Content": m.get("content", "No content"),
             "Duration": ""
         })
     
