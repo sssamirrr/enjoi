@@ -107,13 +107,9 @@ def format_duration_seconds(sec):
 
 def extract_from_to_participants(participants):
     """
-    Given a list like:
-      [
-        { "direction": "source", "phoneNumber": "+1555..." },
-        { "direction": "destination", "phoneNumber": "+1666..." }
-      ]
-    or possibly strings instead of dicts,
-    return (from_number, to_number).
+    Some participants might be dicts with {direction:'source'/'destination',phoneNumber:'...'}
+    Others might be plain strings.
+    We parse them to get from_num and to_num.
     """
     from_num = "Unknown"
     to_num = "Unknown"
@@ -127,14 +123,12 @@ def extract_from_to_participants(participants):
             elif p_dir == 'destination':
                 to_num = p_num
         elif isinstance(p, str):
-            # If it's a string phone number, guess it's 'source' if from_num is still 'Unknown'.
-            # Then the next string can be 'to_num'.
+            # If it's a string phone number, assign first 'from_num' if unknown, else 'to_num'
             if from_num == "Unknown":
                 from_num = p
             else:
                 to_num = p
-        # else: skip if None or unexpected type
-    
+
     return (from_num, to_num)
 
 ###############################################################################
@@ -251,12 +245,13 @@ def display_timeline(calls, messages):
                 st.write(f"**Status:** {item['status']}")
 
 ###############################################################################
-# CHRONOLOGICAL DETAILS (TAB 3)
+# CHRONOLOGICAL DETAILS (TAB 3) - WITH A VISUAL SEPARATOR
 ###############################################################################
 def display_full_chronological(calls, messages):
     """
-    Show calls & messages in ascending chronological order, 
-    with transcripts for completed calls and phone numbers from participants.
+    Show calls & messages in ascending chronological order,
+    with transcripts for completed calls, phone numbers from participants,
+    and a visual <hr> line between items for clarity.
     """
     st.header("Full Conversation (Chronological)")
 
@@ -293,36 +288,43 @@ def display_full_chronological(calls, messages):
     # Sort ascending
     comms.sort(key=lambda x: x['time'])
 
-    # Print them in chronological order
-    for item in comms:
+    for idx, item in enumerate(comms):
         ts_str = item['time'].strftime("%Y-%m-%d %H:%M")
         dir_str = item['direction']
 
         if item['type'] == 'call':
+            # If missed
             if item['status'] == 'missed':
                 st.write(
-                    f"{ts_str} {dir_str} call from {item['from']} "
+                    f"**{ts_str}** {dir_str} **call** from {item['from']} "
                     f"to {item['to']} [MISSED]"
                 )
             else:
+                # Show duration
                 dur_str = format_duration_seconds(item['duration'])
                 st.write(
-                    f"{ts_str} {dir_str} call from {item['from']} "
+                    f"**{ts_str}** {dir_str} **call** from {item['from']} "
                     f"to {item['to']} ({dur_str})"
                 )
-                # Show transcript if not missed
+                # Print transcript if not missed
                 transcript = fetch_call_transcript(item['id'])
                 if transcript and transcript.get('dialogue'):
                     for seg in transcript['dialogue']:
                         spkr = seg.get('identifier','???')
                         cnt  = seg.get('content','')
-                        st.write(f"    {spkr}: {cnt}")
+                        # Indent transcript lines
+                        st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;**{spkr}:** {cnt}", unsafe_allow_html=True)
         else:
             # It's a message
             st.write(
-                f"{ts_str} {dir_str} message from {item['from']} "
+                f"**{ts_str}** {dir_str} **message** from {item['from']} "
                 f"to {item['to']}: {item.get('text','')}"
             )
+
+        # Add a horizontal rule after each item (except maybe the last)
+        # This helps visually separate calls/messages
+        if idx < len(comms) - 1:
+            st.markdown("<hr style='border:1px solid #ddd;'/>", unsafe_allow_html=True)
 
 ###############################################################################
 # MAIN LOGIC
@@ -357,6 +359,7 @@ def main():
         layout="wide"
     )
 
+    # Grab phone from query params or text input
     query_params = st.query_params
     default_phone = ""
     if "phone" in query_params:
