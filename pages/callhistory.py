@@ -100,10 +100,10 @@ def fetch_call_transcript(call_id):
 
 def format_duration_seconds(sec):
     """
-    Converts an integer `sec` into a string "Xm YYs".
+    Converts an integer or float `sec` into a string "Xm YYs".
     Example: 185 -> "3m 05s".
     """
-    # Ensure 'sec' is numeric, default to 0 if not
+    # Defensive: attempt casting to float. If it fails, default to 0.
     try:
         sec = float(sec)
     except:
@@ -179,7 +179,6 @@ def display_metrics_dashboard(metrics):
         st.metric("Outbound Messages", metrics['outbound_messages'])
     
     with col3:
-        # Convert numeric durations to "Xm YYs" strings
         avg_dur_str = format_duration_seconds(metrics['avg_call_duration'])
         max_dur_str = format_duration_seconds(metrics['max_call_duration'])
         
@@ -380,10 +379,19 @@ def display_timeline(calls, messages):
             
             st.write(f"**Status:** {item['status']}")
 
+# -----------------------------------------------------------------------------
+# THE "OVERVIEW" (COMBINED TABLE) FUNCTION
+# -----------------------------------------------------------------------------
 def display_all_events_in_one_table(calls, messages):
     """
-    Shows calls & messages in one combined DataFrame, 
-    each row has DisplayTime, Type, Direction, From, To, Content, Duration, etc.
+    OVERVIEW TABLE: Shows calls & messages in one combined DataFrame.
+    For each row, we have:
+      - DisplayTime (converted to GMT-4)
+      - Type (Call or Message)
+      - Direction (inbound/outbound)
+      - From / To
+      - Content (Text or 'Call Transcript ID')
+      - Duration in "Xm YYs" format for calls
     """
     rows = []
     
@@ -402,13 +410,12 @@ def display_all_events_in_one_table(calls, messages):
                     to_ = number
 
         rows.append({
-            "DisplayTime": dt_gmt4.strftime("%Y-%m-%d %H:%M:%S"),
+            "DisplayTime": dt_gmt_g4_fmt := dt_gmt4.strftime("%Y-%m-%d %H:%M:%S"),
             "type": "Call",
             "direction": c.get('direction', ''),
             "From": from_,
             "To": to_,
             "Content": f"Call Transcript ID: {c.get('id')}",
-            # Format the duration in min+sec
             "Duration": format_duration_seconds(c.get('duration', 0))
         })
 
@@ -467,6 +474,7 @@ def main():
                 st.warning("No communication history found for this number.")
                 return
 
+            # Create 4 tabs: Overview Metrics, Analysis, Timeline, Combined Table
             tab1, tab2, tab3, tab4 = st.tabs([
                 "📊 Overview Metrics", 
                 "📈 Analysis", 
@@ -487,7 +495,7 @@ def main():
             with tab3:
                 display_timeline(calls, messages)
 
-            # 4) Combined Overview Table
+            # 4) The Combined “Overview” Table
             with tab4:
                 display_all_events_in_one_table(calls, messages)
 
