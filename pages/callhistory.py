@@ -32,6 +32,10 @@ def format_phone_number(phone_number):
     return None
 
 def get_openphone_numbers():
+    """
+    Fetch the list of your OpenPhone numbers via the API.
+    Returns a list of phone number objects.
+    """
     url = "https://api.openphone.com/v1/phone-numbers"
     response = requests.get(url, headers=HEADERS)
     if response.status_code == 200:
@@ -39,6 +43,10 @@ def get_openphone_numbers():
     return []
 
 def fetch_call_history(phone_number):
+    """
+    Fetch call history from OpenPhone, filtering by the given phone_number.
+    Merges calls across all of your OpenPhone numbers (if you have multiple).
+    """
     formatted_phone = format_phone_number(phone_number)
     all_calls = []
     if formatted_phone:
@@ -57,6 +65,10 @@ def fetch_call_history(phone_number):
     return all_calls
 
 def fetch_message_history(phone_number):
+    """
+    Fetch message history from OpenPhone, filtering by the given phone_number.
+    Merges messages across all of your OpenPhone numbers (if multiple).
+    """
     formatted_phone = format_phone_number(phone_number)
     all_messages = []
     if formatted_phone:
@@ -75,6 +87,9 @@ def fetch_message_history(phone_number):
     return all_messages
 
 def fetch_call_transcript(call_id):
+    """
+    Fetch transcript for a given call ID.
+    """
     url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
     response = requests.get(url, headers=HEADERS)
     if response.status_code == 200:
@@ -94,14 +109,25 @@ def format_duration_seconds(sec):
     return f"{m}m {s:02d}s"
 
 def localize_to_gmt_minus_4(iso_str):
+    """
+    Takes an ISO datetime string (which may be in UTC or PT),
+    localizes it to Los Angeles time, then converts it to GMT-4
+    (the effective time for Myrtle Beach in DST).
+    """
     dt_utc = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+    
     tz_pt = pytz.timezone("America/Los_Angeles")
     dt_pt = dt_utc.astimezone(tz_pt)
+    
     tz_gmt_4 = pytz.timezone("Etc/GMT+4")
     dt_gmt4 = dt_pt.astimezone(tz_gmt_4)
     return dt_gmt4
 
 def create_communication_metrics(calls, messages):
+    """
+    Compute basic metrics for display in a summary dashboard:
+    - total calls, total messages, inbound/outbound counts, call durations, etc.
+    """
     total_calls = len(calls)
     total_messages = len(messages)
     inbound_calls = len([c for c in calls if c.get('direction') == 'inbound'])
@@ -130,8 +156,8 @@ def create_communication_metrics(calls, messages):
 
 def display_metrics_dashboard(metrics):
     """
-    Display top-level metrics in minutes+seconds instead of raw seconds
-    for avg/max call duration.
+    Display top-level metrics (calls, messages, durations, etc.) 
+    using minutes+seconds for call durations.
     """
     col1, col2, col3 = st.columns(3)
     
@@ -155,6 +181,9 @@ def display_metrics_dashboard(metrics):
         st.metric("Avg Message Length", f"{metrics['avg_message_length']:.1f}")
 
 def create_time_series_chart(communications):
+    """
+    Creates a line chart (Altair) that shows daily call/message counts over time.
+    """
     df = pd.DataFrame(communications)
     df['date'] = pd.to_datetime(df['time']).dt.date
     daily_counts = df.groupby(['date', 'type']).size().reset_index(name='count')
@@ -173,6 +202,10 @@ def create_time_series_chart(communications):
     return chart
 
 def create_hourly_heatmap(communications):
+    """
+    Creates a heatmap (Altair) showing activity distribution by 
+    hour-of-day vs. day-of-week.
+    """
     df = pd.DataFrame(communications)
     df['hour'] = pd.to_datetime(df['time']).dt.hour
     df['day_of_week'] = pd.to_datetime(df['time']).dt.day_name()
@@ -198,8 +231,12 @@ def create_hourly_heatmap(communications):
     return heatmap
 
 def display_communications_analysis(calls, messages):
+    """
+    Display time-series chart, heatmap, and optional call duration distribution chart.
+    """
     communications = []
     
+    # Convert calls
     for call in calls:
         dt_gmt4 = localize_to_gmt_minus_4(call['createdAt'])
         communications.append({
@@ -209,6 +246,7 @@ def display_communications_analysis(calls, messages):
             'duration': call.get('duration', 0)
         })
     
+    # Convert messages
     for message in messages:
         dt_gmt4 = localize_to_gmt_minus_4(message['createdAt'])
         communications.append({
@@ -225,6 +263,7 @@ def display_communications_analysis(calls, messages):
     heatmap = create_hourly_heatmap(communications)
     st.altair_chart(heatmap, use_container_width=True)
 
+    # Call Duration Distribution
     if calls:
         st.subheader("⏱️ Call Duration Distribution")
         call_durations = [c.get('duration', 0) for c in calls if c.get('duration')]
@@ -242,26 +281,27 @@ def display_communications_analysis(calls, messages):
 
 def display_timeline(calls, messages):
     """
-    Updated to handle participants that aren't dicts or
-    that have no 'phoneNumber' key. Also uses min+sec for duration.
+    Shows calls/messages in a chronological timeline with a single expander per event.
+    NO nested expanders (to prevent StreamlitAPIException).
     """
     st.subheader("📅 Communication Timeline")
-    
+
     timeline = []
     
+    # Prepare calls
     for call in calls:
         dt_gmt4 = localize_to_gmt_minus_4(call['createdAt'])
         timeline.append({
             'time': dt_gmt4,
             'type': 'Call',
             'direction': call.get('direction', 'unknown'),
-            'duration': call.get('duration', 0),  # store as int for formatting
+            'duration': call.get('duration', 0),
             'status': call.get('status', 'unknown'),
             'id': call.get('id'),
-            # Make sure participants is always a list
             'participants': call.get('participants') or []
         })
     
+    # Prepare messages
     for message in messages:
         dt_gmt4 = localize_to_gmt_minus_4(message['createdAt'])
         timeline.append({
@@ -276,19 +316,18 @@ def display_timeline(calls, messages):
     
     # Sort descending by time
     timeline.sort(key=lambda x: x['time'], reverse=True)
-    
+
     for item in timeline:
-        # Format the heading
         time_str = item['time'].strftime("%Y-%m-%d %H:%M")
         icon = "📞" if item['type'] == "Call" else "💬"
         direction_icon = "⬅️" if item['direction'] == "inbound" else "➡️"
         
+        # Single expander per timeline event
         with st.expander(f"{icon} {direction_icon} {time_str}"):
             participants = item.get('participants', [])
             if participants:
                 st.write("**Participants:**")
                 for p in participants:
-                    # Safely handle if p is not a dict
                     if isinstance(p, dict):
                         p_number = p.get('phoneNumber', 'Unknown')
                         p_name = p.get('name', '')
@@ -299,35 +338,40 @@ def display_timeline(calls, messages):
                     st.write("- " + display_str)
 
             if item['type'] == "Call":
-                # Format the duration in min+sec
+                # Display duration in minutes+seconds
                 if isinstance(item['duration'], int):
                     st.write(f"**Duration:** {format_duration_seconds(item['duration'])}")
                 else:
                     st.write(f"**Duration:** {item['duration']}")
-
+                
+                # Show transcript if available (directly, no nested expander)
                 transcript = fetch_call_transcript(item['id'])
                 if transcript and transcript.get('dialogue'):
-                    with st.expander("View Transcript"):
-                        for seg in transcript['dialogue']:
-                            speaker = seg.get('identifier', 'Unknown')
-                            content = seg.get('content', '')
-                            # Also display start/end as mm:ss if desired
-                            start_sec = seg.get('start', 0)
-                            end_sec = seg.get('end', 0)
-                            start_str = format_duration_seconds(start_sec)
-                            end_str = format_duration_seconds(end_sec)
-                            st.write(f"**{speaker}** [{start_str} - {end_str}]: {content}")
+                    st.markdown("**Transcript**")
+                    for seg in transcript['dialogue']:
+                        speaker = seg.get('identifier', 'Unknown')
+                        content = seg.get('content', '')
+                        start_sec = seg.get('start', 0)
+                        end_sec = seg.get('end', 0)
+                        start_str = format_duration_seconds(start_sec)
+                        end_str = format_duration_seconds(end_sec)
+                        st.write(f"**{speaker}** [{start_str} - {end_str}]: {content}")
                 else:
                     st.write("Transcript not available or in progress.")
             else:
-                # It's a message
+                # Message item
                 st.write(f"**Message:** {item.get('content', 'No content')}")
             
             st.write(f"**Status:** {item['status']}")
 
 def display_all_events_in_one_table(calls, messages):
+    """
+    Shows calls & messages in one combined DataFrame, 
+    each row has DisplayTime, Type, Direction, From, To, Content, Duration, etc.
+    """
     rows = []
     
+    # Process calls
     for c in calls:
         dt_gmt4 = localize_to_gmt_minus_4(c['createdAt'])
         from_ = ""
@@ -352,6 +396,7 @@ def display_all_events_in_one_table(calls, messages):
             "Duration": format_duration_seconds(c.get('duration', 0))
         })
 
+    # Process messages
     for m in messages:
         dt_gmt4 = localize_to_gmt_minus_4(m['createdAt'])
         from_ = ""
@@ -390,7 +435,7 @@ def main():
 
     st.title("📱 Communication Analytics Dashboard")
 
-    # Use the newer st.query_params
+    # Use st.query_params (no more experimental_get_query_params)
     query_params = st.query_params
     phone_number = query_params.get("phone", [""])[0]
     
@@ -422,11 +467,11 @@ def main():
             with tab2:
                 display_communications_analysis(calls, messages)
 
-            # 3) Timeline
+            # 3) Timeline (one expander per event, no nested expanders)
             with tab3:
                 display_timeline(calls, messages)
 
-            # 4) Combined Table
+            # 4) Combined Overview Table
             with tab4:
                 display_all_events_in_one_table(calls, messages)
 
