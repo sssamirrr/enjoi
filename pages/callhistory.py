@@ -3,6 +3,9 @@ import requests
 from datetime import datetime
 import phonenumbers
 
+###############################################################################
+# 1) YOUR API KEY
+###############################################################################
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
@@ -10,7 +13,8 @@ HEADERS = {
 }
 
 ###############################################################################
-# 1) MAPPING OF phoneNumberId -> { "phone": ..., "name": ... }
+# 2) PHONE NUMBER MAP (ID -> {phone, name})
+#    We ONLY display 'name' for calls, ignoring the phone field.
 ###############################################################################
 PHONE_NUMBER_MAP = {
     "PNsyKJnJnG": {"phone": "+18438972426", "name": "Samir"},
@@ -53,9 +57,10 @@ PHONE_NUMBER_MAP = {
 }
 
 ###############################################################################
-# 2) E.164 parse of the external user’s typed phone
+# 3) PARSE/FORMAT PHONE
 ###############################################################################
 def format_phone_number_str(num_str: str) -> str:
+    """Try to parse num_str as US E.164; fallback to original if parse fails."""
     if not num_str:
         return ""
     try:
@@ -67,111 +72,114 @@ def format_phone_number_str(num_str: str) -> str:
     return num_str
 
 ###############################################################################
-# 3) API CALLS
+# 4) API CALLS
 ###############################################################################
 def get_openphone_numbers():
     url = "https://api.openphone.com/v1/phone-numbers"
-    resp = requests.get(url, headers=HEADERS)
-    if resp.status_code == 200:
-        return resp.json().get("data", [])
+    r = requests.get(url, headers=HEADERS)
+    if r.status_code == 200:
+        return r.json().get("data", [])
     return []
 
 def fetch_call_history(phone_number: str):
-    e164_num = format_phone_number_str(phone_number)
-    if not e164_num:
+    e164 = format_phone_number_str(phone_number)
+    if not e164:
         return []
-    
-    all_calls = []
-    for op_number in get_openphone_numbers():
-        phone_number_id = op_number.get("id")
+    out=[]
+    for pn in get_openphone_numbers():
+        phone_number_id = pn.get("id")
         if phone_number_id:
             url = "https://api.openphone.com/v1/calls"
             params = {
                 "phoneNumberId": phone_number_id,
-                "participants": [e164_num],
+                "participants": [e164],
                 "maxResults": 100
             }
-            r = requests.get(url, headers=HEADERS, params=params)
-            if r.status_code == 200:
-                all_calls.extend(r.json().get("data", []))
-    return all_calls
+            resp = requests.get(url, headers=HEADERS, params=params)
+            if resp.status_code==200:
+                out.extend(resp.json().get("data", []))
+    return out
 
 def fetch_message_history(phone_number: str):
-    e164_num = format_phone_number_str(phone_number)
-    if not e164_num:
+    e164 = format_phone_number_str(phone_number)
+    if not e164:
         return []
-    all_msgs = []
-    for op_number in get_openphone_numbers():
-        phone_number_id = op_number.get("id")
+    out=[]
+    for pn in get_openphone_numbers():
+        phone_number_id = pn.get("id")
         if phone_number_id:
-            url = "https://api.openphone.com/v1/messages"
+            url="https://api.openphone.com/v1/messages"
             params = {
                 "phoneNumberId": phone_number_id,
-                "participants": [e164_num],
-                "maxResults": 100
+                "participants": [e164],
+                "maxResults":100
             }
-            r = requests.get(url, headers=HEADERS, params=params)
-            if r.status_code == 200:
-                all_msgs.extend(r.json().get("data", []))
-    return all_msgs
+            resp = requests.get(url, headers=HEADERS, params=params)
+            if resp.status_code==200:
+                out.extend(resp.json().get("data", []))
+    return out
 
 def fetch_call_transcript(call_id: str):
-    url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
-    resp = requests.get(url, headers=HEADERS)
-    if resp.status_code == 200:
-        return resp.json().get("data", {})
+    url=f"https://api.openphone.com/v1/call-transcripts/{call_id}"
+    resp=requests.get(url, headers=HEADERS)
+    if resp.status_code==200:
+        return resp.json().get("data",{})
     return None
 
 ###############################################################################
-# 4) SHOW CALL FROM/TO BASED ON phoneNumberId + direction
+# 5) CALL FROM/TO USING phoneNumberId + direction
 ###############################################################################
-def format_duration_seconds(sec):
-    if not sec or sec < 0:
-        return "0m 00s"
-    sec = int(sec)
-    m, s = divmod(sec, 60)
-    return f"{m}m {s:02d}s"
-
-def get_call_from_to(call_data, external_phone: str):
+def unify_direction(direction: str):
     """
-    - direction=inbound => from=external_phone, to=(internal_line_number + name)
-    - direction=outbound => from=(internal_line_number + name), to=external_phone
-    We find the internal line via phoneNumberId => PHONE_NUMBER_MAP
+    Some calls have 'incoming'/'outgoing' instead of 'inbound'/'outbound'.
+    We'll unify them to 'inbound' or 'outbound' if possible.
     """
-    direction = call_data.get("direction","unknown")
-    phoneNumberId = call_data.get("phoneNumberId","")
+    d = direction.lower()
+    if d in ("inbound","incoming"):
+        return "inbound"
+    elif d in ("outbound","outgoing"):
+        return "outbound"
+    else:
+        return "unknown"
 
-    # Look up your dictionary
-    info = PHONE_NUMBER_MAP.get(phoneNumberId, {"phone":"???","name":"???"})
-    line_phone = info["phone"]
-    line_name  = info["name"]
+def get_call_from_to(call_data, typed_phone: str):
+    """
+    1) We find the internal line name from phoneNumberId in PHONE_NUMBER_MAP
+    2) If direction=inbound => from=typed_phone, to=(just the name)
+    3) If direction=outbound => from=(just the name), to=typed_phone
+    4) If not found in map => "Unknown Internal"
+    """
+    p_id = call_data.get("phoneNumberId","")
+    info = PHONE_NUMBER_MAP.get(p_id, {"phone":"???","name":"Unknown Internal"})
+    line_name = info["name"] or "Unknown Internal"
 
-    # Build the label like "+18434285482 (Owner Services Shared)"
-    internal_label = f"{line_phone} ({line_name})" if line_phone!="???" else "Unknown Internal"
+    direction = unify_direction(call_data.get("direction",""))
+    e164_typed = format_phone_number_str(typed_phone) or "Unknown External"
 
-    # decide based on direction
-    e164_ext = format_phone_number_str(external_phone) or "Unknown External"
-
-    if direction == "inbound":
-        return (e164_ext, internal_label)
-    elif direction == "outbound":
-        return (internal_label, e164_ext)
+    if direction=="inbound":
+        return (e164_typed, line_name)
+    elif direction=="outbound":
+        return (line_name, e164_typed)
     else:
         # fallback if direction unknown
-        return (e164_ext, internal_label)
+        return (line_name, e164_typed)
+
+def format_duration_seconds(sec):
+    if not sec or sec<0:
+        return "0m 00s"
+    sec=int(sec)
+    m,s=divmod(sec,60)
+    return f"{m}m {s:02d}s"
 
 def get_msg_from_to(msg_data):
-    """
-    The normal logic for messages is typically correct:
-    'from' is a string, 'to' is a list => we join them.
-    We'll just keep it. The user phone is presumably the 'from' or 'to' anyway.
-    """
-    m_from = msg_data.get("from","") or "Unknown"
-    if not isinstance(m_from, str):
-        m_from = "Unknown"
-    to_list = msg_data.get("to", []) or []
+    # We'll do normal from=..., to=..., ignoring phoneNumberId
+    # as messages are usually correct
+    m_from = msg_data.get("from","Unknown")
+    if not isinstance(m_from,str):
+        m_from="Unknown"
+    to_list = msg_data.get("to",[])
     if not isinstance(to_list, list):
-        to_list = []
+        to_list=[]
     if to_list:
         to_str = ", ".join(to_list)
     else:
@@ -179,150 +187,192 @@ def get_msg_from_to(msg_data):
     return (m_from, to_str)
 
 ###############################################################################
-# 5) METRICS, TIMELINE, DETAILS
+# 6) METRICS, TIMELINE, DETAILS
 ###############################################################################
 def display_metrics(calls, messages):
-    st.header("📊 Communication Metrics")
+    st.header("📊 Metrics")
 
-    total_calls = len(calls)
-    total_messages = len(messages)
-    inbound_calls = [c for c in calls if c.get('direction')=='inbound']
-    outbound_calls = [c for c in calls if c.get('direction')=='outbound']
+    # unify direction
+    for c in calls:
+        c["direction"] = unify_direction(c.get("direction",""))
+    inbound_calls = [c for c in calls if c["direction"]=="inbound"]
+    outbound_calls= [c for c in calls if c["direction"]=="outbound"]
 
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Calls", total_calls)
-    with col2:
-        st.metric("Messages", total_messages)
-    with col3:
-        st.metric("Inbound Calls", len(inbound_calls))
-    with col4:
-        st.metric("Outbound Calls", len(outbound_calls))
+    col1.metric("Calls", len(calls))
+    col2.metric("Messages", len(messages))
+    col3.metric("Inbound Calls", len(inbound_calls))
+    col4.metric("Outbound Calls", len(outbound_calls))
 
-def display_timeline(calls, messages, external_phone: str):
+def display_timeline(calls, messages, typed_phone: str):
     st.header("📅 Timeline (Descending)")
 
-    timeline=[]
+    # build a combined list
+    items=[]
     for c in calls:
         dt = datetime.fromisoformat(c["createdAt"].replace("Z","+00:00"))
-        from_, to_ = get_call_from_to(c, external_phone)
-        timeline.append({
-            "time": dt,
-            "type":"Call",
-            "direction": c.get("direction","unknown"),
-            "from": from_,
-            "to": to_,
-            "duration": c.get("duration",0),
-            "status": c.get("status","unknown"),
-            "id": c.get("id"),
-            "text":""
-        })
-    for m in messages:
-        dt = datetime.fromisoformat(m["createdAt"].replace("Z","+00:00"))
-        m_from, m_to = get_msg_from_to(m)
-        timeline.append({
-            "time": dt,
-            "type":"Message",
-            "direction": m.get("direction","unknown"),
-            "from": m_from,
-            "to": m_to,
-            "status": m.get("status","unknown"),
-            "id": m.get("id"),
-            "text": m.get("text","No content"),
-            "duration":0
-        })
-
-    # sort newest -> oldest
-    timeline.sort(key=lambda x:x["time"], reverse=True)
-
-    for item in timeline:
-        t_str = item["time"].strftime("%Y-%m-%d %H:%M")
-        icon  = "📞" if item["type"]=="Call" else "💬"
-        dir_icon = "⬅️" if item["direction"]=="inbound" else "➡️"
-        label = f"{icon} {dir_icon} {t_str}"
-
-        with st.expander(label):
-            st.write(f"**From:** {item['from']}")
-            st.write(f"**To:** {item['to']}")
-            st.write(f"**Direction:** {item['direction']}")
-            if item["type"]=="Call":
-                if item["status"]=="missed":
-                    st.write("**Status:** MISSED")
-                else:
-                    d_str = format_duration_seconds(item["duration"])
-                    st.write(f"**Duration:** {d_str}")
-                tr = fetch_call_transcript(item["id"])
-                if tr and tr.get("dialogue"):
-                    st.write("**Transcript:**")
-                    for seg in tr["dialogue"]:
-                        spkr = seg.get("identifier","???")
-                        txt  = seg.get("content","")
-                        st.write(f"{spkr}: {txt}")
-            else:
-                st.write(f"**Message:** {item['text']}")
-                st.write(f"**Status:** {item['status']}")
-
-def display_full_conversation_desc(calls, messages, external_phone: str):
-    """
-    Show calls/messages in DESCENDING order (newest -> oldest).
-    EXACT same logic as timeline, but we print in one big list
-    with transcripts inline, separated by <hr>.
-    """
-    st.header("📋 Full Conversation (Newest First)")
-
-    comms=[]
-    for c in calls:
-        dt = datetime.fromisoformat(c["createdAt"].replace("Z","+00:00"))
-        from_, to_ = get_call_from_to(c, external_phone)
-        comms.append({
+        direction=unify_direction(c.get("direction",""))
+        fr, to_ = get_call_from_to(c, typed_phone)
+        items.append({
             "time":dt,
             "type":"Call",
-            "direction": c.get("direction","unknown"),
-            "from": from_,
-            "to": to_,
-            "duration": c.get("duration",0),
-            "status": c.get("status","unknown"),
-            "id": c.get("id"),
+            "direction":direction,
+            "from":fr,
+            "to":to_,
+            "duration":c.get("duration",0),
+            "status":c.get("status","unknown"),
+            "id":c.get("id"),
             "text":""
         })
     for m in messages:
         dt = datetime.fromisoformat(m["createdAt"].replace("Z","+00:00"))
-        m_from,m_to = get_msg_from_to(m)
-        comms.append({
-            "time": dt,
+        direction=unify_direction(m.get("direction",""))
+        fr, to_ = get_msg_from_to(m)
+        items.append({
+            "time":dt,
             "type":"Message",
-            "direction":m.get("direction","unknown"),
-            "from": m_from,
-            "to": m_to,
-            "status": m.get("status","unknown"),
-            "id": m.get("id"),
-            "text": m.get("text","No content"),
-            "duration":0
+            "direction":direction,
+            "from":fr,
+            "to":to_,
+            "duration":0,
+            "status":m.get("status","unknown"),
+            "id":m.get("id"),
+            "text":m.get("text","No content")
         })
 
-    comms.sort(key=lambda x:x["time"], reverse=True)
+    # newest first
+    items.sort(key=lambda x:x["time"], reverse=True)
 
-    for i, item in enumerate(comms):
-        t_str = item["time"].strftime("%Y-%m-%d %H:%M")
-        d_str = item["direction"]
-        if item["type"]=="Call":
-            if item["status"]=="missed":
-                st.write(f"**{t_str}** {d_str} call from {item['from']} to {item['to']} [MISSED]")
-            else:
-                dur_str = format_duration_seconds(item["duration"])
-                st.write(f"**{t_str}** {d_str} call from {item['from']} to {item['to']} ({dur_str})")
-                if item["status"]!="missed":
-                    tr = fetch_call_transcript(item["id"])
-                    if tr and tr.get("dialogue"):
-                        for seg in tr["dialogue"]:
-                            spkr = seg.get("identifier","???")
-                            txt  = seg.get("content","")
-                            st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;**{spkr}:** {txt}", unsafe_allow_html=True)
+    for i, it in enumerate(items):
+        # alternate background: even -> #f9f9f9, odd-> #ffffff
+        bg = "#f9f9f9" if i%2==0 else "#ffffff"
+        # arrow
+        if it["direction"]=="inbound":
+            arrow="⬅️"
+        elif it["direction"]=="outbound":
+            arrow="➡️"
         else:
-            st.write(f"**{t_str}** {d_str} message from {item['from']} to {item['to']}: {item['text']}")
+            arrow="↕️"
 
-        if i<len(comms)-1:
-            st.markdown("<hr style='border:1px solid #ccc;'/>", unsafe_allow_html=True)
+        t_str = it["time"].strftime("%Y-%m-%d %H:%M")
+        # one line label
+        label = f"{'📞' if it['type']=='Call' else '💬'} {arrow} {t_str}"
+
+        # we'll just display in a box, not an expander
+        st.markdown(
+            f"""
+            <div style="background-color:{bg}; padding:8px; margin-bottom:6px;">
+              <strong>{label}</strong><br/>
+              <strong>From:</strong> {it['from']}<br/>
+              <strong>To:</strong> {it['to']}<br/>
+              <strong>Direction:</strong> {it['direction']}<br/>
+            """,
+            unsafe_allow_html=True
+        )
+
+        if it["type"]=="Call":
+            # Show duration
+            if it["status"]=="missed":
+                st.markdown("<strong>Status:</strong> MISSED", unsafe_allow_html=True)
+            else:
+                dur_str = format_duration_seconds(it["duration"])
+                st.markdown(f"<strong>Duration:</strong> {dur_str}", unsafe_allow_html=True)
+
+            # fetch transcript
+            call_tr = fetch_call_transcript(it["id"])
+            if call_tr and call_tr.get("dialogue"):
+                st.markdown("**Transcript:**", unsafe_allow_html=True)
+                for seg in call_tr["dialogue"]:
+                    spkr = seg.get("identifier","???")
+                    txt  = seg.get("content","")
+                    st.markdown(f"&nbsp;&nbsp;&nbsp;{spkr}: {txt}", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)  # close the box
+        else:
+            # a message
+            st.markdown(f"<strong>Message:</strong> {it['text']}", unsafe_allow_html=True)
+            st.markdown(f"<strong>Status:</strong> {it['status']}", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+def display_full_conversation_desc(calls, messages, typed_phone: str):
+    st.header("📋 Full Conversation (Newest First)")
+
+    items=[]
+    for c in calls:
+        dt = datetime.fromisoformat(c["createdAt"].replace("Z","+00:00"))
+        direction=unify_direction(c.get("direction",""))
+        fr, to_ = get_call_from_to(c, typed_phone)
+        items.append({
+            "time":dt,
+            "type":"Call",
+            "direction":direction,
+            "from":fr,
+            "to":to_,
+            "duration":c.get("duration",0),
+            "status":c.get("status","unknown"),
+            "id":c.get("id"),
+            "text":""
+        })
+    for m in messages:
+        dt = datetime.fromisoformat(m["createdAt"].replace("Z","+00:00"))
+        direction=unify_direction(m.get("direction",""))
+        fr, to_ = get_msg_from_to(m)
+        items.append({
+            "time":dt,
+            "type":"Message",
+            "direction":direction,
+            "from":fr,
+            "to":to_,
+            "duration":0,
+            "status":m.get("status","unknown"),
+            "id":m.get("id"),
+            "text":m.get("text","No content")
+        })
+
+    items.sort(key=lambda x:x["time"], reverse=True)
+
+    for i, it in enumerate(items):
+        bg = "#f9f9f9" if i%2==0 else "#ffffff"
+        if it["direction"]=="inbound":
+            arrow="⬅️"
+        elif it["direction"]=="outbound":
+            arrow="➡️"
+        else:
+            arrow="↕️"
+
+        t_str = it["time"].strftime("%Y-%m-%d %H:%M")
+        label = f"{'📞' if it['type']=='Call' else '💬'} {arrow} {t_str}"
+
+        st.markdown(
+            f"""
+            <div style="background-color:{bg}; padding:8px; margin-bottom:6px;">
+              <strong>{label}</strong><br/>
+              <strong>From:</strong> {it['from']}<br/>
+              <strong>To:</strong> {it['to']}<br/>
+              <strong>Direction:</strong> {it['direction']}<br/>
+            """,
+            unsafe_allow_html=True
+        )
+
+        if it["type"]=="Call":
+            if it["status"]=="missed":
+                st.markdown("<strong>Status:</strong> MISSED", unsafe_allow_html=True)
+            else:
+                dur_str = format_duration_seconds(it["duration"])
+                st.markdown(f"<strong>Duration:</strong> {dur_str}", unsafe_allow_html=True)
+
+            call_tr = fetch_call_transcript(it["id"])
+            if call_tr and call_tr.get("dialogue"):
+                st.markdown("**Transcript:**", unsafe_allow_html=True)
+                for seg in call_tr["dialogue"]:
+                    spkr=seg.get("identifier","???")
+                    txt =seg.get("content","")
+                    st.markdown(f"&nbsp;&nbsp;&nbsp;{spkr}: {txt}", unsafe_allow_html=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<strong>Message:</strong> {it['text']}", unsafe_allow_html=True)
+            st.markdown(f"<strong>Status:</strong> {it['status']}", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 ###############################################################################
 # MAIN
@@ -335,41 +385,38 @@ def display_history(user_phone):
         messages_data = fetch_message_history(user_phone)
 
     if not calls_data and not messages_data:
-        st.warning("No communication history found.")
+        st.warning("No communication history found for this number.")
         return
 
+    # Show 3 tabs
     tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📅 Timeline", "📋 Details"])
-
     with tab1:
         display_metrics(calls_data, messages_data)
-
     with tab2:
-        display_timeline(calls_data, messages_data, external_phone=user_phone)
-
+        display_timeline(calls_data, messages_data, typed_phone=user_phone)
     with tab3:
-        display_full_conversation_desc(calls_data, messages_data, external_phone=user_phone)
+        display_full_conversation_desc(calls_data, messages_data, typed_phone=user_phone)
 
 def main():
     st.set_page_config(page_title="Communication History",
                        page_icon="📱",
                        layout="wide")
 
-    query_params = st.query_params
-    default_phone = ""
-    if "phone" in query_params:
-        val = query_params["phone"]
-        if isinstance(val, list):
-            default_phone = val[0]
+    # get phone from query param or input
+    q = st.query_params
+    def_ph=""
+    if "phone" in q:
+        val=q["phone"]
+        if isinstance(val,list):
+            def_ph=val[0] or ""
         else:
-            default_phone = val
-
-    typed_phone = st.text_input("Enter phone number (auto E.164 for calls):",
-                                value=default_phone)
+            def_ph=val
+    typed_phone = st.text_input("Enter phone number (US #, auto E.164 for calls):", def_ph)
 
     if typed_phone:
         display_history(typed_phone)
     else:
-        st.error("Please enter a phone number.")
+        st.error("Please provide a phone number.")
 
 if __name__=="__main__":
     main()
