@@ -103,9 +103,16 @@ def format_duration_seconds(sec):
     Converts an integer `sec` into a string "Xm YYs".
     Example: 185 -> "3m 05s".
     """
-    if not sec or sec < 0:
-        return "0m 00s"
-    m, s = divmod(sec, 60)
+    # Ensure 'sec' is numeric, default to 0 if not
+    try:
+        sec = float(sec)
+    except:
+        sec = 0
+
+    if sec < 0:
+        sec = 0
+
+    m, s = divmod(int(sec), 60)
     return f"{m}m {s:02d}s"
 
 def localize_to_gmt_minus_4(iso_str):
@@ -173,8 +180,8 @@ def display_metrics_dashboard(metrics):
     
     with col3:
         # Convert numeric durations to "Xm YYs" strings
-        avg_dur_str = format_duration_seconds(int(metrics['avg_call_duration']))
-        max_dur_str = format_duration_seconds(int(metrics['max_call_duration']))
+        avg_dur_str = format_duration_seconds(metrics['avg_call_duration'])
+        max_dur_str = format_duration_seconds(metrics['max_call_duration'])
         
         st.metric("Avg Call Duration", avg_dur_str)
         st.metric("Max Call Duration", max_dur_str)
@@ -282,7 +289,7 @@ def display_communications_analysis(calls, messages):
 def display_timeline(calls, messages):
     """
     Shows calls/messages in a chronological timeline with a single expander per event.
-    NO nested expanders (to prevent StreamlitAPIException).
+    We also cast 'start_sec'/'end_sec' to int to avoid ValueErrors in format_duration_seconds().
     """
     st.subheader("📅 Communication Timeline")
 
@@ -339,10 +346,7 @@ def display_timeline(calls, messages):
 
             if item['type'] == "Call":
                 # Display duration in minutes+seconds
-                if isinstance(item['duration'], int):
-                    st.write(f"**Duration:** {format_duration_seconds(item['duration'])}")
-                else:
-                    st.write(f"**Duration:** {item['duration']}")
+                st.write(f"**Duration:** {format_duration_seconds(item['duration'])}")
                 
                 # Show transcript if available (directly, no nested expander)
                 transcript = fetch_call_transcript(item['id'])
@@ -351,8 +355,20 @@ def display_timeline(calls, messages):
                     for seg in transcript['dialogue']:
                         speaker = seg.get('identifier', 'Unknown')
                         content = seg.get('content', '')
+
+                        # Safely convert start/end to int
                         start_sec = seg.get('start', 0)
                         end_sec = seg.get('end', 0)
+                        # Convert them to int (handling strings, None, floats, etc.)
+                        try:
+                            start_sec = int(float(start_sec))
+                        except:
+                            start_sec = 0
+                        try:
+                            end_sec = int(float(end_sec))
+                        except:
+                            end_sec = 0
+
                         start_str = format_duration_seconds(start_sec)
                         end_str = format_duration_seconds(end_sec)
                         st.write(f"**{speaker}** [{start_str} - {end_str}]: {content}")
