@@ -5,35 +5,30 @@ import phonenumbers
 import pandas as pd
 import altair as alt
 
-# =============================================================================
-# API Configuration
-# WARNING: Hard-coding an API key is not recommended in production!
-# =============================================================================
+###############################################################################
+# API CONFIG
+###############################################################################
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
-
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
 
+###############################################################################
+# HELPER FUNCTIONS
+###############################################################################
 def format_phone_number(phone_number):
-    """
-    Parse and format the phone number to E.164 standard,
-    e.g. '+14155550123'.
-    """
+    """Parse and format phone number to E.164; fallback to input if invalid."""
     try:
         parsed = phonenumbers.parse(phone_number, "US")
         if phonenumbers.is_valid_number(parsed):
             return f"+{parsed.country_code}{parsed.national_number}"
-    except Exception as e:
-        st.error(f"Error parsing phone number: {e}")
-    return None
+    except Exception:
+        pass
+    return phone_number  # fallback
 
 def get_openphone_numbers():
-    """
-    Fetch the list of your OpenPhone numbers via the API.
-    Returns a list of phone number objects.
-    """
+    """Return list of your OpenPhone numbers from API."""
     url = "https://api.openphone.com/v1/phone-numbers"
     response = requests.get(url, headers=HEADERS)
     if response.status_code == 200:
@@ -41,10 +36,8 @@ def get_openphone_numbers():
     return []
 
 def fetch_call_history(phone_number):
-    """
-    Fetch call history from OpenPhone, filtering by the given phone_number.
-    Merges calls across all of your OpenPhone numbers (if you have multiple).
-    """
+    """Fetch calls for a given phone_number from all your OpenPhone lines."""
+    # E.164 format
     formatted_phone = format_phone_number(phone_number)
     if not formatted_phone:
         return []
@@ -59,16 +52,13 @@ def fetch_call_history(phone_number):
                 "participants": [formatted_phone],
                 "maxResults": 100
             }
-            response = requests.get(url, headers=HEADERS, params=params)
-            if response.status_code == 200:
-                all_calls.extend(response.json().get("data", []))
+            resp = requests.get(url, headers=HEADERS, params=params)
+            if resp.status_code == 200:
+                all_calls.extend(resp.json().get("data", []))
     return all_calls
 
 def fetch_message_history(phone_number):
-    """
-    Fetch message history from OpenPhone, filtering by the given phone_number.
-    Merges messages across all of your OpenPhone numbers (if multiple).
-    """
+    """Fetch messages for a given phone_number from all your OpenPhone lines."""
     formatted_phone = format_phone_number(phone_number)
     if not formatted_phone:
         return []
@@ -83,15 +73,23 @@ def fetch_message_history(phone_number):
                 "participants": [formatted_phone],
                 "maxResults": 100
             }
-            response = requests.get(url, headers=HEADERS, params=params)
-            if response.status_code == 200:
-                all_messages.extend(response.json().get("data", []))
+            resp = requests.get(url, headers=HEADERS, params=params)
+            if resp.status_code == 200:
+                all_messages.extend(resp.json().get("data", []))
     return all_messages
+
+def fetch_call_transcript(call_id):
+    """Fetch transcript lines for a given call ID."""
+    url = f"https://api.openphone.com/v1/call-transcripts/{call_id}"
+    resp = requests.get(url, headers=HEADERS)
+    if resp.status_code == 200:
+        return resp.json().get("data", {})
+    return None
 
 def format_duration_seconds(sec):
     """
-    Convert an integer or float 'sec' into "Xm YYs".
-    Example: 185 -> "3m 05s".
+    Convert integer/float 'sec' -> "Xm YYs".
+    Example: 185 -> "3m 05s"
     """
     if not sec or sec < 0:
         return "0m 00s"
@@ -99,23 +97,31 @@ def format_duration_seconds(sec):
     m, s = divmod(sec, 60)
     return f"{m}m {s:02d}s"
 
-def safe_get_phone_number(obj):
+def extract_from_to_participants(participants):
     """
-    Some calls/messages have 'from'/'to' as a dict, some as a string.
-    This function gracefully returns a phone number string either way.
+    Given a list of participants with structure like:
+       [{'direction':'source','phoneNumber':'+1555...'},{'direction':'destination','phoneNumber':'+1666...'}]
+    Return (from_number, to_number).
+    If not found, return ("Unknown","Unknown").
     """
-    if isinstance(obj, dict):
-        return obj.get('phoneNumber', 'Unknown')
-    elif isinstance(obj, str):
-        # If it's already a string, just return it
-        return obj
-    return "Unknown"
+    from_num = "Unknown"
+    to_num = "Unknown"
+    for p in participants or []:
+        p_dir = p.get('direction', '')
+        p_num = p.get('phoneNumber', '')
+        if p_dir == 'source':
+            from_num = p_num
+        elif p_dir == 'destination':
+            to_num = p_num
+    return from_num, to_num
 
+###############################################################################
+# METRICS & TIMELINE (OPTIONAL)
+###############################################################################
 def display_metrics(calls, messages):
     st.header("📊 Communication Metrics")
 
     col1, col2, col3, col4, col5 = st.columns(5)
-    
     total_calls = len(calls)
     total_messages = len(messages)
     inbound_calls = [c for c in calls if c.get('direction') == 'inbound']
@@ -138,63 +144,168 @@ def display_metrics(calls, messages):
     if call_durations:
         avg_duration = sum(call_durations) / len(call_durations)
         max_duration = max(call_durations)
-        
-        colA, colB = st.columns(2)
-        with colA:
+        c1, c2 = st.columns(2)
+        with c1:
             st.metric("Average Call Duration (seconds)", f"{avg_duration:.1f}")
-        with colB:
+        with c2:
             st.metric("Longest Call (seconds)", max_duration)
 
     st.subheader("💬 Message Analytics")
     message_lengths = [len(m.get('text', '')) for m in messages if m.get('text')]
     if message_lengths:
         avg_length = sum(message_lengths) / len(message_lengths)
-        st.metric("Average Message Length (characters)", f"{avg_length:.1f}")
+        st.metric("Avg Message Length", f"{avg_length:.1f}")
 
 def display_timeline(calls, messages):
     """
-    Example timeline with expanders, if you still want it.
-    Otherwise, you can remove or simplify.
+    Example 'Timeline' view with expanders for calls/messages in descending order.
+    If you only want the 'Details' tab, you can remove this entirely.
     """
     st.header("📅 Communication Timeline")
 
     timeline = []
-    for call in calls:
+
+    # Prepare calls
+    for c in calls:
+        t = datetime.fromisoformat(c['createdAt'].replace('Z', '+00:00'))
         timeline.append({
-            'time': datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')),
+            'time': t,
             'type': 'Call',
-            'direction': call.get('direction', 'unknown'),
-            'duration': call.get('duration', 'N/A'),
-            'status': call.get('status', 'unknown'),
-            'id': call.get('id')
+            'direction': c.get('direction', 'unknown'),
+            'duration': c.get('duration', 0),
+            'status': c.get('status', 'unknown'),
+            'id': c.get('id'),
+            'participants': c.get('participants', [])
         })
-    for message in messages:
+
+    # Prepare messages
+    for m in messages:
+        t = datetime.fromisoformat(m['createdAt'].replace('Z', '+00:00'))
         timeline.append({
-            'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
+            'time': t,
             'type': 'Message',
-            'direction': message.get('direction', 'unknown'),
-            'text': message.get('text', 'No content'),
-            'status': message.get('status', 'unknown'),
-            'id': message.get('id')
+            'direction': m.get('direction', 'unknown'),
+            'text': m.get('text', 'No content'),
+            'status': m.get('status', 'unknown'),
+            'id': m.get('id'),
+            'participants': m.get('participants', [])
         })
-    
+
+    # Sort descending
     timeline.sort(key=lambda x: x['time'], reverse=True)
 
     for item in timeline:
-        t_str = item['time'].strftime("%Y-%m-%d %H:%M")
+        time_str = item['time'].strftime("%Y-%m-%d %H:%M")
         icon = "📞" if item['type'] == "Call" else "💬"
         direction_icon = "⬅️" if item['direction'] == "inbound" else "➡️"
-        
-        label = f"{icon} {direction_icon} {t_str}"
+        label = f"{icon} {direction_icon} {time_str}"
+
         with st.expander(label):
             if item['type'] == "Call":
-                dur_str = str(item['duration']) + " sec"
-                st.write(f"Duration: {dur_str}")
-                st.write(f"Status: {item['status']}")
+                # from/to via participants
+                from_, to_ = extract_from_to_participants(item['participants'])
+                st.write(f"**From:** {from_}")
+                st.write(f"**To:**   {to_}")
+                st.write(f"**Direction:** {item['direction']}")
+                # Show missed or duration
+                if item['status'] == 'missed':
+                    st.write("**Status:** MISSED")
+                else:
+                    dur_str = format_duration_seconds(item['duration'])
+                    st.write(f"**Duration:** {dur_str}")
+                # If you want transcripts here too:
+                transcript = fetch_call_transcript(item['id'])
+                if transcript and transcript.get("dialogue"):
+                    st.write("**Transcript:**")
+                    for seg in transcript["dialogue"]:
+                        spkr = seg.get('identifier','???')
+                        txt  = seg.get('content','')
+                        st.write(f"{spkr}: {txt}")
             else:
-                st.write(f"Text: {item.get('text','No content')}")
-                st.write(f"Status: {item['status']}")
+                # It's a message
+                from_, to_ = extract_from_to_participants(item['participants'])
+                st.write(f"**From:** {from_}")
+                st.write(f"**To:**   {to_}")
+                st.write(f"**Direction:** {item['direction']}")
+                st.write(f"**Text:** {item.get('text','No content')}")
+                st.write(f"**Status:** {item['status']}")
 
+###############################################################################
+# CHRONOLOGICAL BOOK-STYLE DISPLAY
+###############################################################################
+def display_full_chronological(calls, messages):
+    st.header("Full Conversation (Chronological)")
+
+    # Merge calls + messages
+    comms = []
+
+    # Calls
+    for c in calls:
+        t = datetime.fromisoformat(c['createdAt'].replace('Z', '+00:00'))
+        from_, to_ = extract_from_to_participants(c.get('participants', []))
+        comms.append({
+            'time': t,
+            'type': 'call',
+            'direction': c.get('direction','unknown'),
+            'from': from_,
+            'to': to_,
+            'status': c.get('status','unknown'),
+            'duration': c.get('duration', 0),
+            'id': c.get('id')  # needed for transcripts
+        })
+
+    # Messages
+    for m in messages:
+        t = datetime.fromisoformat(m['createdAt'].replace('Z', '+00:00'))
+        from_, to_ = extract_from_to_participants(m.get('participants', []))
+        comms.append({
+            'time': t,
+            'type': 'message',
+            'direction': m.get('direction','unknown'),
+            'from': from_,
+            'to': to_,
+            'text': m.get('text','No content')
+        })
+
+    # Sort ascending by time
+    comms.sort(key=lambda x: x['time'])
+
+    # Print each in chronological order
+    for item in comms:
+        ts_str = item['time'].strftime("%Y-%m-%d %H:%M")
+        dir_str = item['direction']
+        if item['type'] == 'call':
+            # Missed or show duration
+            if item['status'] == 'missed':
+                st.write(
+                    f"{ts_str} {dir_str} call from {item['from']} "
+                    f"to {item['to']} [MISSED]"
+                )
+            else:
+                dur_str = format_duration_seconds(item['duration'])
+                st.write(
+                    f"{ts_str} {dir_str} call from {item['from']} "
+                    f"to {item['to']} ({dur_str})"
+                )
+            # Show transcript if not missed
+            if item['status'] != 'missed':
+                transcript = fetch_call_transcript(item['id'])
+                if transcript and transcript.get('dialogue'):
+                    for seg in transcript['dialogue']:
+                        speaker = seg.get('identifier','???')
+                        content = seg.get('content','')
+                        st.write(f"    {speaker}: {content}")
+
+        else:
+            # It's a message
+            st.write(
+                f"{ts_str} {dir_str} message from {item['from']} "
+                f"to {item['to']}: {item.get('text','')}"
+            )
+
+###############################################################################
+# MAIN APP
+###############################################################################
 def display_history(phone_number):
     st.title(f"📱 Communication History for {phone_number}")
 
@@ -208,96 +319,29 @@ def display_history(phone_number):
 
     tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📅 Timeline", "📋 Details"])
 
-    # 1) Metrics
     with tab1:
         display_metrics(calls, messages)
 
-    # 2) Timeline
     with tab2:
         display_timeline(calls, messages)
 
-    # 3) Book-style chronological details (no more buttons)
     with tab3:
-        st.header("Full Conversation (Chronological)")
-
-        # Merge calls + messages
-        communications = []
-
-        # Process calls
-        for c in calls:
-            dt_obj = datetime.fromisoformat(c['createdAt'].replace('Z', '+00:00'))
-            communications.append({
-                'time': dt_obj,
-                'type': 'call',
-                'direction': c.get('direction', 'unknown'),
-                # Use the safe_get_phone_number to handle dict/string
-                'from': safe_get_phone_number(c.get('from')),
-                'to': safe_get_phone_number(c.get('to')),
-                'status': c.get('status', 'unknown'),
-                'duration': c.get('duration', 0)
-            })
-
-        # Process messages
-        for m in messages:
-            dt_obj = datetime.fromisoformat(m['createdAt'].replace('Z', '+00:00'))
-            communications.append({
-                'time': dt_obj,
-                'type': 'message',
-                'direction': m.get('direction', 'unknown'),
-                # Use the safe_get_phone_number as well
-                'from': safe_get_phone_number(m.get('from')),
-                'to': safe_get_phone_number(m.get('to')),
-                'text': m.get('text', 'No content')
-            })
-
-        # Sort ascending by time
-        communications.sort(key=lambda x: x['time'])
-
-        # Print each in chronological order
-        for item in communications:
-            ts_str = item['time'].strftime("%Y-%m-%d %H:%M")
-            dir_str = item['direction']
-
-            if item['type'] == 'call':
-                # If missed call, show [MISSED]
-                if item['status'] == 'missed':
-                    st.write(
-                        f"{ts_str} {dir_str} call from {item['from']} "
-                        f"to {item['to']} [MISSED]"
-                    )
-                else:
-                    # Show duration in min+sec
-                    dur_str = format_duration_seconds(item['duration'])
-                    st.write(
-                        f"{ts_str} {dir_str} call from {item['from']} "
-                        f"to {item['to']} ({dur_str})"
-                    )
-            else:
-                # It's a message
-                msg_txt = item.get('text', '')
-                st.write(
-                    f"{ts_str} {dir_str} message from {item['from']} "
-                    f"to {item['to']}: {msg_txt}"
-                )
+        display_full_chronological(calls, messages)
 
 def main():
-    st.set_page_config(
-        page_title="Communication History",
-        page_icon="📱",
-        layout="wide"
-    )
+    st.set_page_config(page_title="Communication History", page_icon="📱", layout="wide")
 
-    # Attempt to get phone from query params, else prompt user
+    # Attempt to read phone from query params
     query_params = st.query_params
     default_phone = ""
     if "phone" in query_params:
-        if isinstance(query_params["phone"], list):
-            default_phone = query_params["phone"][0] or ""
+        val = query_params["phone"]
+        if isinstance(val, list):
+            default_phone = val[0] or ""
         else:
-            default_phone = query_params["phone"] or ""
+            default_phone = val or ""
 
     phone_number = st.text_input("Enter phone number:", value=default_phone)
-
     if phone_number:
         display_history(phone_number)
     else:
