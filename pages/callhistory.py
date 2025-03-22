@@ -255,61 +255,20 @@ def build_calls_text(calls):
         all_transcripts_text += "\n"
     return all_transcripts_text
 
-# ----------------------------------------------------------------------------
-# NEW FUNCTION: Build "Conversations" by grouping calls/messages by DATE
-# ----------------------------------------------------------------------------
-def build_conversations_text(calls, messages):
-    """
-    Returns a single text string that lumps calls & messages by date (ascending).
-    For each date, we list the time, direction, type (call/message),
-    plus short details.
-    """
-    # Combine calls + messages in chronological (ascending) order
-    data = []
-    for c in calls:
-        dt = datetime.fromisoformat(c['createdAt'].replace('Z', '+00:00'))
-        data.append({
-            'datetime': dt,
-            'date': dt.strftime('%Y-%m-%d'),
-            'time': dt.strftime('%H:%M'),
-            'direction': c.get('direction', 'unknown'),
-            'type': 'Call',
-            'duration': c.get('duration', 'N/A'),
-            'text': ''  # calls do not have text
-        })
-    for m in messages:
-        dt = datetime.fromisoformat(m['createdAt'].replace('Z', '+00:00'))
-        data.append({
-            'datetime': dt,
-            'date': dt.strftime('%Y-%m-%d'),
-            'time': dt.strftime('%H:%M'),
-            'direction': m.get('direction', 'unknown'),
-            'type': 'Message',
-            'duration': '',
-            'text': m.get('text', 'No content')
-        })
-    
-    # Sort ascending by datetime
-    data.sort(key=lambda x: x['datetime'])
-    
-    conversation_text = ""
-    current_date = None
-    
-    for item in data:
-        if item['date'] != current_date:
-            current_date = item['date']
-            conversation_text += f"\n=== {current_date} ===\n"
 
-        dir_label = "Inbound" if item['direction'] == 'inbound' else "Outbound"
-        if item['type'] == 'Call':
-            conversation_text += (f"{item['time']} - {dir_label} CALL"
-                                  f" (duration: {item['duration']}s)\n")
-        else:
-            # It's a message
-            conversation_text += (f"{item['time']} - {dir_label} MESSAGE: "
-                                  f"{item['text']}\n")
-    
-    return conversation_text.strip()
+# --------------------- NEW HELPER (optional) ---------------------
+# If you want to show a snippet from the start of each call's transcript:
+def fetch_first_transcript_line(call_id):
+    """
+    Returns the first line of the call transcript (up to 60 chars),
+    or empty string if not available.
+    """
+    data = fetch_call_transcript(call_id)
+    if data and data.get('dialogue'):
+        first_line = data['dialogue'][0].get('content', '')
+        return first_line[:60]  # up to 60 characters
+    return ""
+
 
 def display_history(phone_number):
     st.title(f"📱 Communication History for {phone_number}")
@@ -324,15 +283,12 @@ def display_history(phone_number):
 
     tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📅 Timeline", "📋 Details"])
     
-    # TAB 1: Metrics
     with tab1:
         display_metrics(calls, messages)
     
-    # TAB 2: Timeline
     with tab2:
         display_timeline(calls, messages)
     
-    # TAB 3: Detailed History
     with tab3:
         st.header("Detailed History")
 
@@ -341,10 +297,6 @@ def display_history(phone_number):
         show_all_messages = st.button("Show All Messages")
         show_all_calls = st.button("Show All Call Transcripts")
         show_both = st.button("Show Both (Messages + Call Transcripts)")
-        
-        # NEW Buttons: Show Per-Day Conversations / Copy Per-Day Conversations
-        show_per_day_conv = st.button("Show Per-Day Conversations")
-        copy_per_day_conv = st.button("Copy Per-Day Conversations")
 
         copy_all_messages = st.button("Copy All Messages Text")
         copy_all_calls = st.button("Copy All Call Transcripts Text")
@@ -353,15 +305,9 @@ def display_history(phone_number):
         # Build texts
         messages_text = build_messages_text(messages) if (show_all_messages or copy_all_messages or show_both or copy_both) else ""
         calls_text = build_calls_text(calls) if (show_all_calls or copy_all_calls or show_both or copy_both) else ""
-        
         both_text = ""
         if (show_both or copy_both):
             both_text = "Messages:\n" + messages_text + "\nCall Transcripts:\n" + calls_text
-
-        # Build per-day conversations text only if needed
-        conv_text = ""
-        if show_per_day_conv or copy_per_day_conv:
-            conv_text = build_conversations_text(calls, messages)
 
         # Display them inline if show buttons clicked
         if show_all_messages and messages_text:
@@ -382,12 +328,6 @@ def display_history(phone_number):
                 if line.strip():
                     st.write(line)
 
-        if show_per_day_conv and conv_text:
-            st.write("**Per-Day Conversations:**")
-            for line in conv_text.split("\n"):
-                if line.strip():
-                    st.write(line)
-
         # Display text areas for copying if copy buttons clicked
         if copy_all_messages and messages_text:
             st.text_area("All Messages", messages_text, height=300)
@@ -398,27 +338,42 @@ def display_history(phone_number):
         if copy_both and both_text:
             st.text_area("Messages + Call Transcripts", both_text, height=300)
 
-        if copy_per_day_conv and conv_text:
-            st.text_area("Per-Day Conversations", conv_text, height=300)
-
-        # Existing checkboxes to show calls/messages individually
+        # -----------------------------------------------------------------------
+        # Now show the checkboxes and INDIVIDUAL calls/messages with timestamps:
+        # -----------------------------------------------------------------------
         show_calls = st.checkbox("Show Calls", True)
         show_messages = st.checkbox("Show Messages", True)
         
         if show_calls:
             st.subheader("📞 Calls")
-            for call in sorted(calls, key=lambda x: x['createdAt'], reverse=True):
-                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
-                direction = "Incoming" if call.get('direction') == 'inbound' else "Outgoing"
-                st.write(f"**{call_time}** - {direction} call ({call.get('duration', 'N/A')} seconds)")
-        
+            # Sort calls descending by time
+            calls_sorted = sorted(calls, key=lambda x: x['createdAt'], reverse=True)
+            for call in calls_sorted:
+                # Format the main line with date/time, inbound/outbound, and snippet
+                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
+                call_time_str = call_time.strftime('%Y-%m-%d %H:%M')
+                direction = "Inbound" if call.get('direction') == 'inbound' else "Outbound"
+                duration = call.get('duration', 'N/A')
+                
+                # OPTIONAL: fetch the first line of transcript (short snippet)
+                snippet = fetch_first_transcript_line(call['id'])
+                if snippet:
+                    snippet_msg = f" | First line: {snippet}"
+                else:
+                    snippet_msg = ""
+
+                st.write(f"**{call_time_str}** - {direction} call ({duration} seconds){snippet_msg}")
+
         if show_messages:
             st.subheader("💬 Messages")
-            for message in sorted(messages, key=lambda x: x['createdAt'], reverse=True):
-                message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
-                direction = "Received" if message.get('direction') == 'inbound' else "Sent"
-                text = message.get('text', 'No content')  # Using text per API
-                st.write(f"**{message_time}** - {direction}: {text}")
+            # Sort messages descending by time
+            messages_sorted = sorted(messages, key=lambda x: x['createdAt'], reverse=True)
+            for message in messages_sorted:
+                message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
+                message_time_str = message_time.strftime('%Y-%m-%d %H:%M')
+                direction = "Inbound" if message.get('direction') == 'inbound' else "Outbound"
+                text = message.get('text', 'No content')[:60]  # take up to 60 chars
+                st.write(f"**{message_time_str}** - {direction} message: {text}")
 
 def main():
     st.set_page_config(
