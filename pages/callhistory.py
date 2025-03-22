@@ -6,7 +6,6 @@ import pandas as pd
 from collections import Counter
 import altair as alt
 
-# OpenPhone API Credentials
 OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"
 HEADERS = {
     "Authorization": OPENPHONE_API_KEY,
@@ -83,13 +82,10 @@ def fetch_message_history(phone_number):
 def calculate_response_times(communications):
     response_times = []
     sorted_comms = sorted(communications, key=lambda x: x['time'])
-    
     for i in range(1, len(sorted_comms)):
-        # If direction changes between consecutive items, treat that as a response
         if sorted_comms[i]['direction'] != sorted_comms[i-1]['direction']:
             time_diff = (sorted_comms[i]['time'] - sorted_comms[i-1]['time']).total_seconds() / 60
             response_times.append(time_diff)
-    
     return response_times
 
 def display_metrics(calls, messages):
@@ -120,14 +116,13 @@ def display_metrics(calls, messages):
         avg_duration = sum(call_durations) / len(call_durations)
         max_duration = max(call_durations)
         
-        col1, col2 = st.columns(2)
-        with col1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.metric("Average Call Duration (seconds)", f"{avg_duration:.1f}")
-        with col2:
+        with c2:
             st.metric("Longest Call (seconds)", max_duration)
 
     st.subheader("💬 Message Analytics")
-    # Using 'text' as per API documentation
     message_lengths = [len(m.get('text', '')) for m in messages if m.get('text')]
     if message_lengths:
         avg_length = sum(message_lengths) / len(message_lengths)
@@ -190,7 +185,7 @@ def display_timeline(calls, messages):
             'time': datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00')),
             'type': 'Message',
             'direction': message.get('direction', 'unknown'),
-            'text': message.get('text', 'No content'),  # Using 'text' as per docs
+            'text': message.get('text', 'No content'),
             'status': message.get('status', 'unknown'),
         })
     
@@ -255,20 +250,12 @@ def build_calls_text(calls):
         all_transcripts_text += "\n"
     return all_transcripts_text
 
-
-# --------------------- NEW HELPER (optional) ---------------------
-# If you want to show a snippet from the start of each call's transcript:
+# OPTIONAL: fetch the first line of a call's transcript
 def fetch_first_transcript_line(call_id):
-    """
-    Returns the first line of the call transcript (up to 60 chars),
-    or empty string if not available.
-    """
     data = fetch_call_transcript(call_id)
     if data and data.get('dialogue'):
-        first_line = data['dialogue'][0].get('content', '')
-        return first_line[:60]  # up to 60 characters
+        return data['dialogue'][0].get('content', '')
     return ""
-
 
 def display_history(phone_number):
     st.title(f"📱 Communication History for {phone_number}")
@@ -283,16 +270,19 @@ def display_history(phone_number):
 
     tab1, tab2, tab3 = st.tabs(["📊 Metrics", "📅 Timeline", "📋 Details"])
     
+    # TAB 1: Metrics
     with tab1:
         display_metrics(calls, messages)
     
+    # TAB 2: Timeline
     with tab2:
         display_timeline(calls, messages)
     
+    # TAB 3: Detailed History
     with tab3:
         st.header("Detailed History")
 
-        # Show/Copy Buttons at the top
+        # ---------------------- Original Copy/Paste Buttons --------------------
         st.subheader("Show and Copy Full Content")
         show_all_messages = st.button("Show All Messages")
         show_all_calls = st.button("Show All Call Transcripts")
@@ -302,9 +292,13 @@ def display_history(phone_number):
         copy_all_calls = st.button("Copy All Call Transcripts Text")
         copy_both = st.button("Copy Both")
 
-        # Build texts
-        messages_text = build_messages_text(messages) if (show_all_messages or copy_all_messages or show_both or copy_both) else ""
-        calls_text = build_calls_text(calls) if (show_all_calls or copy_all_calls or show_both or copy_both) else ""
+        messages_text = (build_messages_text(messages) 
+                         if (show_all_messages or copy_all_messages or show_both or copy_both) 
+                         else "")
+        calls_text = (build_calls_text(calls) 
+                      if (show_all_calls or copy_all_calls or show_both or copy_both) 
+                      else "")
+        
         both_text = ""
         if (show_both or copy_both):
             both_text = "Messages:\n" + messages_text + "\nCall Transcripts:\n" + calls_text
@@ -331,16 +325,12 @@ def display_history(phone_number):
         # Display text areas for copying if copy buttons clicked
         if copy_all_messages and messages_text:
             st.text_area("All Messages", messages_text, height=300)
-
         if copy_all_calls and calls_text:
             st.text_area("All Call Transcripts", calls_text, height=300)
-
         if copy_both and both_text:
             st.text_area("Messages + Call Transcripts", both_text, height=300)
 
-        # -----------------------------------------------------------------------
-        # Now show the checkboxes and INDIVIDUAL calls/messages with timestamps:
-        # -----------------------------------------------------------------------
+        # ---------------------- Show Calls & Messages w/ Timestamps + Snippets --------------------
         show_calls = st.checkbox("Show Calls", True)
         show_messages = st.checkbox("Show Messages", True)
         
@@ -348,32 +338,32 @@ def display_history(phone_number):
             st.subheader("📞 Calls")
             # Sort calls descending by time
             calls_sorted = sorted(calls, key=lambda x: x['createdAt'], reverse=True)
-            for call in calls_sorted:
-                # Format the main line with date/time, inbound/outbound, and snippet
-                call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
-                call_time_str = call_time.strftime('%Y-%m-%d %H:%M')
-                direction = "Inbound" if call.get('direction') == 'inbound' else "Outbound"
-                duration = call.get('duration', 'N/A')
+            for c in calls_sorted:
+                dt_obj = datetime.fromisoformat(c['createdAt'].replace('Z', '+00:00'))
+                dt_str = dt_obj.strftime("%Y-%m-%d %H:%M")
+                direction_str = "Inbound" if c.get('direction') == 'inbound' else "Outbound"
+                duration = c.get('duration', 'N/A')
                 
-                # OPTIONAL: fetch the first line of transcript (short snippet)
-                snippet = fetch_first_transcript_line(call['id'])
+                # Grab snippet from the beginning of the call transcript
+                snippet = fetch_first_transcript_line(c['id'])
+                snippet_preview = snippet[:70] + ("..." if len(snippet) > 70 else "")
+                
+                st.write(f"**{dt_str}** - {direction_str} Call ({duration}s)")
                 if snippet:
-                    snippet_msg = f" | First line: {snippet}"
-                else:
-                    snippet_msg = ""
-
-                st.write(f"**{call_time_str}** - {direction} call ({duration} seconds){snippet_msg}")
+                    st.write(f"Snippet: {snippet_preview}")
 
         if show_messages:
             st.subheader("💬 Messages")
-            # Sort messages descending by time
             messages_sorted = sorted(messages, key=lambda x: x['createdAt'], reverse=True)
-            for message in messages_sorted:
-                message_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
-                message_time_str = message_time.strftime('%Y-%m-%d %H:%M')
-                direction = "Inbound" if message.get('direction') == 'inbound' else "Outbound"
-                text = message.get('text', 'No content')[:60]  # take up to 60 chars
-                st.write(f"**{message_time_str}** - {direction} message: {text}")
+            for m in messages_sorted:
+                dt_obj = datetime.fromisoformat(m['createdAt'].replace('Z', '+00:00'))
+                dt_str = dt_obj.strftime("%Y-%m-%d %H:%M")
+                direction_str = "Inbound" if m.get('direction') == 'inbound' else "Outbound"
+                text_full = m.get('text', 'No content')
+                text_preview = text_full[:70] + ("..." if len(text_full) > 70 else "")
+                
+                st.write(f"**{dt_str}** - {direction_str} Message")
+                st.write(f"Snippet: {text_preview}")
 
 def main():
     st.set_page_config(
@@ -385,7 +375,6 @@ def main():
     query_params = st.query_params
     default_phone = query_params.get("phone", "")
 
-    # Input box at the top of the page for a phone number
     phone_number = st.text_input("Enter another phone number:", value=default_phone)
 
     if phone_number:
