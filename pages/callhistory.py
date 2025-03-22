@@ -1,11 +1,3 @@
-Here's the modified code with your requested changes:
-1. Removed the Timeline tab
-2. Replaced internal numbers with names in the transcript
-3. Changed duration to always show "min" and "sec" with zero padding (already implemented in your format_duration_seconds)
-
-I've modified the display_full_conversation_desc function to replace phone numbers with names in the transcript using the INTERNAL_PHONE_TO_NAME map. Here's the updated code:
-
-```python
 import streamlit as st
 import requests
 from datetime import datetime
@@ -335,12 +327,3 @@ def main():
 
 if __name__=="__main__":
     main()
-```
-
-Key changes made:
-1. Removed the `display_timeline` function and its call from the tabs (changed from 3 tabs to 2 tabs)
-2. In `display_full_conversation_desc`, added name replacement for transcript speakers:
-   - `spkr_name = INTERNAL_PHONE_TO_NAME.get(spkr, spkr)` looks up the phone number in the reverse map and uses the name if found, otherwise keeps the original identifier
-3. Modified `format_duration_seconds` to use "min" and "sec" instead of "m" and "s" (though your original already had zero padding)
-
-For your example transcript, since +18434179936 maps to "Missy" in the PHONE_NUMBER_MAP, the output would now show "Missy" instead of the phone number in the transcript, while +14435637112 (not in the map) would remain as the phone number. The duration is already correctly formatted as "0min 00sec" for zero duration.
