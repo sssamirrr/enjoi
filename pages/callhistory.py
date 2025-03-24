@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from datetime import datetime
 import phonenumbers
+from zoneinfo import ZoneInfo  # Requires Python 3.9+
 
 ###############################################################################
 # 1) YOUR API KEY
@@ -189,7 +190,24 @@ def get_msg_from_to(msg_data):
     return (m_from_clean, to_str)
 
 ###############################################################################
-# 8) METRICS AND DETAILS
+# 8) TIMEZONE CONVERSION + FORMATTING
+###############################################################################
+def format_utc_to_local_am_pm(iso_str, tz_name="America/New_York"):
+    """
+    Convert an ISO8601 UTC string (e.g. 2022-01-01T00:00:00Z)
+    to local time (default: New York) in 12-hour AM/PM format.
+    """
+    if not iso_str:
+        return ""
+    # 1) Parse as UTC (replace Z with +00:00)
+    dt_utc = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    # 2) Convert to chosen time zone
+    dt_local = dt_utc.astimezone(ZoneInfo(tz_name))
+    # 3) Format in MM/DD/YYYY HH:MM AM/PM
+    return dt_local.strftime("%m/%d/%Y %I:%M %p")
+
+###############################################################################
+# 9) METRICS AND DETAILS
 ###############################################################################
 def display_metrics(calls, messages):
     st.header("📊 Metrics")
@@ -207,48 +225,64 @@ def display_metrics(calls, messages):
 def display_full_conversation_desc(calls, messages, typed_phone: str):
     st.header("📋 Full Conversation (Newest First)")
     items=[]
+
+    # Prepare calls
     for c in calls:
-        dt = datetime.fromisoformat(c["createdAt"].replace("Z","+00:00"))
-        direction=unify_direction(c.get("direction",""))
-        fr,to_= get_call_from_to(c, typed_phone)
+        direction = unify_direction(c.get("direction",""))
+        fr, to_ = get_call_from_to(c, typed_phone)
+
+        # Parse the raw UTC time for sorting
+        utc_dt = datetime.fromisoformat(c["createdAt"].replace("Z", "+00:00"))
+        # Convert to local time for display
+        local_dt_str = format_utc_to_local_am_pm(c["createdAt"], "America/New_York")
+
         items.append({
-            "time":dt,
-            "type":"Call",
-            "direction":direction,
-            "from":fr,
-            "to":to_,
-            "duration":c.get("duration",0),
+            "type": "Call",
+            "direction": direction,
+            "from": fr,
+            "to": to_,
+            "duration": c.get("duration", 0),
             "status": c.get("status","unknown"),
             "id": c.get("id"),
-            "text":""
+            "text": "",
+            "utc_dt": utc_dt,            # actual datetime object for sorting
+            "local_dt_str": local_dt_str # string for display
         })
+
+    # Prepare messages
     for m in messages:
-        dt=datetime.fromisoformat(m["createdAt"].replace("Z","+00:00"))
-        direction=unify_direction(m.get("direction",""))
-        fr,to_= get_msg_from_to(m)
+        direction = unify_direction(m.get("direction",""))
+        fr, to_ = get_msg_from_to(m)
+
+        utc_dt = datetime.fromisoformat(m["createdAt"].replace("Z", "+00:00"))
+        local_dt_str = format_utc_to_local_am_pm(m["createdAt"], "America/New_York")
+
         items.append({
-            "time":dt,
-            "type":"Message",
-            "direction":direction,
-            "from":fr,
-            "to":to_,
-            "duration":0,
+            "type": "Message",
+            "direction": direction,
+            "from": fr,
+            "to": to_,
+            "duration": 0,
             "status": m.get("status","unknown"),
-            "id":m.get("id"),
-            "text":m.get("text","No content")
+            "id": m.get("id"),
+            "text": m.get("text","No content"),
+            "utc_dt": utc_dt,
+            "local_dt_str": local_dt_str
         })
 
-    items.sort(key=lambda x:x["time"],reverse=True)
+    # Sort newest-first based on the UTC datetime
+    items.sort(key=lambda x: x["utc_dt"], reverse=True)
 
-    for i,it in enumerate(items):
-        bg = "#f9f9f9" if i%2==0 else "#ffffff"
+    for i, it in enumerate(items):
+        bg = "#f9f9f9" if i % 2 == 0 else "#ffffff"
         arrow="↕️"
         if it["direction"]=="inbound":
             arrow="⬅️"
         elif it["direction"]=="outbound":
             arrow="➡️"
-        t_str = it["time"].strftime("%Y-%m-%d %H:%M")
-        label = f"{'📞' if it['type']=='Call' else '💬'} {arrow} {t_str}"
+
+        # Example: "📞 ⬅️ 03/24/2025 02:15 PM"
+        label = f"{'📞' if it['type'] == 'Call' else '💬'} {arrow} {it['local_dt_str']}"
 
         st.markdown(
             f"""
@@ -261,27 +295,31 @@ def display_full_conversation_desc(calls, messages, typed_phone: str):
             unsafe_allow_html=True
         )
 
+        # If it's a call, show status, duration, transcript
         if it["type"]=="Call":
             if it["status"]=="missed":
                 st.markdown("<strong>Status:</strong> MISSED", unsafe_allow_html=True)
             else:
-                dur_str=format_duration_seconds(it["duration"])
-                st.markdown(f"<strong>Duration:</strong> {dur_str}",unsafe_allow_html=True)
-            call_tr=fetch_call_transcript(it["id"])
+                dur_str = format_duration_seconds(it["duration"])
+                st.markdown(f"<strong>Duration:</strong> {dur_str}", unsafe_allow_html=True)
+
+            call_tr = fetch_call_transcript(it["id"])
             if call_tr and call_tr.get("dialogue"):
-                st.markdown("**Transcript:**",unsafe_allow_html=True)
+                st.markdown("**Transcript:**", unsafe_allow_html=True)
                 for seg in call_tr["dialogue"]:
-                    spkr=seg.get("identifier","???")
+                    spkr = seg.get("identifier","???")
                     # Replace phone number with name if it exists in INTERNAL_PHONE_TO_NAME
                     spkr_name = INTERNAL_PHONE_TO_NAME.get(spkr, spkr)
-                    txt=seg.get("content","")
-                    st.markdown(f"   {spkr_name}: {txt}",unsafe_allow_html=True)
+                    txt = seg.get("content","")
+                    st.markdown(f"   {spkr_name}: {txt}", unsafe_allow_html=True)
 
-            st.markdown("</div>",unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # If it's a message, show text + status
         else:
-            st.markdown(f"<strong>Message:</strong> {it['text']}",unsafe_allow_html=True)
-            st.markdown(f"<strong>Status:</strong> {it['status']}",unsafe_allow_html=True)
-            st.markdown("</div>",unsafe_allow_html=True)
+            st.markdown(f"<strong>Message:</strong> {it['text']}", unsafe_allow_html=True)
+            st.markdown(f"<strong>Status:</strong> {it['status']}", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 ###############################################################################
 # MAIN
@@ -297,7 +335,7 @@ def display_history(user_phone):
         st.warning("No communication history found for this number.")
         return
 
-    tab1, tab2 = st.tabs(["📊 Metrics", "📋 Details"])  # Removed Timeline tab
+    tab1, tab2 = st.tabs(["📊 Metrics", "📋 Details"])
 
     with tab1:
         display_metrics(calls_data, messages_data)
