@@ -1,4 +1,4 @@
-# unique_key_per_row.py
+# guestcommunication.py (or unique_key_per_row.py)
 
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ from dateutil import parser
 # 1) YOUR FIVE OPENPHONE API KEYS, in a queue for exclusive use per row
 ##########################################################################
 OPENPHONE_API_KEYS = [
-    "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # newly added
+    "j4sjHuvWO94IZWurOUca6aebhl6lG6Z7",  # newly added
     "aU3PhsAQ2Qw0E3WvJcCf4wul8u7QW0u5",
     "prXONwAEznwZzzTVFSVxym9ykQBiLcpF",
     "v5i6aToq7CbSy8oBodmdHz1i1ByUFNdc",
@@ -195,11 +195,14 @@ def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str
 # 5) PROCESS A SINGLE ROW: GRAB A KEY FROM THE QUEUE, DO THE FETCH, RETURN KEY
 ##########################################################################
 def process_one_row(idx, row):
-    phone = row.get("Phone Number", "")
+    # Convert phone to string to avoid .lower() on non-string
+    phone_raw = row.get("Phone Number", "")
+    phone = str(phone_raw)  # ensures phone is string
     arrival = str(row.get("Arrival Date Short", "")).strip()
 
     st.write(f"[Row {idx}] Starting => phone='{phone}', arrival='{arrival}'")
 
+    # Now phone.lower() won't cause an AttributeError
     if not phone or phone.lower() == "no data":
         st.write(f"[Row {idx}]  -> Invalid phone => skipping.")
         return {
@@ -275,45 +278,41 @@ def fetch_communication_info_unique_keys(owner_df):
     return out_df
 
 ##########################################################################
-# 7) RUN_GUEST_STATUS_TAB: A function you can call from app.py
+# 7) OPTIONAL TAB FUNCTION: run_guest_status_tab
 ##########################################################################
 def run_guest_status_tab():
     """
-    This function can be called from your main app, e.g.:
-        import unique_key_per_row as guestcommunication
-        ...
-        guestcommunication.run_guest_status_tab()
+    If you call this from your main app, you'll have a UI for uploading 
+    a file with "Phone Number" & "Arrival Date Short", then we do concurrency.
     """
     st.title("Add Guest OpenPhone Status (Multi-Key Concurrency)")
 
-    # Let user upload an Excel or CSV with "Phone Number" and "Arrival Date Short"
-    uploaded_file = st.file_uploader("Upload an Excel/CSV with phone + arrival date", type=["xlsx","xls","csv"])
+    # Let user upload a file with the necessary columns
+    uploaded_file = st.file_uploader("Upload an Excel/CSV with 'Phone Number' & 'Arrival Date Short'", type=["xlsx","xls","csv"])
     if not uploaded_file:
         st.info("Please upload a file to proceed.")
         return
 
-    # Try reading it (Excel or CSV):
+    # Try reading it
     if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
         owner_df = pd.read_excel(uploaded_file)
     else:
         owner_df = pd.read_csv(uploaded_file)
 
-    # Check if the required columns exist
     required_cols = {"Phone Number", "Arrival Date Short"}
     if not required_cols.issubset(owner_df.columns):
         st.error(f"Missing required columns. Must include: {required_cols}")
         return
 
-    # Show a preview
     st.write("Data Preview:", owner_df.head())
 
-    # Run concurrency with each row using a unique API key
+    # Run concurrency
     final_df = fetch_communication_info_unique_keys(owner_df)
 
     st.write("Done! Here are your results:")
     st.dataframe(final_df)
 
-    # Optionally allow downloading the result
+    # Optionally allow downloading
     csv_data = final_df.to_csv(index=False)
     st.download_button("Download Results as CSV", csv_data, "openphone_results.csv", "text/csv")
 
@@ -322,9 +321,8 @@ def run_guest_status_tab():
 ##########################################################################
 def main():
     """
-    If you run this file directly via streamlit run unique_key_per_row.py,
-    we show a small sample DF. Then we do concurrency on that sample.
-    But if you want to integrate into your main app, call run_guest_status_tab().
+    If you run this file directly (e.g. 'streamlit run guestcommunication.py'),
+    we show a sample DataFrame. Then we do concurrency on that sample.
     """
     st.title("Concurrent Rows, Each Row Uses a Distinct Key (Total 5 Keys)")
 
@@ -340,6 +338,5 @@ def main():
     st.dataframe(final_df)
 
 # Uncomment if you want to run directly:
-# streamlit run unique_key_per_row.py
 # if __name__ == "__main__":
 #     main()
