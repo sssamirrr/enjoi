@@ -1,433 +1,283 @@
+# unique_key_per_row.py
+
+import streamlit as st
+import pandas as pd
 import time
 import requests
-import io
+import concurrent.futures
+import queue
 from datetime import datetime
-import pandas as pd
-import streamlit as st
-import phonenumbers  # <-- For phone number formatting
+import pytz
+from dateutil import parser
 
-############################################
-# 1. Hard-coded API credentials:
-############################################
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"  # <- Replace with your real API key
-HEADERS = {
-    "Authorization": OPENPHONE_API_KEY,
-    "Content-Type": "application/json"
-}
+##########################################################################
+# 1) YOUR FIVE OPENPHONE API KEYS, in a queue for exclusive use per row
+##########################################################################
+OPENPHONE_API_KEYS = [
+    "j4sjHuvWO94IZWurOUca6aebhl6lG6Z7",  # original
+    "aU3PhsAQ2Qw0E3WvJcCf4wul8u7QW0u5",
+    "v5i6aToq7CbSy8oBodmdHz1i1ByUFNdc",
+    "prXONwAEznwZzzTVFSVxym9ykQBiLcpF",
+    "tJKJxdTdXrtelTqnDLhKwak3JGJAvHKp"
+]
 
-############################################
-# 1b. Helper to format phone numbers to E.164
-############################################
-def format_phone_number_us(raw_number: str) -> str:
-    """
-    Attempts to parse a phone number as a US number and return
-    it in E.164 format (e.g., +14075206507).
-    Returns None if parsing fails.
-    """
+available_keys = queue.Queue()
+for k in OPENPHONE_API_KEYS:
+    available_keys.put(k)
+
+##########################################################################
+# 2) RATE-LIMITED REQUEST
+#    - Sleep 0.2s => ~5 requests/sec per thread
+##########################################################################
+def rate_limited_request(url, headers, params, request_type='get'):
+    time.sleep(0.2)
     try:
-        parsed = phonenumbers.parse(raw_number, "US")
-        if phonenumbers.is_valid_number(parsed):
-            return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-    except phonenumbers.NumberParseException:
-        pass
+        if request_type.lower() == 'get':
+            resp = requests.get(url, headers=headers, params=params)
+        else:
+            resp = requests.request(request_type.upper(), url, headers=headers, params=params)
+
+        if resp and resp.status_code == 200:
+            return resp.json()
+        else:
+            st.warning(f"API Error: {resp.status_code} => {resp.text}")
+    except Exception as e:
+        st.warning(f"Request exception: {str(e)}")
     return None
 
-############################################
-# 2. Rate-limited request (max 10 req/sec)
-############################################
-def rate_limited_request(url, headers, params, request_type='get', max_retries=5):
+##########################################################################
+# 3) GET CALL/MSG INFO FOR ONE phoneNumberId
+##########################################################################
+def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_str):
     """
-    Makes an API request with:
-    - Throttle of 5 requests per second
-    - Exponential backoff on 429 rate-limit errors
-    - Honors 'Retry-After' header if provided
+    Fetch calls & messages for one phoneNumberId, for guest_phone,
+    counting pre vs post arrival_date_str (like '3/27/2025').
     """
-    # Lower the throttle to 5 requests/sec to reduce bursts
-    time.sleep(1 / 5)
+    local_tz = pytz.timezone("Etc/GMT-4")  # or "America/New_York" for DST
 
-    retries = 0
-    backoff_delay = 1  # initial backoff
+    if arrival_date_str:
+        arrival_dt = datetime.strptime(arrival_date_str, "%m/%d/%Y")
+        arrival_dt_local = local_tz.localize(arrival_dt)
+    else:
+        arrival_dt_local = None
 
-    while retries < max_retries:
-        try:
-            if request_type == 'get':
-                response = requests.get(url, headers=headers, params=params)
-            else:
-                response = None
-
-            if response is None:
-                st.warning("No valid response object. Possibly invalid request_type.")
-                break
-
-            if response.status_code == 200:
-                # Success
-                return response.json()
-            
-            elif response.status_code == 429:
-                # Rate limit error
-                st.warning("429 Too Many Requests encountered!")
-                retry_after = response.headers.get("Retry-After")
-                if retry_after:
-                    # If the API says 'wait X seconds'
-                    wait_time = int(retry_after)
-                    st.warning(f"Server says wait {wait_time} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    # Otherwise do exponential backoff
-                    st.warning(f"Backing off {backoff_delay}s ...")
-                    time.sleep(backoff_delay)
-                    backoff_delay *= 2
-                retries += 1
-                continue
-            
-            else:
-                # Some other error (4xx, 5xx, etc.)
-                st.warning(f"API Error {response.status_code}")
-                st.warning(f"Response: {response.text}")
-                break
-
-        except Exception as e:
-            st.warning(f"Exception during request: {str(e)}")
-            break
-
-    # Return None if all retries fail
-    return None
-
-
-############################################
-# 3. Get phone number IDs
-############################################
-def get_all_phone_number_ids(headers):
-    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    response_data = rate_limited_request(phone_numbers_url, headers, {})
-    if not response_data:
-        return []
-    return [pn.get('id') for pn in response_data.get('data', [])]
-
-############################################
-# 4. Get communication info
-############################################
-def get_communication_info(phone_number, headers, arrival_date=None):
-    """
-    Retrieves messages and calls info for the given phone_number from OpenPhone,
-    including stats like total_messages, total_calls, etc.
-
-    phone_number must already be in E.164 format (e.g. +15555550123).
-    """
-    # Ensure phone_number is in E.164 format here
-    phone_number_ids = get_all_phone_number_ids(headers)
-    if not phone_number_ids:
-        return {
-            'status': "No Communications",
-            'last_date': None,
-            'call_duration': None,
-            'agent_name': None,
-            'total_messages': 0,
-            'total_calls': 0,
-            'answered_calls': 0,
-            'missed_calls': 0,
-            'call_attempts': 0,
-            'pre_arrival_calls': 0,
-            'pre_arrival_texts': 0,
-            'post_arrival_calls': 0,
-            'post_arrival_texts': 0,
-            'calls_under_40sec': 0
-        }
-
+    headers = {"Authorization": f"Bearer {api_key}"}
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
 
-    latest_datetime = None
-    latest_type = None
-    latest_direction = None
-    call_duration = None
-    agent_name = None
-
     total_messages = 0
     total_calls = 0
-    answered_calls = 0
-    missed_calls = 0
-    call_attempts = 0
-
-    pre_arrival_calls = 0
     pre_arrival_texts = 0
-    post_arrival_calls = 0
     post_arrival_texts = 0
-    calls_under_40sec = 0
+    pre_arrival_calls = 0
+    post_arrival_calls = 0
 
-    # Convert arrival_date to datetime if provided
-    if isinstance(arrival_date, str):
-        arrival_date = datetime.fromisoformat(arrival_date)
-    elif isinstance(arrival_date, pd.Timestamp):
-        arrival_date = arrival_date.to_pydatetime()
-    arrival_date_only = arrival_date.date() if arrival_date else None
+    # -----------------------
+    # PAGINATION: MESSAGES
+    # -----------------------
+    next_page = None
+    while True:
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [guest_phone],
+            "maxResults": 50
+        }
+        if next_page:
+            params["pageToken"] = next_page
 
-    # For each phone number ID in your OpenPhone account
-    for phone_number_id in phone_number_ids:
-        # ----------------------------------------------------------
-        # 1) Messages
-        # ----------------------------------------------------------
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],  # E.164
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
+        data = rate_limited_request(messages_url, headers, params)
+        if not data or "data" not in data:
+            break
 
-            messages_response = rate_limited_request(messages_url, headers, params)
-            if messages_response and 'data' in messages_response:
-                messages = messages_response['data']
-                total_messages += len(messages)
-                for message in messages:
-                    msg_time = datetime.fromisoformat(message['createdAt'].replace('Z', '+00:00'))
-                    if arrival_date_only:
-                        if msg_time.date() <= arrival_date_only:
-                            pre_arrival_texts += 1
-                        else:
-                            post_arrival_texts += 1
+        for msg in data["data"]:
+            total_messages += 1
+            # convert UTC -> local
+            utc_time = parser.isoparse(msg["createdAt"])
+            local_time = utc_time.astimezone(local_tz)
+            if arrival_dt_local:
+                if local_time.date() <= arrival_dt_local.date():
+                    pre_arrival_texts += 1
+                else:
+                    post_arrival_texts += 1
 
-                    # Track latest communication
-                    if not latest_datetime or msg_time > latest_datetime:
-                        latest_datetime = msg_time
-                        latest_type = "Message"
-                        latest_direction = message.get("direction", "unknown")
-                        agent_name = message.get("user", {}).get("name", "Unknown Agent")
+        next_page = data.get("nextPageToken")
+        if not next_page:
+            break
 
-                next_page = messages_response.get('nextPageToken')
-                if not next_page:
-                    break
-            else:
-                # No more messages or error
-                break
+    # -----------------------
+    # PAGINATION: CALLS
+    # -----------------------
+    next_page = None
+    while True:
+        params = {
+            "phoneNumberId": phone_number_id,
+            "participants": [guest_phone],
+            "maxResults": 50
+        }
+        if next_page:
+            params["pageToken"] = next_page
 
-        # ----------------------------------------------------------
-        # 2) Calls
-        # ----------------------------------------------------------
-        next_page = None
-        while True:
-            params = {
-                "phoneNumberId": phone_number_id,
-                "participants": [phone_number],
-                "maxResults": 50
-            }
-            if next_page:
-                params['pageToken'] = next_page
+        data = rate_limited_request(calls_url, headers, params)
+        if not data or "data" not in data:
+            break
 
-            calls_response = rate_limited_request(calls_url, headers, params)
-            if calls_response and 'data' in calls_response:
-                calls = calls_response['data']
-                total_calls += len(calls)
-                for call in calls:
-                    call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
-                    duration = call.get("duration", 0)
+        for call in data["data"]:
+            total_calls += 1
+            utc_time = parser.isoparse(call["createdAt"])
+            local_time = utc_time.astimezone(local_tz)
+            if arrival_dt_local:
+                if local_time.date() <= arrival_dt_local.date():
+                    pre_arrival_calls += 1
+                else:
+                    post_arrival_calls += 1
 
-                    # Pre/Post arrival
-                    if arrival_date_only:
-                        if call_time.date() <= arrival_date_only:
-                            pre_arrival_calls += 1
-                        else:
-                            post_arrival_calls += 1
-
-                    # Under 40s
-                    if duration < 40:
-                        calls_under_40sec += 1
-
-                    # Track latest
-                    if not latest_datetime or call_time > latest_datetime:
-                        latest_datetime = call_time
-                        latest_type = "Call"
-                        latest_direction = call.get("direction", "unknown")
-                        call_duration = duration
-                        agent_name = call.get("user", {}).get("name", "Unknown Agent")
-
-                    call_attempts += 1
-                    call_status = call.get('status', 'unknown')
-                    if call_status == 'completed':
-                        answered_calls += 1
-                    elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
-                        missed_calls += 1
-
-                next_page = calls_response.get('nextPageToken')
-                if not next_page:
-                    break
-            else:
-                # No more calls or error
-                break
-
-    # Final status
-    if not latest_datetime:
-        status = "No Communications"
-    else:
-        status = f"{latest_type} - {latest_direction}"
+        next_page = data.get("nextPageToken")
+        if not next_page:
+            break
 
     return {
-        'status': status,
-        'last_date': latest_datetime.strftime("%Y-%m-%d %H:%M:%S") if latest_datetime else None,
-        'call_duration': call_duration,
-        'agent_name': agent_name,
-        'total_messages': total_messages,
-        'total_calls': total_calls,
-        'answered_calls': answered_calls,
-        'missed_calls': missed_calls,
-        'call_attempts': call_attempts,
-        'pre_arrival_calls': pre_arrival_calls,
-        'pre_arrival_texts': pre_arrival_texts,
-        'post_arrival_calls': post_arrival_calls,
-        'post_arrival_texts': post_arrival_texts,
-        'calls_under_40sec': calls_under_40sec
+        "total_messages": total_messages,
+        "total_calls": total_calls,
+        "pre_arrival_texts": pre_arrival_texts,
+        "post_arrival_texts": post_arrival_texts,
+        "pre_arrival_calls": pre_arrival_calls,
+        "post_arrival_calls": post_arrival_calls
     }
 
-############################################
-# 5. For a DataFrame with 'Phone Number'
-############################################
-def fetch_communication_info(df, headers):
+##########################################################################
+# 4) FETCH ALL phoneNumberIds FOR ONE KEY, THEN CALLS + MESSAGES FOR GUEST
+##########################################################################
+def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str):
     """
-    Loops through each row in a DataFrame (must have 'Phone Number' column)
-    and calls get_communication_info() for each phone number (formatted to E.164).
+    1) Get all phoneNumberIds for api_key
+    2) For each phoneNumberId, gather calls+msgs for guest_phone
+    3) Sum them up
     """
-    # Prepare new columns
-    statuses = []
-    dates = []
-    durations = []
-    agent_names = []
-    total_messages_list = []
-    total_calls_list = []
-    answered_calls_list = []
-    missed_calls_list = []
-    call_attempts_list = []
-    pre_arrival_calls_list = []
-    pre_arrival_texts_list = []
-    post_arrival_calls_list = []
-    post_arrival_texts_list = []
-    calls_under_40sec_list = []
+    # fetch phoneNumberIds
+    headers = {"Authorization": f"Bearer {api_key}"}
+    url = "https://api.openphone.com/v1/phone-numbers"
+    data = rate_limited_request(url, headers, params={})
+    phone_number_ids = []
+    if data and "data" in data:
+        phone_number_ids = [pn.get("id") for pn in data["data"]]
 
-    for _, row in df.iterrows():
-        raw_phone = row.get('Phone Number')
-        arrival_date = row.get('Arrival Date')  # optional column
+    # aggregate
+    result = {
+        "total_messages": 0,
+        "total_calls": 0,
+        "pre_arrival_texts": 0,
+        "post_arrival_texts": 0,
+        "pre_arrival_calls": 0,
+        "post_arrival_calls": 0
+    }
+    for pn_id in phone_number_ids:
+        info = get_communication_info(api_key, pn_id, guest_phone, arrival_date_str)
+        result["total_messages"]       += info["total_messages"]
+        result["total_calls"]          += info["total_calls"]
+        result["pre_arrival_texts"]    += info["pre_arrival_texts"]
+        result["post_arrival_texts"]   += info["post_arrival_texts"]
+        result["pre_arrival_calls"]    += info["pre_arrival_calls"]
+        result["post_arrival_calls"]   += info["post_arrival_calls"]
 
-        # 1) Convert to +1XXXXXXXXXX format
-        phone = format_phone_number_us(str(raw_phone)) if raw_phone else None
+    return result
 
-        if phone:
-            # 2) Fetch data
-            try:
-                comm_info = get_communication_info(phone, headers, arrival_date)
-                statuses.append(comm_info['status'])
-                dates.append(comm_info['last_date'])
-                durations.append(comm_info['call_duration'])
-                agent_names.append(comm_info['agent_name'])
-                total_messages_list.append(comm_info['total_messages'])
-                total_calls_list.append(comm_info['total_calls'])
-                answered_calls_list.append(comm_info['answered_calls'])
-                missed_calls_list.append(comm_info['missed_calls'])
-                call_attempts_list.append(comm_info['call_attempts'])
-                pre_arrival_calls_list.append(comm_info['pre_arrival_calls'])
-                pre_arrival_texts_list.append(comm_info['pre_arrival_texts'])
-                post_arrival_calls_list.append(comm_info['post_arrival_calls'])
-                post_arrival_texts_list.append(comm_info['post_arrival_texts'])
-                calls_under_40sec_list.append(comm_info['calls_under_40sec'])
-            except Exception as e:
-                st.warning(f"Error fetching info for phone {phone}: {e}")
-                # Fill placeholders
-                statuses.append("Error")
-                dates.append(None)
-                durations.append(None)
-                agent_names.append("Unknown")
-                total_messages_list.append(0)
-                total_calls_list.append(0)
-                answered_calls_list.append(0)
-                missed_calls_list.append(0)
-                call_attempts_list.append(0)
-                pre_arrival_calls_list.append(0)
-                pre_arrival_texts_list.append(0)
-                post_arrival_calls_list.append(0)
-                post_arrival_texts_list.append(0)
-                calls_under_40sec_list.append(0)
-        else:
-            # Invalid or missing phone number
-            statuses.append("Invalid Number")
-            dates.append(None)
-            durations.append(None)
-            agent_names.append("Unknown")
-            total_messages_list.append(0)
-            total_calls_list.append(0)
-            answered_calls_list.append(0)
-            missed_calls_list.append(0)
-            call_attempts_list.append(0)
-            pre_arrival_calls_list.append(0)
-            pre_arrival_texts_list.append(0)
-            post_arrival_calls_list.append(0)
-            post_arrival_texts_list.append(0)
-            calls_under_40sec_list.append(0)
+##########################################################################
+# 5) PROCESS A SINGLE ROW: GRAB A KEY FROM THE QUEUE, DO THE FETCH, RETURN KEY
+##########################################################################
+def process_one_row(idx, row):
+    phone = row.get("Phone Number", "")
+    arrival = row.get("Arrival Date Short", "")
 
-    # Create columns in the DataFrame
-    df['Communication Status'] = statuses
-    df['Last Contact Date'] = dates
-    df['Last Call Duration'] = durations
-    df['Last Agent Name'] = agent_names
-    df['Total Messages'] = total_messages_list
-    df['Total Calls'] = total_calls_list
-    df['Answered Calls'] = answered_calls_list
-    df['Missed Calls'] = missed_calls_list
-    df['Call Attempts'] = call_attempts_list
-    df['Pre-Arrival Calls'] = pre_arrival_calls_list
-    df['Pre-Arrival Texts'] = pre_arrival_texts_list
-    df['Post-Arrival Calls'] = post_arrival_calls_list
-    df['Post-Arrival Texts'] = post_arrival_texts_list
-    df['Calls < 40s'] = calls_under_40sec_list
+    st.write(f"[Row {idx}] Starting: phone={phone}, arrival={arrival}")
 
-    return df
+    if not phone or phone == "No Data":
+        st.write(f"[Row {idx}]  -> Invalid phone => skipping.")
+        return {
+            "status": "Invalid Number",
+            "total_messages": 0,
+            "total_calls": 0,
+            "pre_arrival_texts": 0,
+            "post_arrival_texts": 0,
+            "pre_arrival_calls": 0,
+            "post_arrival_calls": 0
+        }
 
-############################################
-# 6. Main Streamlit function
-############################################
-def run_guest_status_tab():
-    """
-    Streamlit UI to:
-      1) Upload Excel with 'Phone Number'
-      2) Format phone numbers to E.164 (US)
-      3) Fetch data from OpenPhone (using 10 requests/sec limit & exponential backoff)
-      4) Display & Download updated results
-    """
-    st.title("Guest Communication Insights (10 RPS Limit with Exponential Backoff)")
+    # --------------- Pick a key from the pool ---------------
+    api_key = available_keys.get()
+    st.write(f"[Row {idx}]  -> Using API key: {api_key[:6]}...")  # partial key for logging
 
-    # File upload
-    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", 
-                                     type=["xlsx", "xls"])
+    # gather data
+    try:
+        partial = fetch_communication_for_guest_and_key(api_key, phone, arrival)
+        combined = {
+            "status": "OK",
+            "total_messages": partial["total_messages"],
+            "total_calls": partial["total_calls"],
+            "pre_arrival_texts": partial["pre_arrival_texts"],
+            "post_arrival_texts": partial["post_arrival_texts"],
+            "pre_arrival_calls": partial["pre_arrival_calls"],
+            "post_arrival_calls": partial["post_arrival_calls"]
+        }
+    finally:
+        # put the key back so another row can use it
+        available_keys.put(api_key)
 
-    if uploaded_file is not None:
-        df = pd.read_excel(uploaded_file)
-        if 'Phone Number' not in df.columns:
-            st.error("Missing 'Phone Number' column.")
-            return
+    st.write(
+        f"[Row {idx}] Finished => "
+        f"{combined['total_messages']} msgs, {combined['total_calls']} calls"
+    )
+    return combined
 
-        # Processing & updating dataframe
-        updated_df = fetch_communication_info(df, HEADERS)
+##########################################################################
+# 6) MAIN FUNCTION: RUN ROWS IN PARALLEL, ONE KEY PER ROW
+##########################################################################
+def fetch_communication_info_unique_keys(owner_df):
+    results = [None]*len(owner_df)
 
-        # Show preview
-        st.subheader("Preview of Updated Data")
-        st.dataframe(updated_df.head(50))
+    def row_worker(idx, row):
+        return (idx, process_one_row(idx, row))
 
-        # Prepare for download
-        st.subheader("Download Updated Excel")
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            updated_df.to_excel(writer, index=False, sheet_name='Updated')
+    # up to 5 concurrent rows => each row uses a different key
+    max_workers = 5
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {}
+        for i, row in owner_df.iterrows():
+            fut = executor.submit(row_worker, i, row)
+            future_to_idx[fut] = i
 
-        # Rewind the BytesIO buffer
-        output.seek(0)
+        for fut in concurrent.futures.as_completed(future_to_idx):
+            idx, result_dict = fut.result()
+            results[idx] = result_dict
 
-        # Create the download button
-        st.download_button(
-            label="Download Updated Excel",
-            data=output.getvalue(),
-            file_name="updated_communication_info.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # build output DF
+    out_df = owner_df.copy()
+    out_df["Status"] = [r["status"] for r in results]
+    out_df["Total Messages"] = [r["total_messages"] for r in results]
+    out_df["Total Calls"] = [r["total_calls"] for r in results]
+    out_df["Pre-Arrival Texts"] = [r["pre_arrival_texts"] for r in results]
+    out_df["Post-Arrival Texts"] = [r["post_arrival_texts"] for r in results]
+    out_df["Pre-Arrival Calls"] = [r["pre_arrival_calls"] for r in results]
+    out_df["Post-Arrival Calls"] = [r["post_arrival_calls"] for r in results]
 
-# If you want to run this file directly:
-if __name__ == "__main__":
-    run_guest_status_tab()
+    return out_df
+
+##########################################################################
+# 7) DEMO USAGE
+##########################################################################
+def main():
+    st.title("Concurrent Rows, One Unique API Key Per Row")
+
+    sample_data = {
+        "Phone Number": ["+1234567890", "+1987654321", "No Data", "+14443339999"],
+        "Arrival Date Short": ["3/27/2025", "3/27/2025", "", "4/01/2025"]
+    }
+    df = pd.DataFrame(sample_data)
+
+    st.write("Starting concurrency: each row gets a unique key from the pool...")
+    final_df = fetch_communication_info_unique_keys(df)
+    st.write("All done!")
+    st.dataframe(final_df)
+
+# Uncomment if you want to run directly via "streamlit run unique_key_per_row.py"
+# if __name__ == "__main__":
+#     main()
