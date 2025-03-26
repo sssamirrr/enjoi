@@ -4,14 +4,14 @@ import io
 from datetime import datetime
 import pandas as pd
 import streamlit as st
-import phonenumbers  # For phone number formatting
+import phonenumbers  # <-- For phone number formatting
 
 ############################################
 # 1. Hard-coded API credentials:
 ############################################
-OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6aebhl6lG6Z7"  # Replace with your real API key
+OPENPHONE_API_KEY = "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7"  # <- Replace with your real API key
 HEADERS = {
-    "Authorization": OPENPHONE_API_KEY,  # <-- No "Bearer " prefix here
+    "Authorization": OPENPHONE_API_KEY,
     "Content-Type": "application/json"
 }
 
@@ -22,7 +22,7 @@ def format_phone_number_us(raw_number: str) -> str:
     """
     Attempts to parse a phone number as a US number and return
     it in E.164 format (e.g., +14075206507).
-    Returns None if parsing fails or invalid number.
+    Returns None if parsing fails.
     """
     try:
         parsed = phonenumbers.parse(raw_number, "US")
@@ -33,7 +33,7 @@ def format_phone_number_us(raw_number: str) -> str:
     return None
 
 ############################################
-# 2. Rate-limited request (max ~10 req/sec)
+# 2. Rate-limited request (max 10 req/sec)
 ############################################
 def rate_limited_request(url, headers, params, request_type='get', max_retries=5):
     """
@@ -62,6 +62,7 @@ def rate_limited_request(url, headers, params, request_type='get', max_retries=5
             if response.status_code == 200:
                 # Success
                 return response.json()
+            
             elif response.status_code == 429:
                 # Rate limit error
                 st.warning("429 Too Many Requests encountered!")
@@ -78,6 +79,7 @@ def rate_limited_request(url, headers, params, request_type='get', max_retries=5
                     backoff_delay *= 2
                 retries += 1
                 continue
+            
             else:
                 # Some other error (4xx, 5xx, etc.)
                 st.warning(f"API Error {response.status_code}")
@@ -90,6 +92,7 @@ def rate_limited_request(url, headers, params, request_type='get', max_retries=5
 
     # Return None if all retries fail
     return None
+
 
 ############################################
 # 3. Get phone number IDs
@@ -109,8 +112,9 @@ def get_communication_info(phone_number, headers, arrival_date=None):
     Retrieves messages and calls info for the given phone_number from OpenPhone,
     including stats like total_messages, total_calls, etc.
 
-    phone_number must be in E.164 format (e.g., +15555550123).
+    phone_number must already be in E.164 format (e.g. +15555550123).
     """
+    # Ensure phone_number is in E.164 format here
     phone_number_ids = get_all_phone_number_ids(headers)
     if not phone_number_ids:
         return {
@@ -158,8 +162,11 @@ def get_communication_info(phone_number, headers, arrival_date=None):
         arrival_date = arrival_date.to_pydatetime()
     arrival_date_only = arrival_date.date() if arrival_date else None
 
+    # For each phone number ID in your OpenPhone account
     for phone_number_id in phone_number_ids:
-        # Messages
+        # ----------------------------------------------------------
+        # 1) Messages
+        # ----------------------------------------------------------
         next_page = None
         while True:
             params = {
@@ -182,6 +189,7 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                         else:
                             post_arrival_texts += 1
 
+                    # Track latest communication
                     if not latest_datetime or msg_time > latest_datetime:
                         latest_datetime = msg_time
                         latest_type = "Message"
@@ -192,9 +200,12 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                 if not next_page:
                     break
             else:
+                # No more messages or error
                 break
 
-        # Calls
+        # ----------------------------------------------------------
+        # 2) Calls
+        # ----------------------------------------------------------
         next_page = None
         while True:
             params = {
@@ -213,15 +224,18 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                     call_time = datetime.fromisoformat(call['createdAt'].replace('Z', '+00:00'))
                     duration = call.get("duration", 0)
 
+                    # Pre/Post arrival
                     if arrival_date_only:
                         if call_time.date() <= arrival_date_only:
                             pre_arrival_calls += 1
                         else:
                             post_arrival_calls += 1
 
+                    # Under 40s
                     if duration < 40:
                         calls_under_40sec += 1
 
+                    # Track latest
                     if not latest_datetime or call_time > latest_datetime:
                         latest_datetime = call_time
                         latest_type = "Call"
@@ -235,12 +249,15 @@ def get_communication_info(phone_number, headers, arrival_date=None):
                         answered_calls += 1
                     elif call_status in ['missed', 'no-answer', 'busy', 'failed']:
                         missed_calls += 1
+
                 next_page = calls_response.get('nextPageToken')
                 if not next_page:
                     break
             else:
+                # No more calls or error
                 break
 
+    # Final status
     if not latest_datetime:
         status = "No Communications"
     else:
@@ -369,44 +386,48 @@ def fetch_communication_info(df, headers):
 ############################################
 def run_guest_status_tab():
     """
-    Streamlit UI:
-      1) Upload Excel (with 'Phone Number')
-      2) Convert phone => E.164
-      3) Fetch data from OpenPhone
-      4) Display & Download
+    Streamlit UI to:
+      1) Upload Excel with 'Phone Number'
+      2) Format phone numbers to E.164 (US)
+      3) Fetch data from OpenPhone (using 10 requests/sec limit & exponential backoff)
+      4) Display & Download updated results
     """
-    st.title("Guest Communication Insights (No 'Bearer', Single API Key)")
+    st.title("Guest Communication Insights (10 RPS Limit with Exponential Backoff)")
 
-    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", type=["xlsx","xls"])
-    if not uploaded_file:
-        st.info("Please upload a file.")
-        return
+    # File upload
+    uploaded_file = st.file_uploader("Upload Excel (with 'Phone Number')", 
+                                     type=["xlsx", "xls"])
 
-    df = pd.read_excel(uploaded_file)
-    if 'Phone Number' not in df.columns:
-        st.error("Missing 'Phone Number' column.")
-        return
+    if uploaded_file is not None:
+        df = pd.read_excel(uploaded_file)
+        if 'Phone Number' not in df.columns:
+            st.error("Missing 'Phone Number' column.")
+            return
 
-    updated_df = fetch_communication_info(df, HEADERS)
+        # Processing & updating dataframe
+        updated_df = fetch_communication_info(df, HEADERS)
 
-    st.subheader("Preview of Updated Data")
-    st.dataframe(updated_df.head(50))
+        # Show preview
+        st.subheader("Preview of Updated Data")
+        st.dataframe(updated_df.head(50))
 
-    # Prepare for download
-    import io
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        updated_df.to_excel(writer, index=False, sheet_name='Updated')
+        # Prepare for download
+        st.subheader("Download Updated Excel")
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            updated_df.to_excel(writer, index=False, sheet_name='Updated')
 
-    output.seek(0)
+        # Rewind the BytesIO buffer
+        output.seek(0)
 
-    st.download_button(
-        label="Download Updated Excel",
-        data=output.getvalue(),
-        file_name="updated_communication_info.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # Create the download button
+        st.download_button(
+            label="Download Updated Excel",
+            data=output.getvalue(),
+            file_name="updated_communication_info.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-# If you want to run this directly
+# If you want to run this file directly:
 if __name__ == "__main__":
     run_guest_status_tab()
