@@ -1,83 +1,60 @@
-# communication_concurrent.py
+# unique_key_per_row.py
 
+import streamlit as st
+import pandas as pd
 import time
 import requests
-from datetime import datetime
-import pandas as pd
-import streamlit as st
 import concurrent.futures
+import queue
+from datetime import datetime
 import pytz
 from dateutil import parser
 
-###################################################
-# 1) FIVE OPENPHONE API KEYS
-###################################################
+##########################################################################
+# 1) YOUR FIVE OPENPHONE API KEYS, in a queue for exclusive use per row
+##########################################################################
 OPENPHONE_API_KEYS = [
-    "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # original
+    "j4sjHuvWO94IZWurOUca6aebhl6lG6Z7",  # original
     "aU3PhsAQ2Qw0E3WvJcCf4wul8u7QW0u5",
     "v5i6aToq7CbSy8oBodmdHz1i1ByUFNdc",
     "prXONwAEznwZzzTVFSVxym9ykQBiLcpF",
     "tJKJxdTdXrtelTqnDLhKwak3JGJAvHKp"
 ]
 
-# Your "original" OpenPhone number was: +18438972426
-# If you need to store that, keep it, but not strictly required here.
+available_keys = queue.Queue()
+for k in OPENPHONE_API_KEYS:
+    available_keys.put(k)
 
-###################################################
+##########################################################################
 # 2) RATE-LIMITED REQUEST
-###################################################
+#    - Sleep 0.2s => ~5 requests/sec per thread
+##########################################################################
 def rate_limited_request(url, headers, params, request_type='get'):
-    """
-    Make an API request while respecting rate limits (lightly).
-    Currently sleeps 0.2s => max ~5 requests/sec.
-    Adjust as needed.
-    """
-    time.sleep(0.2)  # limit to ~5 requests/sec
+    time.sleep(0.2)
     try:
         if request_type.lower() == 'get':
-            response = requests.get(url, headers=headers, params=params)
+            resp = requests.get(url, headers=headers, params=params)
         else:
-            # If you had other request types, handle them here
-            response = requests.request(request_type.upper(), url, headers=headers, params=params)
+            resp = requests.request(request_type.upper(), url, headers=headers, params=params)
 
-        if response.status_code == 200:
-            return response.json()
+        if resp and resp.status_code == 200:
+            return resp.json()
         else:
-            st.warning(f"API Error {response.status_code} => {response.text}")
+            st.warning(f"API Error: {resp.status_code} => {resp.text}")
     except Exception as e:
         st.warning(f"Request exception: {str(e)}")
     return None
 
-###################################################
-# 3) GET ALL PHONE NUMBER IDS FOR ONE API KEY
-###################################################
-def get_all_phone_number_ids(api_key):
-    """
-    Retrieve all phoneNumberIds for the given OpenPhone API key.
-    """
-    url = "https://api.openphone.com/v1/phone-numbers"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    response_data = rate_limited_request(url, headers, params={})
-    if response_data and "data" in response_data:
-        return [pn.get('id') for pn in response_data['data']]
-    return []
-
-###################################################
-# 4) GET COMM INFO FOR ONE GUEST PHONE, ONE PHONE-NUMBER-ID
-###################################################
+##########################################################################
+# 3) GET CALL/MSG INFO FOR ONE phoneNumberId
+##########################################################################
 def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_str):
     """
-    Fetch calls & messages for (phone_number_id) with participant = guest_phone,
-    count how many are pre-arrival vs post-arrival based on arrival_date_str,
-    which is something like "3/27/2025".
-    
-    OpenPhone timestamps are UTC: "2022-01-01T00:00:00Z".
-    We convert them to your local timezone (example: GMT-4).
+    Fetch calls & messages for one phoneNumberId, for guest_phone,
+    counting pre vs post arrival_date_str (like '3/27/2025').
     """
+    local_tz = pytz.timezone("Etc/GMT-4")  # or "America/New_York" for DST
 
-    # Parse arrival date
-    # If arrival_date_str is blank or None, we skip pre/post logic
-    local_tz = pytz.timezone("Etc/GMT-4")  # or "America/New_York" if you need DST
     if arrival_date_str:
         arrival_dt = datetime.strptime(arrival_date_str, "%m/%d/%Y")
         arrival_dt_local = local_tz.localize(arrival_dt)
@@ -88,7 +65,6 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
 
-    # Keep track
     total_messages = 0
     total_calls = 0
     pre_arrival_texts = 0
@@ -96,7 +72,9 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
     pre_arrival_calls = 0
     post_arrival_calls = 0
 
+    # -----------------------
     # PAGINATION: MESSAGES
+    # -----------------------
     next_page = None
     while True:
         params = {
@@ -113,11 +91,9 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
 
         for msg in data["data"]:
             total_messages += 1
-            # Convert from UTC
+            # convert UTC -> local
             utc_time = parser.isoparse(msg["createdAt"])
             local_time = utc_time.astimezone(local_tz)
-
-            # Pre/post arrival
             if arrival_dt_local:
                 if local_time.date() <= arrival_dt_local.date():
                     pre_arrival_texts += 1
@@ -128,7 +104,9 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
         if not next_page:
             break
 
+    # -----------------------
     # PAGINATION: CALLS
+    # -----------------------
     next_page = None
     while True:
         params = {
@@ -147,7 +125,6 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
             total_calls += 1
             utc_time = parser.isoparse(call["createdAt"])
             local_time = utc_time.astimezone(local_tz)
-
             if arrival_dt_local:
                 if local_time.date() <= arrival_dt_local.date():
                     pre_arrival_calls += 1
@@ -167,19 +144,25 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
         "post_arrival_calls": post_arrival_calls
     }
 
-###################################################
-# 5) FOR ONE GUEST, GATHER FROM ALL PHONE-NUMBER-IDs
-#    (FOR A SINGLE API KEY)
-###################################################
+##########################################################################
+# 4) FETCH ALL phoneNumberIds FOR ONE KEY, THEN CALLS + MESSAGES FOR GUEST
+##########################################################################
 def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str):
     """
-    1) Get all phoneNumberIds for this API key
-    2) For each phoneNumberId, fetch communications with the guest phone
-    3) Sum them all up
+    1) Get all phoneNumberIds for api_key
+    2) For each phoneNumberId, gather calls+msgs for guest_phone
+    3) Sum them up
     """
-    phone_number_ids = get_all_phone_number_ids(api_key)
+    # fetch phoneNumberIds
+    headers = {"Authorization": f"Bearer {api_key}"}
+    url = "https://api.openphone.com/v1/phone-numbers"
+    data = rate_limited_request(url, headers, params={})
+    phone_number_ids = []
+    if data and "data" in data:
+        phone_number_ids = [pn.get("id") for pn in data["data"]]
 
-    aggregated = {
+    # aggregate
+    result = {
         "total_messages": 0,
         "total_calls": 0,
         "pre_arrival_texts": 0,
@@ -187,54 +170,30 @@ def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str
         "pre_arrival_calls": 0,
         "post_arrival_calls": 0
     }
-
     for pn_id in phone_number_ids:
         info = get_communication_info(api_key, pn_id, guest_phone, arrival_date_str)
-        aggregated["total_messages"]    += info["total_messages"]
-        aggregated["total_calls"]       += info["total_calls"]
-        aggregated["pre_arrival_texts"] += info["pre_arrival_texts"]
-        aggregated["post_arrival_texts"]+= info["post_arrival_texts"]
-        aggregated["pre_arrival_calls"] += info["pre_arrival_calls"]
-        aggregated["post_arrival_calls"]+= info["post_arrival_calls"]
+        result["total_messages"]       += info["total_messages"]
+        result["total_calls"]          += info["total_calls"]
+        result["pre_arrival_texts"]    += info["pre_arrival_texts"]
+        result["post_arrival_texts"]   += info["post_arrival_texts"]
+        result["pre_arrival_calls"]    += info["pre_arrival_calls"]
+        result["post_arrival_calls"]   += info["post_arrival_calls"]
 
-    return aggregated
+    return result
 
-###################################################
-# 6) CONCURRENT WRAPPER: PROCESS EACH ROW IN PARALLEL
-#    AND FOR EACH ROW, LOOP OVER ALL 5 API KEYS
-###################################################
-def fetch_communication_info_concurrently(owner_df):
-    """
-    owner_df must have:
-      - 'Phone Number'
-      - 'Arrival Date Short' (like '3/27/2025')
-    We create threads to process each row in parallel.
-    """
-    results_list = []
+##########################################################################
+# 5) PROCESS A SINGLE ROW: GRAB A KEY FROM THE QUEUE, DO THE FETCH, RETURN KEY
+##########################################################################
+def process_one_row(idx, row):
+    phone = row.get("Phone Number", "")
+    arrival = row.get("Arrival Date Short", "")
 
-    def process_one_row(idx, row):
-        phone = row.get("Phone Number", "")
-        arrival = row.get("Arrival Date Short", "")
+    st.write(f"[Row {idx}] Starting: phone={phone}, arrival={arrival}")
 
-        # "Live logging" at the start of the row:
-        st.write(f"[Row {idx}] Starting => Phone={phone}, Arrival={arrival}")
-
-        # If phone invalid => skip
-        if not phone or phone == 'No Data':
-            st.write(f"[Row {idx}] Invalid phone => skipping.")
-            return {
-                "status": "Invalid Number",
-                "total_messages": 0,
-                "total_calls": 0,
-                "pre_arrival_texts": 0,
-                "post_arrival_texts": 0,
-                "pre_arrival_calls": 0,
-                "post_arrival_calls": 0
-            }
-
-        # For each row, loop over all 5 keys in series
-        combined = {
-            "status": "OK",
+    if not phone or phone == "No Data":
+        st.write(f"[Row {idx}]  -> Invalid phone => skipping.")
+        return {
+            "status": "Invalid Number",
             "total_messages": 0,
             "total_calls": 0,
             "pre_arrival_texts": 0,
@@ -243,38 +202,54 @@ def fetch_communication_info_concurrently(owner_df):
             "post_arrival_calls": 0
         }
 
-        for key_idx, api_key in enumerate(OPENPHONE_API_KEYS, start=1):
-            st.write(f"[Row {idx}]  -> Using API key #{key_idx} ...")
-            partial = fetch_communication_for_guest_and_key(api_key, phone, arrival)
-            combined["total_messages"]       += partial["total_messages"]
-            combined["total_calls"]          += partial["total_calls"]
-            combined["pre_arrival_texts"]    += partial["pre_arrival_texts"]
-            combined["post_arrival_texts"]   += partial["post_arrival_texts"]
-            combined["pre_arrival_calls"]    += partial["pre_arrival_calls"]
-            combined["post_arrival_calls"]   += partial["post_arrival_calls"]
+    # --------------- Pick a key from the pool ---------------
+    api_key = available_keys.get()
+    st.write(f"[Row {idx}]  -> Using API key: {api_key[:6]}...")  # partial key for logging
 
-        st.write(f"[Row {idx}] Finished => "
-                 f"{combined['total_messages']} msgs, {combined['total_calls']} calls")
+    # gather data
+    try:
+        partial = fetch_communication_for_guest_and_key(api_key, phone, arrival)
+        combined = {
+            "status": "OK",
+            "total_messages": partial["total_messages"],
+            "total_calls": partial["total_calls"],
+            "pre_arrival_texts": partial["pre_arrival_texts"],
+            "post_arrival_texts": partial["post_arrival_texts"],
+            "pre_arrival_calls": partial["pre_arrival_calls"],
+            "post_arrival_calls": partial["post_arrival_calls"]
+        }
+    finally:
+        # put the key back so another row can use it
+        available_keys.put(api_key)
 
-        return combined
+    st.write(
+        f"[Row {idx}] Finished => "
+        f"{combined['total_messages']} msgs, {combined['total_calls']} calls"
+    )
+    return combined
 
-    # We’ll use a ThreadPoolExecutor to parallelize “each row”
-    max_workers = 5  # adjust up/down as needed
+##########################################################################
+# 6) MAIN FUNCTION: RUN ROWS IN PARALLEL, ONE KEY PER ROW
+##########################################################################
+def fetch_communication_info_unique_keys(owner_df):
+    results = [None]*len(owner_df)
+
+    def row_worker(idx, row):
+        return (idx, process_one_row(idx, row))
+
+    # up to 5 concurrent rows => each row uses a different key
+    max_workers = 5
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_idx = {}
-        for idx, row in owner_df.iterrows():
-            # Submit each row to the pool
-            future = executor.submit(process_one_row, idx, row)
-            future_to_idx[future] = idx
+        for i, row in owner_df.iterrows():
+            fut = executor.submit(row_worker, i, row)
+            future_to_idx[fut] = i
 
-        # Collect results in order
-        results = [None] * len(owner_df)
-        for future in concurrent.futures.as_completed(future_to_idx):
-            idx = future_to_idx[future]
-            res = future.result()  # res is the dict from process_one_row
-            results[idx] = res
+        for fut in concurrent.futures.as_completed(future_to_idx):
+            idx, result_dict = fut.result()
+            results[idx] = result_dict
 
-    # Merge back into a DataFrame
+    # build output DF
     out_df = owner_df.copy()
     out_df["Status"] = [r["status"] for r in results]
     out_df["Total Messages"] = [r["total_messages"] for r in results]
@@ -286,23 +261,23 @@ def fetch_communication_info_concurrently(owner_df):
 
     return out_df
 
-###################################################
+##########################################################################
 # 7) DEMO USAGE
-###################################################
+##########################################################################
 def main():
-    st.title("Concurrent OpenPhone Fetch (5 API Keys)")
+    st.title("Concurrent Rows, One Unique API Key Per Row")
 
-    # Sample data
-    data = {
-        "Phone Number": ["+11234567890", "+11987654321", "No Data"],
-        "Arrival Date Short": ["3/27/2025", "3/27/2025", ""]
+    sample_data = {
+        "Phone Number": ["+1234567890", "+1987654321", "No Data", "+14443339999"],
+        "Arrival Date Short": ["3/27/2025", "3/27/2025", "", "4/01/2025"]
     }
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(sample_data)
 
-    st.write("Starting concurrency with 5 OpenPhone keys...")
-    final_df = fetch_communication_info_concurrently(df)
+    st.write("Starting concurrency: each row gets a unique key from the pool...")
+    final_df = fetch_communication_info_unique_keys(df)
     st.write("All done!")
-    st.write(final_df)
+    st.dataframe(final_df)
 
+# Uncomment if you want to run directly via "streamlit run unique_key_per_row.py"
 # if __name__ == "__main__":
 #     main()
