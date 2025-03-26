@@ -1,3 +1,5 @@
+# guestcommunication.py (final version without 'State' references)
+
 import streamlit as st
 import pandas as pd
 import time
@@ -9,7 +11,7 @@ import pytz
 from dateutil import parser
 
 ##########################################################################
-# 1) YOUR FIVE OPENPHONE API KEYS, in a queue for exclusive use per row
+# 1) FIVE OPENPHONE API KEYS (NO 'STATE' REFERENCES)
 ##########################################################################
 OPENPHONE_API_KEYS = [
     "j4sjHuvWO94IZWurOUca6aebhl6lG6Z7",
@@ -19,29 +21,28 @@ OPENPHONE_API_KEYS = [
     "tJKJxdTdXrtelTqnDLhKwak3JGJAvHKp"
 ]
 
-# Put them in a queue so each row uses a unique key at a time
+# Put them into a queue: each row uses a unique key (up to 5 threads)
 available_keys = queue.Queue()
 for k in OPENPHONE_API_KEYS:
     available_keys.put(k)
 
 ##########################################################################
-# 2) RATE-LIMITED REQUEST
-#    - Sleep 0.2s => ~5 requests/sec per thread
+# 2) RATE-LIMITED REQUEST: ~5 requests/sec
 ##########################################################################
 def rate_limited_request(url, headers, params, request_type='get'):
     """
-    Actually calls the OpenPhone API. 
-    We'll sleep 0.2s => ~5 requests/sec. 
+    Actually calls the OpenPhone API.
+    We'll sleep 0.2s => ~5 requests/sec (per thread).
     If your rate limit allows more, you can reduce or remove the sleep.
     """
-    # Light rate-limit
     time.sleep(0.2)
     try:
+        # Decide GET vs. other request
         if request_type.lower() == 'get':
-            st.write(f"Making request to: {url} with {params}")
+            st.write(f"Making GET request to: {url} with {params}")
             resp = requests.get(url, headers=headers, params=params)
         else:
-            st.write(f"Making {request_type.upper()} to: {url} with {params}")
+            st.write(f"Making {request_type.upper()} request to: {url} with {params}")
             resp = requests.request(request_type.upper(), url, headers=headers, params=params)
 
         if resp and resp.status_code == 200:
@@ -58,12 +59,13 @@ def rate_limited_request(url, headers, params, request_type='get'):
 ##########################################################################
 def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_str):
     """
-    Fetch calls & messages for ONE phoneNumberId & guest_phone, 
-    counting pre vs post arrival_date_str if valid (like '3/27/2025').
+    Fetch calls & messages for ONE phoneNumberId & guest_phone,
+    counting pre vs. post arrival_date_str if valid (e.g. '3/27/2025').
+    No references to 'State' here.
     """
     local_tz = pytz.timezone("Etc/GMT-4")  # or "America/New_York" if DST needed
 
-    # Parse arrival_date_str if it's not empty
+    # Try parsing "3/27/2025" => datetime
     if arrival_date_str:
         try:
             arrival_dt = datetime.strptime(arrival_date_str, "%m/%d/%Y")
@@ -77,6 +79,7 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
     messages_url = "https://api.openphone.com/v1/messages"
     calls_url = "https://api.openphone.com/v1/calls"
 
+    # Initialize counters
     total_messages = 0
     total_calls = 0
     pre_arrival_texts = 0
@@ -156,7 +159,7 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
     }
 
 ##########################################################################
-# 4) FETCH ALL phoneNumberIds FOR ONE KEY, THEN CALLS + MESSAGES FOR GUEST
+# 4) FETCH phoneNumberIds FOR ONE KEY, THEN CALLS + MESSAGES FOR GUEST
 ##########################################################################
 def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str):
     """
@@ -168,6 +171,7 @@ def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     st.write(f"Fetching phone numbers for key {api_key[:6]} ...")
     data = rate_limited_request(phone_numbers_url, headers, params={})
+
     phone_number_ids = []
     if data and "data" in data:
         phone_number_ids = [pn.get("id") for pn in data["data"]]
@@ -196,10 +200,10 @@ def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str
     return result
 
 ##########################################################################
-# 5) PROCESS A SINGLE ROW: GRAB A KEY FROM THE QUEUE, DO THE FETCH, RETURN KEY
+# 5) PROCESS ONE ROW: Grab a key from the queue, do the fetch, return key
 ##########################################################################
 def process_one_row(idx, row):
-    # Convert phone to string to avoid .lower() on non-string
+    # Ensure phone is a string
     phone_raw = row.get("Phone Number", "")
     phone = str(phone_raw)
     arrival_raw = row.get("Arrival Date Short", "")
@@ -219,7 +223,7 @@ def process_one_row(idx, row):
             "post_arrival_calls": 0
         }
 
-    # --------------- Pick a key from the pool ---------------
+    # --------------- Unique Key from the queue ---------------
     api_key = available_keys.get()
     st.write(f"[Row {idx}]  -> Using API key: {api_key[:6]}...")
 
@@ -235,33 +239,29 @@ def process_one_row(idx, row):
             "post_arrival_calls": partial["post_arrival_calls"]
         }
     finally:
-        # put the key back so another row can use it
+        # Put the key back so another row can use it
         available_keys.put(api_key)
 
-    st.write(
-        f"[Row {idx}] Finished => "
-        f"{combined['total_messages']} msgs, {combined['total_calls']} calls"
-    )
+    st.write(f"[Row {idx}] Finished => {combined['total_messages']} msgs, {combined['total_calls']} calls")
     return combined
 
 ##########################################################################
-# 6) MAIN FUNCTION: RUN ROWS IN PARALLEL, ONE KEY PER ROW
+# 6) FETCH COMM INFO (CONCURRENCY) - NO 'State' REFS
 ##########################################################################
 def fetch_communication_info_unique_keys(owner_df):
     """
     Each row is processed in parallel, each row uses a unique key from the queue.
     Returns a new DataFrame with columns for total/pre/post calls/messages.
-    We'll also log each row's progress in st.write.
+    We'll log each row's progress in st.write, but we never reference 'State'.
     """
-    results = [None]*len(owner_df)
+    results = [None] * len(owner_df)
 
     def row_worker(idx, row):
         return (idx, process_one_row(idx, row))
 
-    max_workers = 5  # up to 5 concurrent rows => each row uses a different key
+    max_workers = 5
     st.write(f"Processing {len(owner_df)} rows with concurrency (max_workers={max_workers})...")
 
-    # Provide a spinner while concurrency runs
     with st.spinner("Fetching data from OpenPhone..."):
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {}
@@ -273,7 +273,7 @@ def fetch_communication_info_unique_keys(owner_df):
                 idx, result_dict = fut.result()
                 results[idx] = result_dict
 
-    # build output DF
+    # build output
     out_df = owner_df.copy()
     out_df["Status"] = [r["status"] for r in results]
     out_df["Total Messages"] = [r["total_messages"] for r in results]
@@ -286,18 +286,19 @@ def fetch_communication_info_unique_keys(owner_df):
     return out_df
 
 ##########################################################################
-# 7) OPTIONAL TAB FUNCTION: run_guest_status_tab
+# 7) OPTIONAL TAB: run_guest_status_tab (No 'State')
 ##########################################################################
 def run_guest_status_tab():
     """
     If you call this from your main app (app.py),
-    you'll have a UI for uploading the file and see concurrency logs in real time.
+    you'll have a UI for uploading a file with 'Phone Number' & 'Arrival Date Short'.
+    We do concurrency with no references to 'State'.
     """
     st.title("Add Guest OpenPhone Status (Multi-Key Concurrency)")
 
     uploaded_file = st.file_uploader(
-        "Upload an Excel/CSV with 'Phone Number' & 'Arrival Date Short'",
-        type=["xlsx","xls","csv"]
+        "Upload Excel/CSV with 'Phone Number' & 'Arrival Date Short'",
+        type=["xlsx", "xls", "csv"]
     )
     if not uploaded_file:
         st.info("Please upload a file to proceed.")
@@ -316,27 +317,23 @@ def run_guest_status_tab():
 
     st.write("Data Preview:", owner_df.head())
 
-    # Actually do concurrency
     final_df = fetch_communication_info_unique_keys(owner_df)
-
     st.success("Done! Here are your results:")
     st.dataframe(final_df)
 
-    # Optionally allow downloading
+    # Optionally let user download
     csv_data = final_df.to_csv(index=False)
     st.download_button("Download Results as CSV", csv_data, "openphone_results.csv", "text/csv")
 
 ##########################################################################
-# 8) DEMO USAGE
+# 8) DEMO USAGE - no 'State' references
 ##########################################################################
 def main():
     """
-    If you run this file directly e.g. 
-      'streamlit run guestcommunication.py'
-    it will show a sample DataFrame, concurrency, logs, and final results.
+    If you run 'streamlit run guestcommunication.py' directly,
+    we'll show a sample DataFrame with no 'State' column, concurrency logs, etc.
     """
-    st.title("Concurrent Rows Demo (5 Keys)")
-
+    st.title("Concurrent Rows Demo (5 Keys) - No 'State'")
     sample_data = {
         "Phone Number": [
             "+1234567890",
@@ -354,13 +351,13 @@ def main():
         ]
     }
     df = pd.DataFrame(sample_data)
-    st.write("Sample Demo: concurrency with 5 keys for the above data...")
+    st.write("Sample Demo data (no 'State' column):", df)
 
     final_df = fetch_communication_info_unique_keys(df)
     st.write("All done with sample data!")
     st.dataframe(final_df)
 
-# Uncomment if you want to run directly with
+# Uncomment if you want to run directly:
 #   streamlit run guestcommunication.py
 # if __name__ == "__main__":
 #     main()
