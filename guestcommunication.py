@@ -6,9 +6,22 @@ import time
 import io
 import concurrent.futures
 from datetime import datetime
+from queue import Queue
 
 ########################################
-# 1) FOUR API KEYS (NO 'Bearer' prefix)
+# 0) GLOBAL LOG QUEUE
+########################################
+log_queue = Queue()
+
+def log(message):
+    """
+    Worker threads will call this instead of st.write.
+    We'll display messages after concurrency finishes.
+    """
+    log_queue.put(message)
+
+########################################
+# 1) FOUR API KEYS (NO 'Bearer')
 ########################################
 OPENPHONE_API_KEYS = [
     "NRFVc43Gee39yIBu6mfC6Ya34K5moaSL",
@@ -21,10 +34,6 @@ OPENPHONE_API_KEYS = [
 # 2) FORMAT PHONE => E.164
 ########################################
 def format_phone_number_us(raw_number: str) -> str:
-    """
-    Attempts to parse raw_number as a US phone, returning +1XXXXXXXXXX.
-    Returns None if invalid or empty.
-    """
     s = raw_number.strip()
     if not s:
         return None
@@ -40,10 +49,6 @@ def format_phone_number_us(raw_number: str) -> str:
 # 3) RATE-LIMITED GET REQUEST (~5 RPS)
 ########################################
 def rate_limited_get(url, headers, params, max_retries=3):
-    """
-    Single-thread approach, ~5 requests/sec, minimal backoff for 429.
-    No 'Bearer' prefix => 'Authorization': <API_KEY>.
-    """
     time.sleep(0.2)  # ~5 requests/sec
     backoff_delay = 1
     retries = 0
@@ -53,50 +58,50 @@ def rate_limited_get(url, headers, params, max_retries=3):
             if resp.status_code == 200:
                 return resp.json()
             elif resp.status_code == 429:
-                # 429 => Too Many Requests
+                log("429 Too Many Requests => backing off {}s".format(backoff_delay))
                 time.sleep(backoff_delay)
                 backoff_delay *= 2
                 retries += 1
                 continue
             else:
-                # 4xx or 5xx
+                log(f"API Error {resp.status_code}: {resp.text}")
                 return None
-        except Exception:
+        except Exception as e:
+            log(f"Request exception: {e}")
             return None
     return None
 
 ########################################
-# 4) TRY TO GET phoneNumberIds FOR A WORKSPACE
+# 4) TRY KEYS => GET phoneNumberIds
 ########################################
 def try_get_phone_number_ids():
     """
-    Loops over the 4 keys in order:
-      - Calls GET /v1/phone-numbers
-      - If success => returns (list_of_ids, that_key)
-    If all fail => ([], None).
+    Loops over the 4 keys. 
+    If success => (ids, key). If all fail => ([], None).
     """
-    url = "https://api.openphone.com/v1/phone-numbers"
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     for key in OPENPHONE_API_KEYS:
+        log(f"Trying key={key[:6]} => GET /phone-numbers")
         headers = {"Authorization": key, "Content-Type": "application/json"}
-        data = rate_limited_get(url, headers, params={})
+        data = rate_limited_get(phone_numbers_url, headers, params={})
         if data and "data" in data:
             pn_ids = [d.get("id") for d in data["data"] if d.get("id")]
             if pn_ids:
-                return (pn_ids, key)  # success
-    # if none worked
+                log(f"Success with key={key[:6]} => Found {len(pn_ids)} phoneNumberIds.")
+                return (pn_ids, key)
+            else:
+                log(f"Key={key[:6]} => 200 but no phoneNumberIds.")
+        else:
+            log(f"Key={key[:6]} => unauthorized or error.")
     return ([], None)
 
 ########################################
-# 5) GET CALLS & MESSAGES FOR ONE E.164 PHONE
+# 5) GET CALLS & MESSAGES
 ########################################
 def get_communication_info(e164_phone, arrival_date=None):
-    """
-    1) Try each key => if phoneNumberIds found => use that key.
-    2) If all fail => "No Communications (All Keys Unauthorized)"
-    3) Otherwise fetch calls/messages for e164_phone.
-    """
     phone_number_ids, chosen_key = try_get_phone_number_ids()
     if not chosen_key or not phone_number_ids:
+        log(f"No valid key => {e164_phone} => All keys unauthorized.")
         return {
             'status': "No Communications (All Keys Unauthorized)",
             'last_date': None,
@@ -114,7 +119,6 @@ def get_communication_info(e164_phone, arrival_date=None):
             'calls_under_40sec': 0
         }
 
-    # parse arrival_date if possible
     if isinstance(arrival_date, str):
         try:
             arrival_date = datetime.fromisoformat(arrival_date)
@@ -128,26 +132,28 @@ def get_communication_info(e164_phone, arrival_date=None):
     msg_url  = "https://api.openphone.com/v1/messages"
     call_url = "https://api.openphone.com/v1/calls"
 
-    latest_dt        = None
-    latest_type      = None
-    latest_dir       = None
-    call_dur         = None
-    agent_name       = None
+    latest_dt       = None
+    latest_type     = None
+    latest_dir      = None
+    call_dur        = None
+    agent_name      = None
 
-    total_msgs       = 0
-    total_calls      = 0
-    ans_calls        = 0
-    mis_calls        = 0
-    attempts         = 0
+    total_msgs      = 0
+    total_calls     = 0
+    ans_calls       = 0
+    mis_calls       = 0
+    attempts        = 0
 
-    pre_calls        = 0
-    pre_texts        = 0
-    post_calls       = 0
-    post_texts       = 0
-    calls_under_40   = 0
+    pre_calls       = 0
+    pre_texts       = 0
+    post_calls      = 0
+    post_texts      = 0
+    calls_under_40  = 0
 
     for pn_id in phone_number_ids:
-        # 1) MESSAGES
+        log(f"[{e164_phone}] => phoneNumberId={pn_id}")
+
+        # MESSAGES
         next_page = None
         while True:
             params = {
@@ -157,22 +163,20 @@ def get_communication_info(e164_phone, arrival_date=None):
             }
             if next_page:
                 params["pageToken"] = next_page
-
             data = rate_limited_get(msg_url, headers, params)
             if not data or "data" not in data:
                 break
-
             msgs = data["data"]
             total_msgs += len(msgs)
             for m in msgs:
-                mtime = datetime.fromisoformat(m["createdAt"].replace("Z", "+00:00"))
+                mtime = datetime.fromisoformat(m["createdAt"].replace("Z","+00:00"))
                 if arrival_date_only:
                     if mtime.date() <= arrival_date_only:
                         pre_texts += 1
                     else:
                         post_texts += 1
                 if not latest_dt or mtime > latest_dt:
-                    latest_dt = mtime
+                    latest_dt   = mtime
                     latest_type = "Message"
                     latest_dir  = m.get("direction","unknown")
                     agent_name  = m.get("user",{}).get("name","Unknown Agent")
@@ -180,7 +184,7 @@ def get_communication_info(e164_phone, arrival_date=None):
             if not next_page:
                 break
 
-        # 2) CALLS
+        # CALLS
         next_page = None
         while True:
             params = {
@@ -190,16 +194,14 @@ def get_communication_info(e164_phone, arrival_date=None):
             }
             if next_page:
                 params["pageToken"] = next_page
-
             data = rate_limited_get(call_url, headers, params)
             if not data or "data" not in data:
                 break
-
             calls = data["data"]
             total_calls += len(calls)
             for c in calls:
                 ctime = datetime.fromisoformat(c["createdAt"].replace("Z","+00:00"))
-                dur   = c.get("duration", 0)
+                dur   = c.get("duration",0)
                 if arrival_date_only:
                     if ctime.date() <= arrival_date_only:
                         pre_calls += 1
@@ -248,16 +250,15 @@ def get_communication_info(e164_phone, arrival_date=None):
     }
 
 ########################################
-# 6) PROCESS ONE ROW (used by concurrency)
+# 6) process_one_row: concurrency worker
 ########################################
-def process_one_row(idx, row):
-    # Phone => E.164
+def process_one_row(i, row):
     raw_phone = str(row.get("Phone Number","")).strip()
-    arrival_val= row.get("Arrival Date", None)  # optional
-
+    arrival_val= row.get("Arrival Date", None)
     e164_phone = format_phone_number_us(raw_phone)
+
     if not e164_phone:
-        # Invalid or empty
+        log(f"[Row {i}] => invalid phone '{raw_phone}' => skipping.")
         return {
             "status":"Invalid Number",
             "last_date":None,
@@ -274,50 +275,39 @@ def process_one_row(idx, row):
             "post_arrival_texts":0,
             "calls_under_40sec":0
         }
-    # else
-    info = get_communication_info(e164_phone, arrival_val)
-    return info
+
+    log(f"[Row {i}] => phone={e164_phone}, arrival={arrival_val}")
+    result = get_communication_info(e164_phone, arrival_val)
+    log(f"[Row {i}] => {result['status']}, {result['total_calls']} calls, {result['total_messages']} msgs.")
+    return result
 
 ########################################
-# 7) FETCH DATAFRAME WITH CONCURRENCY
+# 7) concurrency
 ########################################
 def fetch_communication_info_concurrent(df):
-    """
-    Concurrency: each row is processed in parallel up to 5 threads.
-    For each row => process_one_row => tries 4 keys => fetch calls/messages.
-    """
     import concurrent.futures
-
     results = [None]*len(df)
 
     def row_worker(i, r):
         return (i, process_one_row(i, r))
 
-    max_workers = 5
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futs = []
+    max_workers=5
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as exe:
+        future_list = []
         for i, row in df.iterrows():
-            fut = executor.submit(row_worker, i, row)
-            futs.append(fut)
+            fut = exe.submit(row_worker, i, row)
+            future_list.append(fut)
 
-        for f in concurrent.futures.as_completed(futs):
-            i, res_dict = f.result()
-            results[i] = res_dict
+        for fut in concurrent.futures.as_completed(future_list):
+            i, res = fut.result()
+            results[i] = res
 
     # build columns
-    statuses = []
-    dates = []
-    durations = []
-    agent_names = []
-    total_msgs_list = []
-    total_calls_list = []
-    ans_calls_list = []
-    mis_calls_list = []
-    attempts_list = []
-    pre_calls_list = []
-    pre_texts_list = []
-    post_calls_list= []
-    post_texts_list= []
+    statuses, dates, durations, agent_names = [], [], [], []
+    total_msgs_list, total_calls_list = [], []
+    ans_calls_list, mis_calls_list, attempts_list = [], [], []
+    pre_calls_list, pre_texts_list = [], []
+    post_calls_list, post_texts_list= [], []
     calls_u40_list = []
 
     for r in results:
@@ -355,44 +345,53 @@ def fetch_communication_info_concurrent(df):
     return out_df
 
 ########################################
-# 8) MAIN STREAMLIT UI
+# 8) MAIN STREAMLIT
 ########################################
 def run_guest_status_tab():
-    st.title("Concurrent (up to 5 threads), 4 Keys, E.164 phone, skip empty/invalid")
-    uploaded_file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
-    if not uploaded_file:
-        st.info("Please upload a file to proceed.")
+    st.title("Concurrent (5 threads), 4 Keys, E.164, plus logs in queue")
+    file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
+    if not file:
+        st.info("Please upload a file.")
         return
 
-    if uploaded_file.name.lower().endswith(("xlsx","xls")):
-        df = pd.read_excel(uploaded_file)
+    if file.name.lower().endswith(("xlsx","xls")):
+        df = pd.read_excel(file)
     else:
-        df = pd.read_csv(uploaded_file)
+        df = pd.read_csv(file)
 
     if "Phone Number" not in df.columns:
-        st.error("No 'Phone Number' column found.")
+        st.error("No 'Phone Number' column.")
         return
 
     st.write("Data Preview:", df.head())
 
-    final_df = fetch_communication_info_concurrent(df)
-    st.success("Done with concurrency!")
+    with st.spinner("Processing in concurrency..."):
+        final_df = fetch_communication_info_concurrent(df)
+
+    st.success("All done!")
     st.dataframe(final_df.head(50))
 
-    # Download
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+    # Show logs from the queue
+    st.write("### Logs:")
+    while not log_queue.empty():
+        msg = log_queue.get()
+        st.write(msg)
+
+    # Optionally allow downloading final
+    import io
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
         final_df.to_excel(writer, index=False, sheet_name="Updated")
-    buffer.seek(0)
+    buf.seek(0)
 
     st.download_button(
         "Download Updated Excel",
-        data=buffer.getvalue(),
-        file_name="openphone_concurrent_result.xlsx",
+        data=buf.getvalue(),
+        file_name="openphone_concurrent_logs.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# If you want to run directly with:
-#   streamlit run your_file.py
+# If run directly:
+# streamlit run your_file.py
 if __name__ == "__main__":
     run_guest_status_tab()
