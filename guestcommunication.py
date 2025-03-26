@@ -9,7 +9,7 @@ import concurrent.futures
 from datetime import datetime
 
 ########################################
-# 1) KEYS + GLOBAL QUEUE
+# 1) YOUR OPENPHONE API KEYS (NO 'Bearer')
 ########################################
 OPENPHONE_API_KEYS = [
     "NRFVc43Gee39yIBu6mfC6Ya34K5moaSL",
@@ -18,22 +18,22 @@ OPENPHONE_API_KEYS = [
     "1mCfUABVby1FmX8LSiAk6UHOPWGEApRQ"
 ]
 
+# A queue of keys so each row uses exactly 1 distinct key at a time
 available_keys = queue.Queue()
 for k in OPENPHONE_API_KEYS:
     available_keys.put(k)
 
 ########################################
-# 2) FORMAT PHONE => E.164
+# 2) FORMAT PHONE => E.164 (US)
 ########################################
 def format_phone_number_us(raw_number: str) -> str:
     s = raw_number.strip()
     if not s:
         return None
-    import phonenumbers
     try:
-        parsed = phonenumbers.parse(s, "US")
-        if phonenumbers.is_valid_number(parsed):
-            return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+        pn = phonenumbers.parse(s, "US")
+        if phonenumbers.is_valid_number(pn):
+            return phonenumbers.format_number(pn, phonenumbers.PhoneNumberFormat.E164)
     except phonenumbers.NumberParseException:
         pass
     return None
@@ -42,7 +42,11 @@ def format_phone_number_us(raw_number: str) -> str:
 # 3) RATE-LIMITED GET (~5 req/sec)
 ########################################
 def rate_limited_get(url, headers, params):
-    time.sleep(0.2)  # ~5 requests/sec
+    """
+    Sleep 0.2s => ~5 requests/sec per thread. 
+    If 3 workers run, watch out for total concurrency. 
+    """
+    time.sleep(0.2)
     try:
         resp = requests.get(url, headers=headers, params=params)
         if resp.status_code == 200:
@@ -53,15 +57,17 @@ def rate_limited_get(url, headers, params):
         return None
 
 ########################################
-# 4) FETCH CALLS & MESSAGES
+# 4) GET CALLS & MESSAGES FOR ONE KEY
 ########################################
 def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     """
-    Single key for this row => phoneNumberId(s) => calls/messages => stats
-    If no phoneNumberIds => return "No Communications"
+    1) Use the single chosen_key for phoneNumberIds
+    2) Then fetch calls/messages 
+    3) Return stats
     """
-    headers = {"Authorization": chosen_key, "Content-Type":"application/json"}
-    # 1) get phoneNumberIds for this key
+    headers = {"Authorization": chosen_key, "Content-Type": "application/json"}
+
+    # GET phoneNumberIds
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
     data = rate_limited_get(phone_numbers_url, headers, params={})
     if not data or "data" not in data:
@@ -81,7 +87,7 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             'post_arrival_texts': 0,
             'calls_under_40sec': 0
         }
-    phone_number_ids = [d.get("id") for d in data["data"] if d.get("id")]
+    phone_number_ids = [pn.get("id") for pn in data["data"] if pn.get("id")]
     if not phone_number_ids:
         return {
             'status': "No Communications",
@@ -113,20 +119,14 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     call_url = "https://api.openphone.com/v1/calls"
 
     latest_dt = None
-    latest_type = None
-    latest_dir  = None
-    call_dur    = None
-    agent_name  = None
+    latest_type, latest_dir, call_dur = None, None, None
+    agent_name = None
 
-    total_msgs  = 0
-    total_calls = 0
-    ans_calls   = 0
-    mis_calls   = 0
-    attempts    = 0
-
+    total_msgs, total_calls = 0, 0
+    ans_calls, mis_calls, attempts = 0, 0, 0
     pre_calls, pre_texts = 0, 0
-    post_calls, post_texts= 0, 0
-    calls_under_40       = 0
+    post_calls, post_texts = 0, 0
+    calls_under_40 = 0
 
     for pn_id in phone_number_ids:
         # MESSAGES
@@ -226,19 +226,18 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     }
 
 ########################################
-# 5) PROCESS ONE ROW => pick EXACTLY ONE KEY
+# 5) PROCESS ONE ROW => EXACTLY ONE KEY
 ########################################
 def process_one_row(idx, row):
-    # 1) pick a key from the queue
-    chosen_key = available_keys.get()  # blocks if no key available
+    import queue
+    chosen_key = available_keys.get()  # blocks if no key
     try:
-        # 2) parse phone
         raw_phone = str(row.get("Phone Number","")).strip()
         arrival_val= row.get("Arrival Date",None)
         e164_phone = format_phone_number_us(raw_phone)
         if not e164_phone:
             # invalid phone => skip
-            result = {
+            return {
                 "status":"Invalid Number",
                 "last_date":None,
                 "call_duration":None,
@@ -254,43 +253,38 @@ def process_one_row(idx, row):
                 "post_arrival_texts":0,
                 "calls_under_40sec":0
             }
-        else:
-            # 3) fetch data with chosen_key
-            result = get_communication_info(e164_phone, chosen_key, arrival_val)
+        # else
+        info = get_communication_info(e164_phone, chosen_key, arrival_val)
+        return info
     finally:
-        # 4) put the key back so another row can use it
+        # put key back so another row can use it
         available_keys.put(chosen_key)
 
-    return result
-
 ########################################
-# 6) CONCURRENCY => each row => one distinct key
+# 6) CONCURRENCY WITH 3 WORKERS
 ########################################
 def fetch_communication_info_unique_keys(df):
     """
-    Each row picks EXACTLY 1 key from the queue,
-    does calls/messages, returns it. 
-    If #rows > #keys, some threads wait.
+    Each row => pick EXACTLY 1 key from the queue. 
+    We run up to 3 rows in parallel (3 workers).
     """
-    import concurrent.futures
     results = [None]*len(df)
 
     def row_worker(i, r):
         return (i, process_one_row(i, r))
 
-    # e.g. 5 threads => up to 5 rows processed in parallel
-    max_workers = 5
+    max_workers = 3  # <--- Here is the limit to 3 threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as exe:
-        futs = []
+        fut_map = {}
         for i, row in df.iterrows():
             fut = exe.submit(row_worker, i, row)
-            futs.append(fut)
+            fut_map[fut] = i
 
-        for fut in concurrent.futures.as_completed(futs):
-            i, res_dict = fut.result()
-            results[i] = res_dict
+        for fut in concurrent.futures.as_completed(fut_map):
+            i, res = fut.result()
+            results[i] = res
 
-    # build output
+    # build columns
     out_df = df.copy()
     out_df["Status"] = [r["status"] for r in results]
     out_df["Last Contact Date"] = [r["last_date"] for r in results]
@@ -310,13 +304,13 @@ def fetch_communication_info_unique_keys(df):
     return out_df
 
 ########################################
-# 7) MAIN STREAMLIT
+# 7) STREAMLIT UI
 ########################################
 def run_guest_status_tab():
-    st.title("Concurrent, each row => distinct key from the queue, E.164, skip invalid")
+    st.title("Concurrent: 3 workers, each row => distinct key, skip invalid phone")
     uploaded_file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
     if not uploaded_file:
-        st.info("Please upload a file.")
+        st.info("Awaiting file.")
         return
 
     if uploaded_file.name.lower().endswith(("xlsx","xls")):
@@ -325,13 +319,13 @@ def run_guest_status_tab():
         df = pd.read_csv(uploaded_file)
 
     if "Phone Number" not in df.columns:
-        st.error("No 'Phone Number' column.")
+        st.error("Missing 'Phone Number' column.")
         return
 
-    st.write("Data Preview:", df.head())
+    st.write("Data preview:", df.head())
 
     final_df = fetch_communication_info_unique_keys(df)
-    st.success("All done! One row => one key at a time.")
+    st.success("All done! 3 concurrency, 1 key per row at a time.")
     st.dataframe(final_df.head(50))
 
     # Download
@@ -343,11 +337,11 @@ def run_guest_status_tab():
     st.download_button(
         "Download Updated Excel",
         data=buf.getvalue(),
-        file_name="updated_unique_keys.xlsx",
+        file_name="updated_unique_keys_3workers.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# If you want to run directly:
+# if run directly:
 #   streamlit run your_file.py
 if __name__ == "__main__":
     run_guest_status_tab()
