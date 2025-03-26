@@ -1,3 +1,5 @@
+# unique_key_per_row.py
+
 import streamlit as st
 import pandas as pd
 import time
@@ -8,27 +10,31 @@ from datetime import datetime
 import pytz
 from dateutil import parser
 
-##############################################################################
+##########################################################################
 # 1) YOUR FIVE OPENPHONE API KEYS, in a queue for exclusive use per row
-##############################################################################
+##########################################################################
 OPENPHONE_API_KEYS = [
-    "j4sjHuvWO94IZWurOUca6aebhl6lG6Z7",  # original
+    "j4sjHuvWO94IZWurOUca6Aebhl6lG6Z7",  # newly added
     "aU3PhsAQ2Qw0E3WvJcCf4wul8u7QW0u5",
     "prXONwAEznwZzzTVFSVxym9ykQBiLcpF",
     "v5i6aToq7CbSy8oBodmdHz1i1ByUFNdc",
     "tJKJxdTdXrtelTqnDLhKwak3JGJAvHKp"
 ]
 
+# Put them in a queue so each row uses a unique key at a time
 available_keys = queue.Queue()
 for k in OPENPHONE_API_KEYS:
     available_keys.put(k)
 
-##############################################################################
+##########################################################################
 # 2) RATE-LIMITED REQUEST
 #    - Sleep 0.2s => ~5 requests/sec per thread
-##############################################################################
+##########################################################################
 def rate_limited_request(url, headers, params, request_type='get'):
-    # Simple rate-limit to ~5 requests/sec per thread
+    """
+    Make an API request, sleeping 0.2 seconds each time => ~5 requests/sec.
+    If you have higher limits, reduce or remove the sleep.
+    """
     time.sleep(0.2)
     try:
         if request_type.lower() == 'get':
@@ -44,19 +50,24 @@ def rate_limited_request(url, headers, params, request_type='get'):
         st.warning(f"Request exception: {str(e)}")
     return None
 
-##############################################################################
+##########################################################################
 # 3) GET CALL/MSG INFO FOR ONE phoneNumberId
-##############################################################################
+##########################################################################
 def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_str):
     """
     Fetch calls & messages for one phoneNumberId, for guest_phone,
-    counting pre vs post arrival_date_str (like '3/27/2025').
+    counting pre vs. post arrival_date_str (like '3/27/2025') if valid.
     """
-    local_tz = pytz.timezone("Etc/GMT-4")  # or "America/New_York" if DST is needed
+    local_tz = pytz.timezone("Etc/GMT-4")  # or "America/New_York" if DST needed
 
+    # Parse arrival_date_str if it's not empty
     if arrival_date_str:
-        arrival_dt = datetime.strptime(arrival_date_str, "%m/%d/%Y")
-        arrival_dt_local = local_tz.localize(arrival_dt)
+        try:
+            arrival_dt = datetime.strptime(arrival_date_str, "%m/%d/%Y")
+            arrival_dt_local = local_tz.localize(arrival_dt)
+        except ValueError:
+            # If invalid (e.g., not mm/dd/yyyy), treat as None
+            arrival_dt_local = None
     else:
         arrival_dt_local = None
 
@@ -143,19 +154,18 @@ def get_communication_info(api_key, phone_number_id, guest_phone, arrival_date_s
         "post_arrival_calls": post_arrival_calls
     }
 
-##############################################################################
+##########################################################################
 # 4) FETCH ALL phoneNumberIds FOR ONE KEY, THEN CALLS + MESSAGES FOR GUEST
-##############################################################################
+##########################################################################
 def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str):
     """
     1) Get all phoneNumberIds for api_key
     2) For each phoneNumberId, gather calls+msgs for guest_phone
     3) Sum them up
     """
-    # fetch phoneNumberIds
     headers = {"Authorization": f"Bearer {api_key}"}
-    url = "https://api.openphone.com/v1/phone-numbers"
-    data = rate_limited_request(url, headers, params={})
+    phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    data = rate_limited_request(phone_numbers_url, headers, params={})
     phone_number_ids = []
     if data and "data" in data:
         phone_number_ids = [pn.get("id") for pn in data["data"]]
@@ -169,6 +179,7 @@ def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str
         "pre_arrival_calls": 0,
         "post_arrival_calls": 0
     }
+
     for pn_id in phone_number_ids:
         info = get_communication_info(api_key, pn_id, guest_phone, arrival_date_str)
         result["total_messages"]       += info["total_messages"]
@@ -180,20 +191,16 @@ def fetch_communication_for_guest_and_key(api_key, guest_phone, arrival_date_str
 
     return result
 
-##############################################################################
+##########################################################################
 # 5) PROCESS A SINGLE ROW: GRAB A KEY FROM THE QUEUE, DO THE FETCH, RETURN KEY
-##############################################################################
+##########################################################################
 def process_one_row(idx, row):
-    """
-    Expects columns:
-      'Phone Number', 'Arrival Date Short'
-    """
     phone = row.get("Phone Number", "")
-    arrival = row.get("Arrival Date Short", "")
+    arrival = str(row.get("Arrival Date Short", "")).strip()
 
-    st.write(f"[Row {idx}] Starting: phone={phone}, arrival={arrival}")
+    st.write(f"[Row {idx}] Starting => phone='{phone}', arrival='{arrival}'")
 
-    if not phone or phone == "No Data":
+    if not phone or phone.lower() == "no data":
         st.write(f"[Row {idx}]  -> Invalid phone => skipping.")
         return {
             "status": "Invalid Number",
@@ -207,9 +214,8 @@ def process_one_row(idx, row):
 
     # --------------- Pick a key from the pool ---------------
     api_key = available_keys.get()
-    st.write(f"[Row {idx}]  -> Using API key: {api_key[:6]}...")
+    st.write(f"[Row {idx}]  -> Using API key: {api_key[:6]}...")  # partial key for logging
 
-    # gather data
     try:
         partial = fetch_communication_for_guest_and_key(api_key, phone, arrival)
         combined = {
@@ -222,7 +228,7 @@ def process_one_row(idx, row):
             "post_arrival_calls": partial["post_arrival_calls"]
         }
     finally:
-        # Always put the key back so another row can use it
+        # put the key back so another row can use it
         available_keys.put(api_key)
 
     st.write(
@@ -231,25 +237,20 @@ def process_one_row(idx, row):
     )
     return combined
 
-##############################################################################
+##########################################################################
 # 6) MAIN FUNCTION: RUN ROWS IN PARALLEL, ONE KEY PER ROW
-##############################################################################
+##########################################################################
 def fetch_communication_info_unique_keys(owner_df):
     """
-    Requires columns: "Phone Number" and "Arrival Date Short"
+    Each row is processed in parallel, each row uses a unique key from the queue.
+    Returns a new DataFrame with columns for total/pre/post calls/messages.
     """
-    # Verify columns exist
-    required_cols = {"Phone Number", "Arrival Date Short"}
-    if not required_cols.issubset(set(owner_df.columns)):
-        st.error(f"Missing required columns. Your file must contain: {required_cols}")
-        st.stop()
-
     results = [None]*len(owner_df)
 
     def row_worker(idx, row):
         return (idx, process_one_row(idx, row))
 
-    # up to 5 concurrent rows => each row uses a different key
+    # up to 5 concurrent rows => each row uses a different key from the queue
     max_workers = 5
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_idx = {}
@@ -273,31 +274,22 @@ def fetch_communication_info_unique_keys(owner_df):
 
     return out_df
 
-##############################################################################
-# 7) STREAMLIT APP: UPLOAD EXCEL, RUN THE FUNCTION
-##############################################################################
+##########################################################################
+# 7) DEMO USAGE
+##########################################################################
 def main():
-    st.title("OpenPhone Concurrency: One Key Per Row (Fixed Columns)")
+    st.title("Concurrent Rows, Each Row Uses a Distinct Key (Total 5 Keys)")
 
-    uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
+    sample_data = {
+        "Phone Number": ["+1234567890", "+1987654321", "No Data", "+14443339999", "+13081112222"],
+        "Arrival Date Short": ["3/27/2025", "3/28/2025", "", "4/01/2025", "5/02/2025"]
+    }
+    df = pd.DataFrame(sample_data)
 
-    if uploaded_file is not None:
-        # Read Excel into DataFrame
-        df = pd.read_excel(uploaded_file)
-        st.write("Uploaded DataFrame columns:", df.columns.tolist())
-        st.write(df.head())
+    st.write("Starting concurrency: each row uses a different key from the pool if available...")
+    final_df = fetch_communication_info_unique_keys(df)
+    st.write("All done!")
+    st.dataframe(final_df)
 
-        # Quick check or rename if your sheet has slightly different names
-        # e.g., if your columns are "phone" and "arrival_date", do:
-        # df.rename(columns={"phone": "Phone Number", "arrival_date": "Arrival Date Short"}, inplace=True)
-
-        st.write("Starting concurrency. Each row uses a unique API key from the pool...")
-        final_df = fetch_communication_info_unique_keys(df)
-
-        st.write("All done! Here are the results:")
-        st.dataframe(final_df)
-    else:
-        st.write("Please upload an Excel file with columns: 'Phone Number' and 'Arrival Date Short'.")
-
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
