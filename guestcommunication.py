@@ -275,9 +275,57 @@ def fetch_communication_info_unique_keys(owner_df):
     return out_df
 
 ##########################################################################
-# 7) DEMO USAGE
+# 7) RUN_GUEST_STATUS_TAB: A function you can call from app.py
+##########################################################################
+def run_guest_status_tab():
+    """
+    This function can be called from your main app, e.g.:
+        import unique_key_per_row as guestcommunication
+        ...
+        guestcommunication.run_guest_status_tab()
+    """
+    st.title("Add Guest OpenPhone Status (Multi-Key Concurrency)")
+
+    # Let user upload an Excel or CSV with "Phone Number" and "Arrival Date Short"
+    uploaded_file = st.file_uploader("Upload an Excel/CSV with phone + arrival date", type=["xlsx","xls","csv"])
+    if not uploaded_file:
+        st.info("Please upload a file to proceed.")
+        return
+
+    # Try reading it (Excel or CSV):
+    if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
+        owner_df = pd.read_excel(uploaded_file)
+    else:
+        owner_df = pd.read_csv(uploaded_file)
+
+    # Check if the required columns exist
+    required_cols = {"Phone Number", "Arrival Date Short"}
+    if not required_cols.issubset(owner_df.columns):
+        st.error(f"Missing required columns. Must include: {required_cols}")
+        return
+
+    # Show a preview
+    st.write("Data Preview:", owner_df.head())
+
+    # Run concurrency with each row using a unique API key
+    final_df = fetch_communication_info_unique_keys(owner_df)
+
+    st.write("Done! Here are your results:")
+    st.dataframe(final_df)
+
+    # Optionally allow downloading the result
+    csv_data = final_df.to_csv(index=False)
+    st.download_button("Download Results as CSV", csv_data, "openphone_results.csv", "text/csv")
+
+##########################################################################
+# 8) DEMO USAGE
 ##########################################################################
 def main():
+    """
+    If you run this file directly via streamlit run unique_key_per_row.py,
+    we show a small sample DF. Then we do concurrency on that sample.
+    But if you want to integrate into your main app, call run_guest_status_tab().
+    """
     st.title("Concurrent Rows, Each Row Uses a Distinct Key (Total 5 Keys)")
 
     sample_data = {
@@ -286,10 +334,12 @@ def main():
     }
     df = pd.DataFrame(sample_data)
 
-    st.write("Starting concurrency: each row uses a different key from the pool if available...")
+    st.write("Sample Demo: concurrency with 5 keys for the above data...")
     final_df = fetch_communication_info_unique_keys(df)
-    st.write("All done!")
+    st.write("All done with sample data!")
     st.dataframe(final_df)
 
+# Uncomment if you want to run directly:
+# streamlit run unique_key_per_row.py
 # if __name__ == "__main__":
 #     main()
