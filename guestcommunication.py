@@ -9,6 +9,18 @@ import concurrent.futures
 from datetime import datetime
 
 ########################################
+# 0) GLOBAL LOG QUEUE
+########################################
+log_queue = queue.Queue()
+
+def log(message):
+    """
+    Worker threads call this to store messages; 
+    we display them after all threads finish.
+    """
+    log_queue.put(message)
+
+########################################
 # 1) YOUR OPENPHONE API KEYS (NO 'Bearer')
 ########################################
 OPENPHONE_API_KEYS = [
@@ -43,8 +55,7 @@ def format_phone_number_us(raw_number: str) -> str:
 ########################################
 def rate_limited_get(url, headers, params):
     """
-    Sleep 0.2s => ~5 requests/sec per thread. 
-    If 3 workers run, watch out for total concurrency. 
+    Sleep 0.2s => ~5 requests/sec per thread.
     """
     time.sleep(0.2)
     try:
@@ -52,8 +63,10 @@ def rate_limited_get(url, headers, params):
         if resp.status_code == 200:
             return resp.json()
         else:
+            log(f"API Error {resp.status_code}: {resp.text}")
             return None
-    except Exception:
+    except Exception as e:
+        log(f"Request exception: {e}")
         return None
 
 ########################################
@@ -61,16 +74,14 @@ def rate_limited_get(url, headers, params):
 ########################################
 def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     """
-    1) Use the single chosen_key for phoneNumberIds
-    2) Then fetch calls/messages 
-    3) Return stats
+    Single chosen_key => phoneNumberIds => calls/messages => stats
     """
     headers = {"Authorization": chosen_key, "Content-Type": "application/json"}
-
-    # GET phoneNumberIds
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
+    
     data = rate_limited_get(phone_numbers_url, headers, params={})
     if not data or "data" not in data:
+        log(f"[{e164_phone}] => No phoneNumberIds or error with key {chosen_key[:6]}")
         return {
             'status': "No Communications",
             'last_date': None,
@@ -87,8 +98,10 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             'post_arrival_texts': 0,
             'calls_under_40sec': 0
         }
+    
     phone_number_ids = [pn.get("id") for pn in data["data"] if pn.get("id")]
     if not phone_number_ids:
+        log(f"[{e164_phone}] => No phoneNumberIds found (key {chosen_key[:6]})")
         return {
             'status': "No Communications",
             'last_date': None,
@@ -106,6 +119,7 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             'calls_under_40sec': 0
         }
 
+    # parse arrival_date if str or Timestamp
     if isinstance(arrival_date, str):
         try:
             arrival_date = datetime.fromisoformat(arrival_date)
@@ -118,15 +132,23 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     msg_url  = "https://api.openphone.com/v1/messages"
     call_url = "https://api.openphone.com/v1/calls"
 
-    latest_dt = None
-    latest_type, latest_dir, call_dur = None, None, None
-    agent_name = None
+    latest_dt      = None
+    latest_type    = None
+    latest_dir     = None
+    call_dur       = None
+    agent_name     = None
 
-    total_msgs, total_calls = 0, 0
-    ans_calls, mis_calls, attempts = 0, 0, 0
+    total_msgs     = 0
+    total_calls    = 0
+    ans_calls      = 0
+    mis_calls      = 0
+    attempts       = 0
+
     pre_calls, pre_texts = 0, 0
     post_calls, post_texts = 0, 0
     calls_under_40 = 0
+
+    log(f"[{e164_phone}] => Using key={chosen_key[:6]} => phoneNumberIds={phone_number_ids}")
 
     for pn_id in phone_number_ids:
         # MESSAGES
@@ -142,6 +164,7 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             mdata = rate_limited_get(msg_url, headers, params)
             if not mdata or "data" not in mdata:
                 break
+
             msgs = mdata["data"]
             total_msgs += len(msgs)
             for m in msgs:
@@ -229,14 +252,16 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
 # 5) PROCESS ONE ROW => EXACTLY ONE KEY
 ########################################
 def process_one_row(idx, row):
-    import queue
-    chosen_key = available_keys.get()  # blocks if no key
+    # pick a key from the queue
+    chosen_key = available_keys.get()
     try:
         raw_phone = str(row.get("Phone Number","")).strip()
         arrival_val= row.get("Arrival Date",None)
         e164_phone = format_phone_number_us(raw_phone)
+
         if not e164_phone:
-            # invalid phone => skip
+            # skip
+            log(f"[Row {idx}] => invalid phone '{raw_phone}' => skipping.")
             return {
                 "status":"Invalid Number",
                 "last_date":None,
@@ -253,27 +278,26 @@ def process_one_row(idx, row):
                 "post_arrival_texts":0,
                 "calls_under_40sec":0
             }
-        # else
+
+        log(f"[Row {idx}] => phone={e164_phone}, using key={chosen_key[:6]}")
         info = get_communication_info(e164_phone, chosen_key, arrival_val)
+        log(f"[Row {idx}] => status='{info['status']}', calls={info['total_calls']}, msgs={info['total_messages']}")
         return info
+
     finally:
-        # put key back so another row can use it
+        # put the key back
         available_keys.put(chosen_key)
 
 ########################################
-# 6) CONCURRENCY WITH 3 WORKERS
+# 6) CONCURRENCY => 3 WORKERS
 ########################################
 def fetch_communication_info_unique_keys(df):
-    """
-    Each row => pick EXACTLY 1 key from the queue. 
-    We run up to 3 rows in parallel (3 workers).
-    """
     results = [None]*len(df)
 
     def row_worker(i, r):
         return (i, process_one_row(i, r))
 
-    max_workers = 3  # <--- Here is the limit to 3 threads
+    max_workers = 3
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as exe:
         fut_map = {}
         for i, row in df.iterrows():
@@ -289,54 +313,65 @@ def fetch_communication_info_unique_keys(df):
     out_df["Status"] = [r["status"] for r in results]
     out_df["Last Contact Date"] = [r["last_date"] for r in results]
     out_df["Last Call Duration"] = [r["call_duration"] for r in results]
-    out_df["Last Agent Name"]    = [r["agent_name"] for r in results]
-    out_df["Total Messages"]     = [r["total_messages"] for r in results]
-    out_df["Total Calls"]        = [r["total_calls"] for r in results]
-    out_df["Answered Calls"]     = [r["answered_calls"] for r in results]
-    out_df["Missed Calls"]       = [r["missed_calls"] for r in results]
-    out_df["Call Attempts"]      = [r["call_attempts"] for r in results]
-    out_df["Pre-Arrival Calls"]  = [r["pre_arrival_calls"] for r in results]
-    out_df["Pre-Arrival Texts"]  = [r["pre_arrival_texts"] for r in results]
+    out_df["Last Agent Name"] = [r["agent_name"] for r in results]
+    out_df["Total Messages"] = [r["total_messages"] for r in results]
+    out_df["Total Calls"] = [r["total_calls"] for r in results]
+    out_df["Answered Calls"] = [r["answered_calls"] for r in results]
+    out_df["Missed Calls"] = [r["missed_calls"] for r in results]
+    out_df["Call Attempts"] = [r["call_attempts"] for r in results]
+    out_df["Pre-Arrival Calls"] = [r["pre_arrival_calls"] for r in results]
+    out_df["Pre-Arrival Texts"] = [r["pre_arrival_texts"] for r in results]
     out_df["Post-Arrival Calls"] = [r["post_arrival_calls"] for r in results]
     out_df["Post-Arrival Texts"] = [r["post_arrival_texts"] for r in results]
-    out_df["Calls <40s"]         = [r["calls_under_40sec"] for r in results]
+    out_df["Calls <40s"] = [r["calls_under_40sec"] for r in results]
 
     return out_df
 
 ########################################
-# 7) STREAMLIT UI
+# 7) MAIN STREAMLIT UI
 ########################################
 def run_guest_status_tab():
-    st.title("Concurrent: 3 workers, each row => distinct key, skip invalid phone")
-    uploaded_file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
-    if not uploaded_file:
-        st.info("Awaiting file.")
+    st.title("3 concurrency, each row => distinct key, plus logs after concurrency")
+
+    file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
+    if not file:
+        st.info("Please upload a file.")
         return
 
-    if uploaded_file.name.lower().endswith(("xlsx","xls")):
-        df = pd.read_excel(uploaded_file)
+    if file.name.lower().endswith(("xlsx","xls")):
+        df = pd.read_excel(file)
     else:
-        df = pd.read_csv(uploaded_file)
+        df = pd.read_csv(file)
 
     if "Phone Number" not in df.columns:
-        st.error("Missing 'Phone Number' column.")
+        st.error("No 'Phone Number' column.")
         return
 
     st.write("Data preview:", df.head())
 
     final_df = fetch_communication_info_unique_keys(df)
-    st.success("All done! 3 concurrency, 1 key per row at a time.")
+    st.success("All done with concurrency, 3 workers, 1 key/row. Here are results:")
     st.dataframe(final_df.head(50))
 
+    # Show logs
+    st.write("### Logs:")
+    from queue import Empty
+    while True:
+        try:
+            msg = log_queue.get_nowait()
+        except Empty:
+            break
+        st.write(msg)
+
     # Download
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         final_df.to_excel(writer, index=False, sheet_name="Updated")
-    buf.seek(0)
+    buffer.seek(0)
 
     st.download_button(
         "Download Updated Excel",
-        data=buf.getvalue(),
+        data=buffer.getvalue(),
         file_name="updated_unique_keys_3workers.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
