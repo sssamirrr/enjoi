@@ -21,7 +21,7 @@ def log(msg):
     log_queue.put(msg)
 
 ########################################
-# 1) FOUR OPENPHONE API KEYS (HARD-CODED)
+# 1) HARD-CODED OPENPHONE API KEYS
 ########################################
 OPENPHONE_API_KEYS = [
     "NRFVc43Gee39yIBu6mfC6Ya34K5moaSL",
@@ -30,7 +30,14 @@ OPENPHONE_API_KEYS = [
     "1mCfUABVby1FmX8LSiAk6UHOPWGEApRQ"
 ]
 
-key_to_pnids = {}
+# phone_number_details: {key -> { phoneNumberId -> { "fallbackAgentName": ..., "users":[...] } } }
+key_to_phone_number_details = {}
+
+# user_id_to_name: {key -> { "xyz" -> "FirstName LastName", ... }}
+# That way we can quickly look up the agent name by user ID
+key_to_user_map = {}
+
+# A queue of keys for concurrency
 available_keys = queue.Queue()
 for k in OPENPHONE_API_KEYS:
     available_keys.put(k)
@@ -54,10 +61,10 @@ def format_phone_number_us(raw_number: str) -> str:
 ########################################
 # 3) RATE-LIMITED GET (5 RPS per thread)
 ########################################
-def rate_limited_get(url, headers, params):
-    time.sleep(0.2)  # ~5 requests/sec
+def rate_limited_get(url, headers, params=None):
+    time.sleep(0.2)  # ~5 requests/second
     try:
-        r = requests.get(url, headers=headers, params=params)
+        r = requests.get(url, headers=headers, params=params or {})
         if r.status_code == 200:
             return r.json()
         else:
@@ -68,48 +75,138 @@ def rate_limited_get(url, headers, params):
         return None
 
 ########################################
-# 4) FETCH phoneNumberIds FOR EACH KEY (ONCE)
+# 4A) FETCH phone-numbers => fallback user
 ########################################
-def initialize_phone_number_ids():
+def fetch_phone_numbers_for_key(key):
     """
-    For each key => GET /phone-numbers exactly once.
-    Store in key_to_pnids[key].
+    GET /phone-numbers once, storing fallback agent info in `key_to_phone_number_details[key]`
+    """
+    headers = {"Authorization": key, "Content-Type": "application/json"}
+    url = "https://api.openphone.com/v1/phone-numbers"
+    data = rate_limited_get(url, headers)
+    details_map = {}
+
+    if data and "data" in data:
+        for pn in data["data"]:
+            pn_id = pn.get("id")
+            if not pn_id:
+                continue
+
+            # Gather phoneNumber's user array
+            users_arr = pn.get("users", [])  # each user has {id, firstName, lastName, email, ...}
+            # Build a fallback name from all users' names or emails
+            fallback_pieces = []
+            for u in users_arr:
+                fn = (u.get("firstName") or "").strip()
+                ln = (u.get("lastName") or "").strip()
+                if fn or ln:
+                    fallback_pieces.append(f"{fn} {ln}".strip())
+                else:
+                    fallback_pieces.append(u.get("email","UnknownUser"))
+
+            fallback_str = ", ".join(x for x in fallback_pieces if x)
+            if not fallback_str:
+                fallback_str = "Unknown Agent"
+
+            details_map[pn_id] = {
+                "users": users_arr,
+                "fallbackAgentName": fallback_str
+            }
+    else:
+        log(f"phone-numbers => No data for key={key[:6]}")
+
+    key_to_phone_number_details[key] = details_map
+
+########################################
+# 4B) FETCH /users => map userId -> "First Last"
+########################################
+def fetch_users_for_key(key):
+    """
+    GET /users once, building a dict of { userId -> "Name" }.
+    If your workspace has many users, it returns them all, so you can match calls/messages by userId.
+    """
+    headers = {"Authorization": key, "Content-Type": "application/json"}
+    url = "https://api.openphone.com/v1/users"
+    data = rate_limited_get(url, headers)
+
+    user_map = {}
+    if data and "data" in data:
+        for user in data["data"]:
+            uid = user.get("id")
+            if not uid:
+                continue
+            fn = (user.get("firstName") or "").strip()
+            ln = (user.get("lastName") or "").strip()
+            if fn or ln:
+                full_name = f"{fn} {ln}".strip()
+            else:
+                full_name = user.get("email","UnknownUser")
+            user_map[uid] = full_name
+    else:
+        log(f"users => No data for key={key[:6]}")
+
+    key_to_user_map[key] = user_map
+
+########################################
+# 4C) Initialize all keys once
+########################################
+def initialize_all_keys():
+    """
+    For each key, fetch phoneNumber data and /users data once,
+    storing results in key_to_phone_number_details and key_to_user_map.
     """
     for key in OPENPHONE_API_KEYS:
-        log(f"Fetching phoneNumberIds for key={key[:6]} once...")
-        headers = {"Authorization": key, "Content-Type": "application/json"}
-        url = "https://api.openphone.com/v1/phone-numbers"
-        data = rate_limited_get(url, headers, params={})
-        if data and "data" in data:
-            pn_ids = [d.get("id") for d in data["data"] if d.get("id")]
-            key_to_pnids[key] = pn_ids
-            log(f"  -> Found {len(pn_ids)} phoneNumberIds with key={key[:6]}")
-        else:
-            key_to_pnids[key] = []
-            log(f"  -> Error or no data with key={key[:6]} => 0 phoneNumberIds")
+        log(f"Fetching phone numbers and users for key={key[:6]} ...")
+        fetch_phone_numbers_for_key(key)
+        fetch_users_for_key(key)
+        details_count = len(key_to_phone_number_details.get(key, {}))
+        user_count = len(key_to_user_map.get(key, {}))
+        log(f"  -> key={key[:6]} => {details_count} phoneNumbers, {user_count} users")
 
 ########################################
-# 5) FETCH calls/messages (example logic)
+# 5) FETCH calls/messages
 ########################################
-def get_communication_info(e164_phone, chosen_key):
-    phone_number_ids = key_to_pnids.get(chosen_key, [])
+def get_communication_info(e164_phone, chosen_key, arrival_date=None):
+    """
+    1) Use chosen_key => phoneNumberIds from key_to_phone_number_details[chosen_key].
+    2) For each phoneNumberId => GET calls/messages for e164_phone.
+    3) For each call/message => see if it has user.id => look up in key_to_user_map[chosen_key].
+       If missing, fallback to phoneNumber fallbackAgentName. If still missing, "Unknown Agent".
+    4) Mark as pre-arrival if it happened strictly before arrival_date midnight (or some cutoff).
+    """
+    details_map = key_to_phone_number_details.get(chosen_key, {})
+    phone_number_ids = list(details_map.keys())
+
+    # Also get the userId->name map for this key
+    user_map = key_to_user_map.get(chosen_key, {})
+
+    # If no phoneNumberIds, no communications
     if not phone_number_ids:
-        log(f"   -> key={chosen_key[:6]} => no phoneNumberIds => 'No Communications'")
-        return {
-            'status': "No Communications",
-            'last_date': None,
-            'call_duration': None,
-            'agent_name': None,
-            'total_messages': 0,
-            'total_calls': 0,
-            'answered_calls': 0,
-            'missed_calls': 0,
-            'call_attempts': 0,
-        }
+        return blank_info_dict("No Communications")
 
+    # If arrival_date is a string with time appended, parse that.
+    # Otherwise just keep it as datetime or None.
+    arr_dt = None
+    if isinstance(arrival_date, str) and arrival_date:
+        try:
+            # handle "2025-03-27T00:00:00.000"
+            arr_dt = datetime.fromisoformat(arrival_date.replace("Z","+00:00"))
+        except ValueError:
+            try:
+                arr_dt = datetime.strptime(arrival_date, "%m/%d/%Y")
+            except ValueError:
+                pass
+    elif isinstance(arrival_date, pd.Timestamp):
+        arr_dt = arrival_date.to_pydatetime()
+    elif isinstance(arrival_date, datetime):
+        arr_dt = arrival_date
+
+    # We'll classify anything < arr_dt (midnight) as "pre-arrival", else "post-arrival".
+    # If you only have the date portion, you can do .replace(hour=0,...) for midnight if needed.
+    # If arr_dt is None, we won't do any pre/post arrival logic.
     headers = {"Authorization": chosen_key, "Content-Type": "application/json"}
-    msg_url  = "https://api.openphone.com/v1/messages"
-    call_url = "https://api.openphone.com/v1/calls"
+    msg_url = "https://api.openphone.com/v1/messages"
+    call_url= "https://api.openphone.com/v1/calls"
 
     latest_dt   = None
     latest_type = None
@@ -119,9 +216,15 @@ def get_communication_info(e164_phone, chosen_key):
 
     total_msgs, total_calls = 0, 0
     ans_calls, mis_calls, attempts = 0, 0, 0
+    pre_calls, pre_texts = 0, 0
+    post_calls, post_texts= 0, 0
+    calls_under_40 = 0
 
-    # MESSAGES
-    for pn_id in phone_number_ids:
+    # Iterate over each phoneNumberId
+    for pn_id, pn_info in details_map.items():
+        fallback_agent = pn_info["fallbackAgentName"]
+
+        # =========== MESSAGES ===========
         next_page = None
         while True:
             params = {
@@ -134,23 +237,44 @@ def get_communication_info(e164_phone, chosen_key):
             data_m = rate_limited_get(msg_url, headers, params)
             if not data_m or "data" not in data_m:
                 break
+
             msgs = data_m["data"]
             total_msgs += len(msgs)
             for m in msgs:
-                # parse times
-                from datetime import datetime
+                # "2025-03-26T19:54:00Z" => "2025-03-26T19:54:00+00:00"
                 mtime = datetime.fromisoformat(m["createdAt"].replace("Z","+00:00"))
-                if not latest_dt or mtime > latest_dt:
-                    latest_dt   = mtime
+                m_naive = mtime.replace(tzinfo=None)
+
+                # Mark pre/post arrival
+                if arr_dt:
+                    if m_naive < arr_dt:
+                        pre_texts += 1
+                    else:
+                        post_texts += 1
+
+                # figure out agent name
+                user_info = m.get("user", {})
+                uid = user_info.get("id")
+                if uid and uid in user_map:
+                    this_agent_name = user_map[uid]  # from /users
+                elif user_info.get("name"):
+                    this_agent_name = user_info["name"]
+                else:
+                    # fallback to phoneNumber's fallback name
+                    this_agent_name = fallback_agent if fallback_agent else "Unknown Agent"
+
+                # track the "latest" communication
+                if (not latest_dt) or (m_naive > latest_dt):
+                    latest_dt   = m_naive
                     latest_type = "Message"
                     latest_dir  = m.get("direction","unknown")
-                    agent_name  = m.get("user",{}).get("name","Unknown Agent")
+                    agent_name  = this_agent_name
+
             next_page = data_m.get("nextPageToken")
             if not next_page:
                 break
 
-    # CALLS
-    for pn_id in phone_number_ids:
+        # =========== CALLS ===========
         next_page = None
         while True:
             params = {
@@ -163,88 +287,174 @@ def get_communication_info(e164_phone, chosen_key):
             data_c = rate_limited_get(call_url, headers, params)
             if not data_c or "data" not in data_c:
                 break
+
             calls = data_c["data"]
             total_calls += len(calls)
             for c in calls:
-                from datetime import datetime
                 ctime = datetime.fromisoformat(c["createdAt"].replace("Z","+00:00"))
-                if not latest_dt or ctime > latest_dt:
-                    latest_dt   = ctime
+                c_naive = ctime.replace(tzinfo=None)
+                dur = c.get("duration", 0)
+
+                if arr_dt:
+                    if c_naive < arr_dt:
+                        pre_calls += 1
+                    else:
+                        post_calls += 1
+
+                if dur < 40:
+                    calls_under_40 += 1
+
+                # agent name
+                user_info = c.get("user", {})
+                uid = user_info.get("id")
+                if uid and uid in user_map:
+                    this_agent_name = user_map[uid]
+                elif user_info.get("name"):
+                    this_agent_name = user_info["name"]
+                else:
+                    this_agent_name = fallback_agent if fallback_agent else "Unknown Agent"
+
+                # track latest
+                if (not latest_dt) or (c_naive > latest_dt):
+                    latest_dt   = c_naive
                     latest_type = "Call"
                     latest_dir  = c.get("direction","unknown")
-                    call_dur    = c.get("duration",0)
-                    agent_name  = c.get("user",{}).get("name","Unknown Agent")
+                    agent_name  = this_agent_name
+                    call_dur    = dur
+
                 attempts += 1
                 status = c.get("status","unknown")
                 if status == "completed":
                     ans_calls += 1
                 elif status in ["missed","no-answer","busy","failed"]:
                     mis_calls += 1
+
             next_page = data_c.get("nextPageToken")
             if not next_page:
                 break
 
+    # Finalize
     if not latest_dt:
-        status = "No Communications"
+        return blank_info_dict("No Communications")
     else:
         status = f"{latest_type} - {latest_dir}"
+        return {
+            'status': status,
+            'last_date': latest_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            'call_duration': call_dur,
+            'agent_name': agent_name,
+            'total_messages': total_msgs,
+            'total_calls': total_calls,
+            'answered_calls': ans_calls,
+            'missed_calls': mis_calls,
+            'call_attempts': attempts,
+            'pre_arrival_calls': pre_calls,
+            'pre_arrival_texts': pre_texts,
+            'post_arrival_calls': post_calls,
+            'post_arrival_texts': post_texts,
+            'calls_under_40sec': calls_under_40
+        }
 
+def blank_info_dict(status_text):
+    """Return a dict of zeroed fields, plus a custom status."""
     return {
-        'status': status,
-        'last_date': latest_dt.strftime("%Y-%m-%d %H:%M:%S") if latest_dt else None,
-        'call_duration': call_dur,
-        'agent_name': agent_name,
-        'total_messages': total_msgs,
-        'total_calls': total_calls,
-        'answered_calls': ans_calls,
-        'missed_calls': mis_calls,
-        'call_attempts': attempts,
+        'status': status_text,
+        'last_date': None,
+        'call_duration': None,
+        'agent_name': None,
+        'total_messages': 0,
+        'total_calls': 0,
+        'answered_calls': 0,
+        'missed_calls': 0,
+        'call_attempts': 0,
+        'pre_arrival_calls': 0,
+        'pre_arrival_texts': 0,
+        'post_arrival_calls': 0,
+        'post_arrival_texts': 0,
+        'calls_under_40sec': 0
     }
 
 ########################################
-# 6) PROCESS ONE ROW
+# 6) PROCESS ONE ROW => EXACTLY 1 KEY
 ########################################
 def process_one_row(idx, row):
-    raw_phone = str(row.get("Phone Number", "")).strip()
+    """
+    Extract the phone number, parse arrival date, pick a key, fetch info.
+    """
+    # 1) Extract phone number
+    raw_phone = str(row.get("Phone Number","")).strip()
+
+    # 2) Parse arrival date from either 'Arrival Date Short' or 'Arrival Date'
+    arrival_val = None
+    if "Arrival Date Short" in row:
+        ad_short = str(row["Arrival Date Short"]).strip()
+        if ad_short:
+            arrival_val = try_parse_date(ad_short)
+
+    if arrival_val is None and "Arrival Date" in row:
+        ad_str = str(row["Arrival Date"]).strip()
+        if ad_str:
+            maybe_dt = try_parse_date(ad_str)
+            if maybe_dt:
+                arrival_val = maybe_dt
+
+    # 3) pick a key from the queue
     chosen_key = available_keys.get()
     log(f"[Row {idx}] => phone='{raw_phone}', got key={chosen_key[:6]}")
 
     try:
+        # 4) Convert phone to E.164
         e164_phone = format_phone_number_us(raw_phone)
         if not e164_phone:
             log(f"[Row {idx}] => invalid phone => skipping.")
-            return {
-                "status":"Invalid Number",
-                "last_date":None,
-                "call_duration":None,
-                "agent_name":"Unknown",
-                "total_messages":0,
-                "total_calls":0,
-                "answered_calls":0,
-                "missed_calls":0,
-                "call_attempts":0,
-            }
+            return blank_info_dict("Invalid Number")
 
-        info = get_communication_info(e164_phone, chosen_key)
-        log(f"[Row {idx}] => Done => {info['status']}, calls={info['total_calls']}, msgs={info['total_messages']}")
+        log(f"[Row {idx}] => E.164={e164_phone}, arrival={arrival_val}")
+        info = get_communication_info(e164_phone, chosen_key, arrival_val)
+        log(
+            f"[Row {idx}] => Done => {info['status']}, "
+            f"calls={info['total_calls']}, msgs={info['total_messages']}"
+        )
         return info
 
     finally:
+        # Always return the key so other rows can use it
         log(f"[Row {idx}] => returning key={chosen_key[:6]}")
         available_keys.put(chosen_key)
+
+def try_parse_date(s):
+    """
+    Try to parse strings like:
+      - 2025-03-27T00:00:00.000
+      - 2025-03-27
+      - 3/27/2025
+    Return None if we can't parse.
+    """
+    s = s.replace("Z","+00:00")  # if there's a trailing Z
+    # Try ISO parse first
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        pass
+    # Then try MM/DD/YYYY
+    try:
+        return datetime.strptime(s, "%m/%d/%Y")
+    except ValueError:
+        return None
 
 ########################################
 # 7) CONCURRENT => 3 WORKERS + PROGRESS
 ########################################
 def fetch_communication_info_unique_keys(df):
     """
-    We do concurrency=3 => up to 3 rows in parallel.
-    Show a progress bar to reflect how many rows done/left.
+    - We do concurrency=3 => up to 3 rows in parallel.
+    - Show a progress bar as rows finish.
+    - Return a dataframe with columns including agent name, pre/post-arrival calls, etc.
     """
     n = len(df)
     st.write(f"Processing {n} total rows...")
 
-    # Create a Streamlit progress bar and a status placeholder
+    # Create a Streamlit progress bar and status text
     progress_bar = st.progress(0)
     progress_text = st.empty()
 
@@ -273,11 +483,11 @@ def fetch_communication_info_unique_keys(df):
             # Update progress bar
             progress_bar.progress(percent_done)
 
-            # Update text for user
+            # Update text
             rows_left = n - completed
             progress_text.info(f"Processed {completed} of {n} rows. {rows_left} left.")
 
-    # build columns
+    # Build final columns
     out_df = df.copy()
     out_df["Status"] = [r["status"] for r in results]
     out_df["Last Contact Date"] = [r["last_date"] for r in results]
@@ -289,18 +499,25 @@ def fetch_communication_info_unique_keys(df):
     out_df["Missed Calls"] = [r["missed_calls"] for r in results]
     out_df["Call Attempts"] = [r["call_attempts"] for r in results]
 
+    # Pre/Post‐Arrival
+    out_df["Pre-Arrival Calls"] = [r["pre_arrival_calls"] for r in results]
+    out_df["Pre-Arrival Texts"] = [r["pre_arrival_texts"] for r in results]
+    out_df["Post-Arrival Calls"] = [r["post_arrival_calls"] for r in results]
+    out_df["Post-Arrival Texts"] = [r["post_arrival_texts"] for r in results]
+    out_df["Calls <40s"] = [r["calls_under_40sec"] for r in results]
+
     return out_df
 
 ########################################
 # 8) MAIN STREAMLIT
 ########################################
 def run_guest_status_tab():
-    st.title("Concurrent fetch with progress bar")
+    st.title("OpenPhone concurrency with Agent Names & Pre-Arrival Stats")
 
-    # 1) Pre-fetch phoneNumberIds
-    st.write("**Initializing phoneNumberIds for each key** ...")
-    initialize_phone_number_ids()
-    st.write("**Initialization done**.")
+    # 1) Pre-fetch phoneNumberIds & /users for each key
+    st.write("**Initializing phoneNumberIds & user info for each key** ...")
+    initialize_all_keys()
+    st.write("**Initialization done**. Ready to process rows in concurrency.")
 
     file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
     if not file:
@@ -320,8 +537,7 @@ def run_guest_status_tab():
 
     # 2) Perform concurrency with progress
     final_df = fetch_communication_info_unique_keys(df)
-
-    st.success("All done with concurrency. Here is the result:")
+    st.success("All done. Here is the result:")
     st.dataframe(final_df.head(50))
 
     # Show logs
@@ -334,7 +550,7 @@ def run_guest_status_tab():
             break
         st.write(msg)
 
-    # Download final
+    # 3) Download final
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         final_df.to_excel(writer, index=False, sheet_name="Updated")
@@ -343,7 +559,7 @@ def run_guest_status_tab():
     st.download_button(
         "Download Updated Excel",
         data=buffer.getvalue(),
-        file_name="updated_unique_keys_with_progress.xlsx",
+        file_name="updated_with_agent_names_prepost.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
