@@ -13,15 +13,15 @@ from datetime import datetime
 ########################################
 log_queue = queue.Queue()
 
-def log(message):
+def log(msg):
     """
-    Worker threads call this to store messages; 
-    we display them after all threads finish.
+    Each worker thread calls this. 
+    We'll display after concurrency finishes in the main thread.
     """
-    log_queue.put(message)
+    log_queue.put(msg)
 
 ########################################
-# 1) YOUR OPENPHONE API KEYS (NO 'Bearer')
+# 1) Four API Keys (No 'Bearer')
 ########################################
 OPENPHONE_API_KEYS = [
     "NRFVc43Gee39yIBu6mfC6Ya34K5moaSL",
@@ -30,34 +30,32 @@ OPENPHONE_API_KEYS = [
     "1mCfUABVby1FmX8LSiAk6UHOPWGEApRQ"
 ]
 
-# A queue of keys so each row uses exactly 1 distinct key at a time
+# Put them in a queue => one row gets exactly one key at a time
 available_keys = queue.Queue()
 for k in OPENPHONE_API_KEYS:
     available_keys.put(k)
 
 ########################################
-# 2) FORMAT PHONE => E.164 (US)
+# 2) Format phone => E.164
 ########################################
 def format_phone_number_us(raw_number: str) -> str:
     s = raw_number.strip()
     if not s:
         return None
     try:
-        pn = phonenumbers.parse(s, "US")
-        if phonenumbers.is_valid_number(pn):
-            return phonenumbers.format_number(pn, phonenumbers.PhoneNumberFormat.E164)
+        import phonenumbers
+        parsed = phonenumbers.parse(s, "US")
+        if phonenumbers.is_valid_number(parsed):
+            return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
     except phonenumbers.NumberParseException:
         pass
     return None
 
 ########################################
-# 3) RATE-LIMITED GET (~5 req/sec)
+# 3) RATE-LIMITED GET (~5 requests/sec)
 ########################################
 def rate_limited_get(url, headers, params):
-    """
-    Sleep 0.2s => ~5 requests/sec per thread.
-    """
-    time.sleep(0.2)
+    time.sleep(0.2)  # ~5 rps *per thread*
     try:
         resp = requests.get(url, headers=headers, params=params)
         if resp.status_code == 200:
@@ -66,22 +64,20 @@ def rate_limited_get(url, headers, params):
             log(f"API Error {resp.status_code}: {resp.text}")
             return None
     except Exception as e:
-        log(f"Request exception: {e}")
+        log(f"Request exception: {str(e)}")
         return None
 
 ########################################
-# 4) GET CALLS & MESSAGES FOR ONE KEY
+# 4) GET Calls/Messages with chosen_key
 ########################################
 def get_communication_info(e164_phone, chosen_key, arrival_date=None):
-    """
-    Single chosen_key => phoneNumberIds => calls/messages => stats
-    """
+    log(f"   -> get_communication_info( phone={e164_phone}, key={chosen_key[:6]} )")
     headers = {"Authorization": chosen_key, "Content-Type": "application/json"}
+
     phone_numbers_url = "https://api.openphone.com/v1/phone-numbers"
-    
     data = rate_limited_get(phone_numbers_url, headers, params={})
     if not data or "data" not in data:
-        log(f"[{e164_phone}] => No phoneNumberIds or error with key {chosen_key[:6]}")
+        log(f"   -> No phoneNumberIds => returning 'No Communications'")
         return {
             'status': "No Communications",
             'last_date': None,
@@ -98,10 +94,9 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             'post_arrival_texts': 0,
             'calls_under_40sec': 0
         }
-    
-    phone_number_ids = [pn.get("id") for pn in data["data"] if pn.get("id")]
+    phone_number_ids = [d.get("id") for d in data["data"] if d.get("id")]
     if not phone_number_ids:
-        log(f"[{e164_phone}] => No phoneNumberIds found (key {chosen_key[:6]})")
+        log("   -> 200 but no phoneNumberIds => 'No Communications'")
         return {
             'status': "No Communications",
             'last_date': None,
@@ -119,7 +114,7 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             'calls_under_40sec': 0
         }
 
-    # parse arrival_date if str or Timestamp
+    # parse arrival_date
     if isinstance(arrival_date, str):
         try:
             arrival_date = datetime.fromisoformat(arrival_date)
@@ -132,25 +127,21 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     msg_url  = "https://api.openphone.com/v1/messages"
     call_url = "https://api.openphone.com/v1/calls"
 
-    latest_dt      = None
-    latest_type    = None
-    latest_dir     = None
-    call_dur       = None
-    agent_name     = None
+    latest_dt = None
+    latest_type = None
+    latest_dir  = None
+    call_dur    = None
+    agent_name  = None
 
-    total_msgs     = 0
-    total_calls    = 0
-    ans_calls      = 0
-    mis_calls      = 0
-    attempts       = 0
-
+    total_msgs, total_calls = 0, 0
+    ans_calls, mis_calls, attempts = 0, 0, 0
     pre_calls, pre_texts = 0, 0
-    post_calls, post_texts = 0, 0
+    post_calls, post_texts= 0, 0
     calls_under_40 = 0
 
-    log(f"[{e164_phone}] => Using key={chosen_key[:6]} => phoneNumberIds={phone_number_ids}")
-
+    # fetch messages + calls for each phoneNumberId
     for pn_id in phone_number_ids:
+        log(f"      phoneNumberId={pn_id}")
         # MESSAGES
         next_page = None
         while True:
@@ -161,11 +152,10 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             }
             if next_page:
                 params["pageToken"] = next_page
-            mdata = rate_limited_get(msg_url, headers, params)
-            if not mdata or "data" not in mdata:
+            data_m = rate_limited_get(msg_url, headers, params)
+            if not data_m or "data" not in data_m:
                 break
-
-            msgs = mdata["data"]
+            msgs = data_m["data"]
             total_msgs += len(msgs)
             for m in msgs:
                 mtime = datetime.fromisoformat(m["createdAt"].replace("Z","+00:00"))
@@ -179,7 +169,7 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
                     latest_type = "Message"
                     latest_dir  = m.get("direction","unknown")
                     agent_name  = m.get("user",{}).get("name","Unknown Agent")
-            next_page = mdata.get("nextPageToken")
+            next_page = data_m.get("nextPageToken")
             if not next_page:
                 break
 
@@ -193,10 +183,10 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
             }
             if next_page:
                 params["pageToken"] = next_page
-            cdata = rate_limited_get(call_url, headers, params)
-            if not cdata or "data" not in cdata:
+            data_c = rate_limited_get(call_url, headers, params)
+            if not data_c or "data" not in data_c:
                 break
-            calls = cdata["data"]
+            calls = data_c["data"]
             total_calls += len(calls)
             for c in calls:
                 ctime = datetime.fromisoformat(c["createdAt"].replace("Z","+00:00"))
@@ -222,7 +212,7 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
                     ans_calls += 1
                 elif status in ["missed","no-answer","busy","failed"]:
                     mis_calls += 1
-            next_page = cdata.get("nextPageToken")
+            next_page = data_c.get("nextPageToken")
             if not next_page:
                 break
 
@@ -249,19 +239,20 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     }
 
 ########################################
-# 5) PROCESS ONE ROW => EXACTLY ONE KEY
+# 5) PROCESS ONE ROW => EXACTLY 1 KEY
 ########################################
 def process_one_row(idx, row):
+    raw_phone = str(row.get("Phone Number","")).strip()
+    arrival_val= row.get("Arrival Date",None)
+
     # pick a key from the queue
     chosen_key = available_keys.get()
-    try:
-        raw_phone = str(row.get("Phone Number","")).strip()
-        arrival_val= row.get("Arrival Date",None)
-        e164_phone = format_phone_number_us(raw_phone)
+    log(f"[Row {idx}] => Starting phone='{raw_phone}' => got key={chosen_key[:6]}")
 
+    try:
+        e164_phone = format_phone_number_us(raw_phone)
         if not e164_phone:
-            # skip
-            log(f"[Row {idx}] => invalid phone '{raw_phone}' => skipping.")
+            log(f"[Row {idx}] => invalid phone => skipping.")
             return {
                 "status":"Invalid Number",
                 "last_date":None,
@@ -278,14 +269,14 @@ def process_one_row(idx, row):
                 "post_arrival_texts":0,
                 "calls_under_40sec":0
             }
-
-        log(f"[Row {idx}] => phone={e164_phone}, using key={chosen_key[:6]}")
+        log(f"[Row {idx}] => E.164={e164_phone}, arrival={arrival_val}")
         info = get_communication_info(e164_phone, chosen_key, arrival_val)
-        log(f"[Row {idx}] => status='{info['status']}', calls={info['total_calls']}, msgs={info['total_messages']}")
+        log(f"[Row {idx}] => done => {info['status']}, calls={info['total_calls']}, msgs={info['total_messages']}")
         return info
 
     finally:
         # put the key back
+        log(f"[Row {idx}] => returning key={chosen_key[:6]}")
         available_keys.put(chosen_key)
 
 ########################################
@@ -331,8 +322,7 @@ def fetch_communication_info_unique_keys(df):
 # 7) MAIN STREAMLIT UI
 ########################################
 def run_guest_status_tab():
-    st.title("3 concurrency, each row => distinct key, plus logs after concurrency")
-
+    st.title("3 concurrency, 1 key per row, with logs in queue")
     file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
     if not file:
         st.info("Please upload a file.")
@@ -347,10 +337,11 @@ def run_guest_status_tab():
         st.error("No 'Phone Number' column.")
         return
 
-    st.write("Data preview:", df.head())
+    st.write("Data Preview:", df.head())
 
     final_df = fetch_communication_info_unique_keys(df)
-    st.success("All done with concurrency, 3 workers, 1 key/row. Here are results:")
+    st.success("Done concurrency with 3 workers, see logs below...")
+
     st.dataframe(final_df.head(50))
 
     # Show logs
@@ -363,20 +354,18 @@ def run_guest_status_tab():
             break
         st.write(msg)
 
-    # Download
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+    # Download final
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
         final_df.to_excel(writer, index=False, sheet_name="Updated")
-    buffer.seek(0)
+    buf.seek(0)
 
     st.download_button(
         "Download Updated Excel",
-        data=buffer.getvalue(),
-        file_name="updated_unique_keys_3workers.xlsx",
+        data=buf.getvalue(),
+        file_name="updated_unique_keys_3workers_log.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# if run directly:
-#   streamlit run your_file.py
 if __name__ == "__main__":
     run_guest_status_tab()
