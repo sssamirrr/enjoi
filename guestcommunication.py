@@ -116,15 +116,16 @@ def initialize_all_keys():
 ########################################
 # 5) FETCH calls/messages
 ########################################
-def blank_info_dict(status_text):
+def blank_info_dict(status_text, agent_name=None):
     """
-    Return a dict of zeroed fields + a custom status, for no communications or invalid phone.
+    Return a dict of zeroed fields + a custom status.
+    agent_name param allows us to set agent_name=None in case of invalid phone.
     """
     return {
         'status': status_text,
         'last_date': None,
         'call_duration': None,
-        'agent_name': None,
+        'agent_name': agent_name,
         'total_messages': 0,
         'total_calls': 0,
         'answered_calls': 0,
@@ -346,10 +347,8 @@ def process_one_row(idx, row):
         e164_phone = format_phone_number_us(raw_phone)
         if not e164_phone:
             log(f"[Row {idx}] => invalid phone => skipping.")
-            # Return the blank info for "Invalid Number"
-            d = blank_info_dict("Invalid Number")
-            d["agent_name"] = "Unknown"
-            return d
+            # Return the blank info for "Invalid Number", with agent_name=None
+            return blank_info_dict("Invalid Number", agent_name=None)
 
         log(f"[Row {idx}] => E.164={e164_phone}, arrival={arrival_val}")
         info = get_communication_info(e164_phone, chosen_key, arrival_val)
