@@ -8,21 +8,21 @@ import queue
 import concurrent.futures
 from datetime import datetime
 
-#######################################
+########################################
 # 0) GLOBALS
-#######################################
+########################################
 log_queue = queue.Queue()
 
 def log(msg):
     """
-    Worker threads call this to store log messages. 
+    Worker threads call this to store log messages.
     We'll display them after concurrency finishes.
     """
     log_queue.put(msg)
 
-#######################################
-# 1) FOUR OPENPHONE API KEYS (NO 'Bearer')
-#######################################
+########################################
+# 1) FOUR OPENPHONE API KEYS (HARD-CODED)
+########################################
 OPENPHONE_API_KEYS = [
     "NRFVc43Gee39yIBu6mfC6Ya34K5moaSL",
     "s270j8VAfL9mqRCr7y8PwIoDnoADfFlO",
@@ -38,9 +38,9 @@ available_keys = queue.Queue()
 for k in OPENPHONE_API_KEYS:
     available_keys.put(k)
 
-#######################################
+########################################
 # 2) E.164 HELPER
-#######################################
+########################################
 def format_phone_number_us(raw_number: str) -> str:
     s = raw_number.strip()
     if not s:
@@ -53,9 +53,9 @@ def format_phone_number_us(raw_number: str) -> str:
         pass
     return None
 
-#######################################
+########################################
 # 3) RATE-LIMITED GET (5 RPS per thread)
-#######################################
+########################################
 def rate_limited_get(url, headers, params):
     time.sleep(0.2)  # ~5 requests/sec
     try:
@@ -69,12 +69,12 @@ def rate_limited_get(url, headers, params):
         log(f"Request exception: {e}")
         return None
 
-#######################################
+########################################
 # 4) FETCH phoneNumberIds FOR EACH KEY (ONCE)
-#######################################
+########################################
 def initialize_phone_number_ids():
     """
-    For each key => GET /phone-numbers exactly once. 
+    For each key => GET /phone-numbers exactly once.
     Store in key_to_pnids[key].
     """
     for key in OPENPHONE_API_KEYS:
@@ -90,9 +90,9 @@ def initialize_phone_number_ids():
             key_to_pnids[key] = []
             log(f"  -> Error or no data with key={key[:6]} => 0 phoneNumberIds")
 
-#######################################
+########################################
 # 5) FETCH calls/messages using pre-fetched phoneNumberIds
-#######################################
+########################################
 def get_communication_info(e164_phone, chosen_key, arrival_date=None):
     """
     Use chosen_key => phoneNumberIds from key_to_pnids[chosen_key].
@@ -119,13 +119,18 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
         }
 
     # parse arrival_date
+    # if it's not already a datetime, attempt to parse
     if isinstance(arrival_date, str):
         try:
+            # If it might be an ISO style (YYYY-MM-DD), try fromisoformat
+            # but that won't work for "3/14/2025"
             arrival_date = datetime.fromisoformat(arrival_date)
         except ValueError:
-            arrival_date = None
+            # we do nothing here; arrival_date remains None or invalid
+            pass
     elif isinstance(arrival_date, pd.Timestamp):
         arrival_date = arrival_date.to_pydatetime()
+
     arrival_date_only = arrival_date.date() if arrival_date else None
 
     headers = {"Authorization": chosen_key, "Content-Type": "application/json"}
@@ -242,18 +247,46 @@ def get_communication_info(e164_phone, chosen_key, arrival_date=None):
         'calls_under_40sec': calls_under_40
     }
 
-#######################################
+########################################
 # 6) PROCESS ONE ROW => EXACTLY 1 KEY
-#######################################
+########################################
 def process_one_row(idx, row):
+    """
+    Processes a single row, pulling phone number and arrival date
+    out of the row, then calling get_communication_info.
+    """
+    # 1) Extract phone number from the row
     raw_phone = str(row.get("Phone Number","")).strip()
-    arrival_val= row.get("Arrival Date",None)
 
-    # pick a key from the queue
+    # 2) Try to parse arrival date from either 'Arrival Date Short' or 'Arrival Date'
+    arrival_val = None
+
+    # First check 'Arrival Date Short'
+    if "Arrival Date Short" in row:
+        ad_short = str(row["Arrival Date Short"]).strip()
+        if ad_short:
+            # Try to parse "3/14/2025" style
+            try:
+                arrival_val = datetime.strptime(ad_short, "%m/%d/%Y")
+            except ValueError:
+                pass
+
+    # If arrival_val is still None, fall back to 'Arrival Date'
+    if arrival_val is None and "Arrival Date" in row:
+        ad_iso = str(row["Arrival Date"]).strip()
+        if ad_iso:
+            # Try to parse "2025-03-14" style ISO
+            try:
+                arrival_val = datetime.fromisoformat(ad_iso)
+            except ValueError:
+                pass
+
+    # -- pick a key from the queue --
     chosen_key = available_keys.get()
     log(f"[Row {idx}] => phone='{raw_phone}', got key={chosen_key[:6]}")
 
     try:
+        # 3) Convert phone to E.164
         e164_phone = format_phone_number_us(raw_phone)
         if not e164_phone:
             log(f"[Row {idx}] => invalid phone => skipping.")
@@ -275,17 +308,24 @@ def process_one_row(idx, row):
             }
 
         log(f"[Row {idx}] => E.164={e164_phone}, arrival={arrival_val}")
+
+        # 4) Fetch communications info
         info = get_communication_info(e164_phone, chosen_key, arrival_val)
-        log(f"[Row {idx}] => Done => {info['status']}, calls={info['total_calls']}, msgs={info['total_messages']}")
+
+        log(
+           f"[Row {idx}] => Done => "
+           f"{info['status']}, calls={info['total_calls']}, msgs={info['total_messages']}"
+        )
         return info
 
     finally:
         log(f"[Row {idx}] => returning key={chosen_key[:6]}")
+        # Always return the key to the queue
         available_keys.put(chosen_key)
 
-#######################################
+########################################
 # 7) CONCURRENT => 3 WORKERS
-#######################################
+########################################
 def fetch_communication_info_unique_keys(df):
     """
     1) Each row picks exactly 1 key from the queue.
@@ -311,7 +351,16 @@ def fetch_communication_info_unique_keys(df):
     # build columns
     out_df = df.copy()
     out_df["Status"] = [r["status"] for r in results]
+
+    # Full last contact date/time
     out_df["Last Contact Date"] = [r["last_date"] for r in results]
+
+    # Just the date portion if desired
+    out_df["Date of Last Communication"] = [
+        r["last_date"].split(" ")[0] if r["last_date"] else None
+        for r in results
+    ]
+
     out_df["Last Call Duration"] = [r["call_duration"] for r in results]
     out_df["Last Agent Name"] = [r["agent_name"] for r in results]
     out_df["Total Messages"] = [r["total_messages"] for r in results]
@@ -327,9 +376,9 @@ def fetch_communication_info_unique_keys(df):
 
     return out_df
 
-#######################################
+########################################
 # 8) MAIN STREAMLIT
-#######################################
+########################################
 def run_guest_status_tab():
     st.title("Fetch phoneNumberIds once per key, concurrency=3, logs shown after run")
 
@@ -338,27 +387,31 @@ def run_guest_status_tab():
     initialize_phone_number_ids()  # One-time call
     st.write("**Initialization done**. Ready to process rows in concurrency.")
 
+    # 2) File uploader
     file = st.file_uploader("Upload Excel/CSV with 'Phone Number'", type=["xlsx","xls","csv"])
     if not file:
         st.info("Awaiting file...")
         return
 
+    # 3) Read the file into a dataframe
     if file.name.lower().endswith(("xlsx","xls")):
         df = pd.read_excel(file)
     else:
         df = pd.read_csv(file)
 
+    # Make sure we have a Phone Number column
     if "Phone Number" not in df.columns:
         st.error("No 'Phone Number' column found.")
         return
 
     st.write("Data Preview:", df.head())
 
+    # 4) Fetch communication info
     final_df = fetch_communication_info_unique_keys(df)
     st.success("All done with concurrency. Here is the result:")
     st.dataframe(final_df.head(50))
 
-    # Show logs
+    # 5) Show logs
     st.write("### Logs:")
     from queue import Empty
     while True:
@@ -368,7 +421,7 @@ def run_guest_status_tab():
             break
         st.write(msg)
 
-    # Download final
+    # 6) Download final
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         final_df.to_excel(writer, index=False, sheet_name="Updated")
